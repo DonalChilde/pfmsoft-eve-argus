@@ -8,8 +8,8 @@
   "python.testing.pytestEnabled": true,
   "python.testing.cwd": "${workspaceFolder}",
   "python.testing.pytestArgs": [
-    "tests/namespace/example_project",
-    "--cov=src/namespace/example_project",
+    "tests/pfmsoft/eve_argus",
+    "--cov=src/pfmsoft/eve_argus",
     "--cov-report=term-missing",
     "--cov-report=xml:coverage.xml"
   ],

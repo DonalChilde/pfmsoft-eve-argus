@@ -2,19 +2,21 @@
 
 ## Steps to setup publishing docs
 
+### 1. Init the project if needed
+
 ```bash
 zensical new .
 ```
 
-### Edits to zensical.toml
+### 2. Edits to zensical.toml
 
 ```toml
 [project]
 site_name = "SITE_NAME"
 site_description = "SITE_DESCRIPTION"
 site_authon = "SITE_AUTHOR"
-site_url = "SITE_URL"
-repo_url = "REPO_URL"
+site_url = "SITE_URL" # site_url = "https://DonalChilde.github.io/pfmsoft-eve-link"
+repo_url = "REPO_URL" # repo_url = "https://github.com/DonalChilde/pfmsoft-eve-link"
 
 # Plugins
 [project.plugins.mkdocstrings.handlers.python]
@@ -29,12 +31,12 @@ annotations_path = "source"
 show_signature_annotations = true
 ```
 
-
-## Github Action with uv
+### 3. Add Github Action with uv
 
 publish to github pages
 
-`docs.yaml`
+`.github/workflows/docs.yaml`
+
 ```yaml
 name: Documentation
 on:
@@ -68,5 +70,12 @@ jobs:
           path: site
       - uses: actions/deploy-pages@v5
         id: deployment
-
 ```
+
+### 4. Turn on Github Pages
+
+In Settings-Pages, select source as Github Actions
+
+### 5. Set doc site
+
+In About set website as Github Pages, set display deployments.
