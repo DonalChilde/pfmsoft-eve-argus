@@ -1,0 +1,60 @@
+[project]
+name = "example-project"
+version = "0.1.0"
+description = "Template for a new project using namespaces"
+readme = "README.md"
+authors = [{ name = "Chad Lowe", email = "pfmsoft.dev@gmail.com" }]
+requires-python = ">=3.14"
+dependencies = []
+
+[project.scripts]
+example = "namespace.example_project:main"
+
+[build-system]
+requires = ["uv_build>=0.11.21,<0.12.0"]
+build-backend = "uv_build"
+
+# For a namespaced project
+[tool.uv.build-backend]
+module-name = "namespace.example_project"
+
+[tool.uv]
+exclude-newer = "1 week"
+
+# # Don't wait for internal package updates.
+# [tool.uv.exclude-newer-package]
+# PACKAGE_NAME = false
+
+[tool.pytest.ini_options]
+pythonpath = "src"
+log_file = "dev/pytest-logs/tests.log"
+log_file_date_format = "%Y-%m-%dT%H:%M:%S.%f%z"
+log_file_format = "%(asctime)s %(levelname)s:%(funcName)s: %(message)s [in %(pathname)s:%(lineno)d]"
+log_file_level = "INFO"
+
+[tool.coverage.run]
+branch = true
+parallel = true
+
+[tool.ruff.lint]
+select = ["B", "UP", "D", "FIX", "I", "F401"]
+# non-imperative-mood (D401)
+ignore = ["D401", "D101", "D421"]
+# extend-select = ["I"]
+
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
+[tool.ruff.format]
+docstring-code-format = true
+docstring-code-line-length = 88
+
+[dependency-groups]
+dev = [
+    "mkdocstrings-python>=2.0.5",
+    "pytest>=9.1.1",
+    "pytest-cov>=7.1.0",
+    "ruff>=0.15.22",
+    "zensical>=0.0.51",
+]

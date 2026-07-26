@@ -1,0 +1,48 @@
+{
+  "python.defaultInterpreterPath": ".venv/bin/python",
+  
+  "python.autoComplete.extraPaths": [
+    "./src"
+  ],
+  "python.testing.unittestEnabled": false,
+  "python.testing.pytestEnabled": true,
+  "python.testing.cwd": "${workspaceFolder}",
+  "python.testing.pytestArgs": [
+    "tests/namespace/example_project",
+    "--cov=src/namespace/example_project",
+    "--cov-report=term-missing",
+    "--cov-report=xml:coverage.xml"
+  ],
+  "[git-commit]": {
+    "editor.rulers": [
+      50
+    ]
+  },
+  "[toml]": {
+    "editor.defaultFormatter": "tamasfe.even-better-toml",
+    "editor.formatOnSave": true
+},
+  "[python]": {
+    "editor.rulers": [
+      88,
+      120
+    ],
+    "editor.formatOnSave": true,
+    "editor.codeActionsOnSave": {
+      "source.organizeImports.ruff": "always"
+    },
+    "editor.defaultFormatter": "charliermarsh.ruff",
+  },
+  "python.analysis.extraPaths": [
+    "./src"
+  ],
+  "editor.quickSuggestions": {
+    "comments": "on"
+  },
+  "python.analysis.typeCheckingMode": "strict",
+  "ruff.format.preview": true,
+  "[markdown]": {
+    "editor.defaultFormatter": "esbenp.prettier-vscode",
+    "editor.formatOnSave": true
+  }
+}
