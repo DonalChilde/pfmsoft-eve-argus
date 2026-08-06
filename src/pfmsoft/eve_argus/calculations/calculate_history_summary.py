@@ -5,12 +5,58 @@ history data over specified time periods, including volume-weighted price averag
 and trading metrics.
 """
 
+from dataclasses import dataclass
 from datetime import date, timedelta
 
-from esi_link.argus.calculations.models import HistorySummaryItem
-from esi_link.argus.models.esi_models import (
-    GetMarketsRegionIdHistory,
-)
+from whenever import Instant
+
+
+@dataclass(slots=True)
+class HistorySummaryItem:
+    """Represents a summary of market history data for a specific region and type."""
+
+    region_id: int
+    type_id: int
+    period: int
+    start: str
+    end: str
+    missing: int
+    highest: float
+    average: float
+    lowest: float
+    order_count: int
+    volume: float
+
+
+@dataclass(slots=True, kw_only=True)
+class MarketHistoryDetail:
+    average: float
+    date: str
+    highest: float
+    lowest: float
+    order_count: int
+    volume: int
+
+
+@dataclass(slots=True, kw_only=True)
+class GetMarketsRegionIdHistory:
+    recieved_at: Instant
+    region_id: int
+    type_id: int
+    history: dict[str, MarketHistoryDetail]
+
+    def __post_init__(self):
+        """Post-initialization to sort the history data by date in descending order."""
+        self.history = dict(
+            sorted(self.history.items(), key=lambda x: x[0], reverse=True)
+        )
+
+    @property
+    def most_recent_date(self) -> str:
+        """Return the most recent date in the history data."""
+        if not self.history:
+            raise ValueError("History data is empty")
+        return next(iter(self.history.values())).date
 
 
 def date_range_days(start_date: str, days: int, descending: bool = True) -> list[str]:

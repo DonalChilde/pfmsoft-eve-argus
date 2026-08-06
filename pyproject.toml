@@ -5,7 +5,10 @@ description = "Collate Eve info using the pfmsoft family of apps."
 readme = "README.md"
 authors = [{ name = "Chad Lowe", email = "pfmsoft.dev@gmail.com" }]
 requires-python = ">=3.14"
-dependencies = []
+dependencies = [
+    "pydantic>=2.13.4",
+    "whenever>=0.10.3",
+]
 
 [project.scripts]
 example = "pfmsoft.eve_argus.main:main"

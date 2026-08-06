@@ -1,19 +1,119 @@
 """Function to calculate order summary statistics."""
 
 from collections.abc import Sequence
+from dataclasses import dataclass, field
 
-from esi_link.argus.models.esi_models import (
-    CollectedMarketOrders,
-    GetMarketsRegionIdOrders,
-    GetMarketsRegionIdOrdersItem,
-    OrderSummaries,
-    OrderSummary,
-    OrderSummaryItem,
-)
+from pydantic import BaseModel
+from whenever import Instant
+
+
+@dataclass(slots=True, kw_only=True)
+class GetMarketsRegionIdOrdersDetail:
+    """TypedDict for market orders response."""
+
+    duration: int
+    is_buy_order: bool
+    issued: str
+    location_id: int
+    min_volume: int
+    order_id: int
+    price: float
+    range: str
+    system_id: int
+    type_id: int
+    volume_remain: int
+    volume_total: int
+
+
+# RegionalOrdersRoot = RootModel[list[GetMarketsRegionIdOrdersDetail]]
+
+
+@dataclass(slots=True, kw_only=True)
+class DividedOrders:
+    buy_orders: list[GetMarketsRegionIdOrdersDetail] = field(
+        default_factory=list[GetMarketsRegionIdOrdersDetail]
+    )
+    sell_orders: list[GetMarketsRegionIdOrdersDetail] = field(
+        default_factory=list[GetMarketsRegionIdOrdersDetail]
+    )
+
+
+TypeId = int
+OrdersDict = dict[TypeId, DividedOrders]  # type_id -> DividedOrders
+
+
+@dataclass(slots=True, kw_only=True)
+class MarketOrdersResponse:
+    region_id: int
+    """The region ID for which the market orders were fetched."""
+    received_at: Instant
+    """The timestamp when the market orders were fetched."""
+    expires_at: Instant | None
+    """The timestamp when the market orders will expire, if provided by the ESI response."""
+    orders: OrdersDict
+    """The market orders divided by type ID and buy/sell orders."""
+
+    # def serialize(self, indent: int | None = 2) -> str:
+    #     """Serializes the MarketOrdersResponse to a JSON string."""
+    #     return MarketOrdersResponseRoot(root=self).model_dump_json(
+    #         indent=indent,
+    #     )
+
+
+# MarketOrdersResponseRoot = RootModel[MarketOrdersResponse]
+
+
+@dataclass(slots=True)
+class OrderSummaryItem:
+    """Represents a summary of market orders."""
+
+    type_id: int
+    """The type ID of the item."""
+    is_buy_summary: bool
+    """Whether the summary is for buy orders."""
+    five_price: float
+    """The price at which five percent of the available items can be transacted."""
+    five_orders: int
+    """The number of orders available at the five percent price."""
+    five_items: int
+    """The number of items available at the five percent price."""
+    lowest: float
+    """The lowest price."""
+    highest: float
+    """The highest price."""
+    total_items: int
+    """The total number of items available."""
+    total_orders: int
+    """The total number of orders."""
+    avg_price: float
+    """The average price of the available items."""
+    filtered_items: int
+    """The number of items that did not meet the threshold."""
+    filtered_orders: int
+    """The number of orders that did not meet the threshold."""
+
+
+@dataclass(slots=True)
+class OrderSummary:
+    """Represents a summary of market orders for a specific region and type."""
+
+    region_id: int
+    solar_system_id: int | None
+    type_id: int
+    buy_summary: OrderSummaryItem
+    sell_summary: OrderSummaryItem
+
+
+class OrderSummaries(BaseModel):
+    received_at: Instant
+    region_id: int
+    solar_system_id: int | None
+    filter_factor: float
+    summaries: dict[int, OrderSummary]
 
 
 def calculate_summaries(
-    region_orders: GetMarketsRegionIdOrders,
+    region_orders: MarketOrdersResponse,
     solar_system_id: int | None = None,
     filter_factor: float = 100.0,
 ) -> OrderSummaries:
@@ -25,25 +125,31 @@ def calculate_summaries(
         filter_factor=filter_factor,
         summaries={},
     )
-    for collected_orders in region_orders.orders.values():
+    for type_id, divided_orders in region_orders.orders.items():
         summary = calculate_order_summary(
-            collected_orders=collected_orders,
+            region_id=region_orders.region_id,
+            type_id=type_id,
+            collected_orders=divided_orders,
             solar_system_id=solar_system_id,
             filter_factor=filter_factor,
         )
-        summaries.summaries[collected_orders.type_id] = summary
+        summaries.summaries[type_id] = summary
     return summaries
 
 
 def calculate_order_summary(
-    collected_orders: CollectedMarketOrders,
+    region_id: int,
+    type_id: int,
+    collected_orders: DividedOrders,
     solar_system_id: int | None = None,
     filter_factor: float = 100.0,
 ) -> OrderSummary:
     """Calculate a summary of market orders for a specific region and type.
 
     Args:
-        collected_orders: A CollectedMarketOrders object containing buy and sell orders for a specific region and type.
+        region_id: The ID of the region for which the summary is being calculated.
+        type_id: The ID of the item type for which the summary is being calculated.
+        collected_orders: A DividedOrders object containing buy and sell orders for a specific region and type.
         solar_system_id: Optional solar system ID to include in the summary. Defaults to None.
         filter_factor: Factor used to filter outlier orders. For buy orders, only
             orders with price >= (highest_price / filter_factor) are included.
@@ -71,16 +177,16 @@ def calculate_order_summary(
         sell_orders, is_buy_summary=False, filter_factor=filter_factor
     )
     return OrderSummary(
-        region_id=collected_orders.region_id,
+        region_id=region_id,
         solar_system_id=solar_system_id,
-        type_id=collected_orders.type_id,
+        type_id=type_id,
         buy_summary=buy_summary,
         sell_summary=sell_summary,
     )
 
 
 def calculate_order_summary_detail(
-    orders: Sequence[GetMarketsRegionIdOrdersItem],
+    orders: Sequence[GetMarketsRegionIdOrdersDetail],
     is_buy_summary: bool,
     filter_factor: float = 100.0,
 ) -> OrderSummaryItem:
@@ -90,7 +196,7 @@ def calculate_order_summary_detail(
     location if desired.
 
     Args:
-        orders: A sequence of GetMarketsRegionIdOrdersItem objects to summarize. Should be
+        orders: A sequence of GetMarketsRegionIdOrdersDetail objects to summarize. Should be
             pre-filtered by type_id and is_buy_order, and optionally by location.
         is_buy_summary: If True, summarize buy orders.
             If False, summarize sell orders.
@@ -165,7 +271,7 @@ def calculate_order_summary_detail(
     filtered_items = sum(o.volume_remain for o in excluded_orders)
     filtered_orders = len(excluded_orders)
     five_percent_of_items = total_items * 0.05
-    five_percent_orders: list[GetMarketsRegionIdOrdersItem] = []
+    five_percent_orders: list[GetMarketsRegionIdOrdersDetail] = []
     items = 0
     for order in valid_orders:
         if items <= five_percent_of_items:

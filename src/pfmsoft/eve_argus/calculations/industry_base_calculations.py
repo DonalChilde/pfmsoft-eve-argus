@@ -4,7 +4,6 @@ from enum import Enum
 from math import ceil, floor
 from typing import Any, TypedDict
 
-# TODO add types for arguments for clarity
 # TODO Thorough testing, with explicit examples in a main function
 # TODO step by step documentation for all the calculations, with examples and references to ESI docs and other sources.
 
@@ -14,10 +13,7 @@ type Quantity = int
 """Type alias for quantities."""
 type Price = float
 """Type alias for prices."""
-type BaseMaterials = dict[TypeId, Quantity]
-"""Type alias for base materials dict[TypeId, Quantity]."""
-type MaterialPrices = dict[TypeId, Price]
-"""Type alias for prices dict[TypeId, Price]."""
+
 
 RESEARCH_TIME_MULTIPLIER: list[float] = [
     1,
@@ -63,28 +59,32 @@ class JobCosts(TypedDict):
     alpha: float
 
 
-def reprocess(base_materials: dict[int, int], reprocess_yield: float) -> dict[int, int]:
+def reprocess(
+    base_materials: dict[TypeId, Quantity], reprocess_yield: float
+) -> dict[TypeId, Quantity]:
     """Calculates the materials obtained from reprocessing.
 
-    base_materials for reprocessing comes from the typeMaterials.jsonl SDE dataset.
+    base_materials for reprocessing comes from the typeMaterials SDE dataset.
 
     Reprocessing calculations round down to the nearest whole number.
 
     Args:
-        base_materials (dict[int, int]): A dictionary of material IDs and their quantities.
+        base_materials (dict[TypeId, Quantity]): A dictionary of material IDs and their quantities.
         reprocess_yield (float): The reprocessing yield as a decimal (e.g., 0.5 for 50%).
 
     Returns:
-        dict[int, int]: A dictionary of reprocessed materials with their quantities.
+        dict[TypeId, Quantity]: A dictionary of reprocessed materials with their quantities.
     """
-    reprocessed_materials: dict[int, int] = {}
-    for material_id, quantity in base_materials.items():
+    reprocessed_materials: dict[TypeId, Quantity] = {}
+    for type_id, quantity in base_materials.items():
         reprocessed_quantity = floor(quantity * reprocess_yield)
-        reprocessed_materials[material_id] = reprocessed_quantity
+        reprocessed_materials[type_id] = reprocessed_quantity
     return reprocessed_materials
 
 
-def eiv(base_materials: dict[int, int], adjusted_prices: dict[int, float]) -> float:
+def eiv(
+    base_materials: dict[TypeId, Quantity], adjusted_prices: dict[TypeId, Price]
+) -> float:
     """Calculates the estimated item value (EIV) of a set of materials.
 
     EIV is calculated from the base materials of a blueprint, with no ME correction.
@@ -92,19 +92,19 @@ def eiv(base_materials: dict[int, int], adjusted_prices: dict[int, float]) -> fl
     Invention EIV is calculated from the material requirements from the produced T2 blueprint.
 
     Args:
-        base_materials (dict[int, int]): A dictionary of material IDs and their quantities.
-        adjusted_prices (dict[int, float]): A dictionary of material IDs and their adjusted prices.
+        base_materials (dict[TypeId, Quantity]): A dictionary of material IDs and their quantities.
+        adjusted_prices (dict[TypeId, Price]): A dictionary of material IDs and their adjusted prices.
 
     Returns:
         float: The estimated item value of the materials.
     """
     total_value = 0.0
-    for material_id, quantity in base_materials.items():
-        if material_id in adjusted_prices:
-            total_value += adjusted_prices[material_id] * quantity
+    for type_id, quantity in base_materials.items():
+        if type_id in adjusted_prices:
+            total_value += adjusted_prices[type_id] * quantity
         else:
             raise ValueError(
-                f"Material ID {material_id} not found in adjusted_prices dictionary."
+                f"Material ID {type_id} not found in adjusted_prices dictionary."
             )
 
     return total_value
@@ -125,28 +125,28 @@ def process_time_value(time_required: int, eiv: float, base_time: int) -> int:
 
 
 def manufacturing_materials_required(
-    base_materials: dict[int, int],
+    base_materials: dict[TypeId, Quantity],
     runs: int,
     me: float,
     structure: float = 0.0,
     rig: float = 0.0,
-) -> dict[int, int]:
+) -> dict[TypeId, Quantity]:
     """Calculates the materials required for a manufacturing job.
 
     Args:
-        base_materials (dict[int, int]): The base materials required for the job.
+        base_materials (dict[TypeId, Quantity]): The base materials required for the job.
         runs (int): The number of runs for the job.
         me (float): Material efficiency factor.
         structure (float): Structure bonus factor.
         rig (float): Rig bonus factor.
 
     Returns:
-        dict[int, int]: A dictionary of required materials with their quantities.
+        dict[TypeId, Quantity]: A dictionary of required materials with their quantities.
     """
     if runs < 1:
         raise ValueError("Runs must be one or greater.")
 
-    required_materials: dict[int, int] = {}
+    required_materials: dict[TypeId, Quantity] = {}
     for material_id, quantity in base_materials.items():
         req_mats = quantity * (1 - me) * (1 - structure) * (1 - rig)
         if req_mats < 0:
