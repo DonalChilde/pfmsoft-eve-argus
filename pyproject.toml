@@ -6,6 +6,9 @@ readme = "README.md"
 authors = [{ name = "Chad Lowe", email = "pfmsoft.dev@gmail.com" }]
 requires-python = ">=3.14"
 dependencies = [
+    "pfmsoft-eve-link>=0.4.4",
+    "pfmsoft-eve-sd>=0.4.3",
+    "pfmsoft-eve-snippets>=0.1.7",
     "pydantic>=2.13.4",
     "whenever>=0.10.3",
 ]
