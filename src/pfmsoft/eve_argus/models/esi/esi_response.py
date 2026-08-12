@@ -5,6 +5,9 @@ EVE Swagger Interface (ESI) API. They provide a structured way to handle and man
 the data received from ESI, and include the response data with enough request data to
 fully define the dataset.
 
+They are expected to be transformed into Argus specific models for use in the Argus
+application.
+
 The EsiResponseBase class serves as a base class for all ESI response models, providing
 common attributes such as received_at and expires_at timestamps.
 
@@ -15,7 +18,7 @@ represented by a separate data class, suffixed with `Detail`, which is used as a
 for the collection of items in the response model.
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Self
 
 from pydantic import RootModel
@@ -91,4 +94,49 @@ class GetMarketsRegionIdOrders(EsiResponseBase):
         return result
 
 
+@dataclass(slots=True, kw_only=True)
+class GetMarketsGroups(EsiResponseBase):
+    """Response model for market groups."""
+
+    group_ids: list[int]
+
+    def serialize(self, indent: int | None = 2) -> str:
+        """Serializes the GetMarketsGroups to a JSON string."""
+        return GetMarketsGroupsRoot(root=self).model_dump_json(
+            indent=indent,
+        )
+
+    @classmethod
+    def deserialize(cls, data: str) -> GetMarketsGroups:
+        """Deserializes a JSON string to a GetMarketsGroups model."""
+        result = GetMarketsGroupsRoot.model_validate_json(data).root
+        return result
+
+
+@dataclass(slots=True, kw_only=True)
+class GetMarketsGroupsMarketGroupId(EsiResponseBase):
+    """Response model for market group details."""
+
+    market_group_id: int
+    """The market group ID for which the details were fetched."""
+    name: str
+    description: str
+    parent_group_id: int | None = None
+    types: list[int] = field(default_factory=list[int])
+
+    def serialize(self, indent: int | None = 2) -> str:
+        """Serializes the GetMarketsGroupsMarketGroupId to a JSON string."""
+        return GetMarketsGroupsMarketGroupIdRoot(root=self).model_dump_json(
+            indent=indent,
+        )
+
+    @classmethod
+    def deserialize(cls, data: str) -> GetMarketsGroupsMarketGroupId:
+        """Deserializes a JSON string to a GetMarketsGroupsMarketGroupId model."""
+        result = GetMarketsGroupsMarketGroupIdRoot.model_validate_json(data).root
+        return result
+
+
 GetMarketsRegionIdOrdersRoot = RootModel[GetMarketsRegionIdOrders]
+GetMarketsGroupsRoot = RootModel[GetMarketsGroups]
+GetMarketsGroupsMarketGroupIdRoot = RootModel[GetMarketsGroupsMarketGroupId]
