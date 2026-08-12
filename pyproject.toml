@@ -6,9 +6,9 @@ readme = "README.md"
 authors = [{ name = "Chad Lowe", email = "pfmsoft.dev@gmail.com" }]
 requires-python = ">=3.14"
 dependencies = [
-    "pfmsoft-eve-link>=0.4.4",
-    "pfmsoft-eve-sd>=0.4.3",
-    "pfmsoft-eve-snippets>=0.1.7",
+    "pfmsoft-eve-link>=0.4.6",
+    "pfmsoft-eve-sd>=0.4.4",
+    "pfmsoft-eve-snippets>=0.1.8",
     "pydantic>=2.13.4",
     "whenever>=0.10.3",
 ]
@@ -27,9 +27,13 @@ module-name = "pfmsoft.eve_argus"
 [tool.uv]
 exclude-newer = "1 week"
 
-# # Don't wait for internal package updates.
-# [tool.uv.exclude-newer-package]
-# PACKAGE_NAME = false
+# Don't wait for internal package updates.
+[tool.uv.exclude-newer-package]
+pfmsoft-eve-link = false
+pfmsoft-eve-sd = false
+pfmsoft-eve-snippets = false
+pfmsoft-api-request = false
+pfmsoft-eve-auth-manager = false
 
 [tool.pytest.ini_options]
 pythonpath = "src"
