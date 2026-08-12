@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from typing import Self
 
 from whenever import Instant
 
@@ -22,3 +23,12 @@ class EsiModelBase:
     def received_at_instant(self) -> Instant:
         """The timestamp when the ESI data was fetched as an Instant."""
         return Instant.parse_iso(self.received_at)
+
+    def serialize(self, indent: int | None = 2) -> str:
+        """Serializes the ESI model to a JSON string."""
+        raise NotImplementedError("Subclasses must implement the serialize method.")
+
+    @classmethod
+    def deserialize(cls, data: str) -> Self:
+        """Deserializes a JSON string to an ESI model."""
+        raise NotImplementedError("Subclasses must implement the deserialize method.")
