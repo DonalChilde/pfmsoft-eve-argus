@@ -47,6 +47,7 @@ def default_options(
     ctx.obj = {
         SETTINGS_KEY: settings,
         EVE_LINK_SETTINGS_KEY: settings.eve_link_settings,
+        EVE_SD_SETTINGS_KEY: settings.eve_sd_settings,
     }
     logger.info(
         f"Starting {__app_name__} v{__version__} with settings: {asdict(settings)!r}"
