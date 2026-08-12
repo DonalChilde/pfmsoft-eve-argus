@@ -14,7 +14,7 @@ dependencies = [
 ]
 
 [project.scripts]
-example = "pfmsoft.eve_argus.main:main"
+eve-argus = "pfmsoft.eve_argus.cli.main_typer:app"
 
 [build-system]
 requires = ["uv_build>=0.11.21,<0.12.0"]

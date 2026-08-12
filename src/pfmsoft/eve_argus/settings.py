@@ -6,6 +6,8 @@ from uuid import NAMESPACE_DNS, uuid5
 
 from pfmsoft.eve_link.settings import EsiLinkSettings
 from pfmsoft.eve_link.settings import get_settings as get_eve_link_settings
+from pfmsoft.eve_sd.settings import EveSDSettings
+from pfmsoft.eve_sd.settings import get_settings as get_eve_sd_settings
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from typer import get_app_dir
 
@@ -35,6 +37,8 @@ class EveArgusSettings:
     """The path to the static database file used by the application."""
     eve_link_settings: EsiLinkSettings
     """The settings for the pfmsoft-eve-link package used by the application."""
+    eve_sd_settings: EveSDSettings
+    """The settings for the pfmsoft-eve-sd package used by the application."""
 
 
 class EveArgusSettingsPydantic(BaseSettings):
@@ -43,11 +47,14 @@ class EveArgusSettingsPydantic(BaseSettings):
     Values are read from environment variables prefixed with the application name,
     altered to uppercase and with non-alphanumeric characters replaced by underscores.
     Values are also read from `.env` or `.env.dev` when present.
+
+    The .env file name must be application specific, so that companion apps not not
+    error when trying to load someone elses settings.
     """
 
     model_config = SettingsConfigDict(
         env_prefix=ENV_PREFIX,
-        env_file=(".env", ".env.dev"),
+        env_file=("eve-argus.env", "eve-argus.env.dev"),
         env_file_encoding="utf-8",
     )
 
@@ -93,6 +100,9 @@ def _initialize_settings(application_directory: Path) -> EveArgusSettings:
         static_database=application_directory / "static-db.sqlite",
         eve_link_settings=get_eve_link_settings(
             application_directory=application_directory / "eve_link"
+        ),
+        eve_sd_settings=get_eve_sd_settings(
+            application_directory=application_directory / "eve_sd"
         ),
     )
     # Ensure that the application directories exist.
