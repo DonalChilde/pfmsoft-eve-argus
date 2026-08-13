@@ -4,7 +4,6 @@ Protocols should define a method for each type of data that can be loaded, and t
 expected return type for that method.
 """
 
-from collections.abc import Sequence
 from typing import Protocol
 
 from pfmsoft.eve_argus.models.esd import esd_datasets
@@ -57,7 +56,7 @@ class EsiResponseLoaderProtocol(Protocol):
         )
 
     async def market_groups_details(
-        self, market_group_ids: Sequence[int]
+        self, market_group_ids: set[int]
     ) -> dict[int, esi_response.GetMarketsGroupsMarketGroupId]:
         """Loads the market group details from ESI."""
         raise NotImplementedError(
@@ -97,7 +96,7 @@ class EsiArgusLoaderProtocol(Protocol):
     """Protocol for loading ESI Argus data."""
 
     def market_groups(
-        self, market_group_ids: Sequence[int] | None = None
+        self, market_group_ids: set[int] | None = None
     ) -> dict[int, esi_argus.MarketGroup]:
         """Returns the market groups loaded from ESI Argus.
 

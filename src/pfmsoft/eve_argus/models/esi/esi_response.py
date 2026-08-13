@@ -115,7 +115,7 @@ class GetMarketsGroups(EsiResponseBase):
 
 
 @dataclass(slots=True, kw_only=True)
-class GetMarketsGroupsMarketGroupId(EsiResponseBase):
+class GetMarketsGroupsMarketGroupIdDetail:
     """Response model for market group details."""
 
     market_group_id: int
@@ -124,6 +124,13 @@ class GetMarketsGroupsMarketGroupId(EsiResponseBase):
     description: str
     parent_group_id: int | None = None
     types: list[int] = field(default_factory=list[int])
+
+
+@dataclass(slots=True, kw_only=True)
+class GetMarketsGroupsMarketGroupId(EsiResponseBase):
+    """Response model for market group details."""
+
+    market_group: GetMarketsGroupsMarketGroupIdDetail
 
     def serialize(self, indent: int | None = 2) -> str:
         """Serializes the GetMarketsGroupsMarketGroupId to a JSON string."""
@@ -221,11 +228,18 @@ class CostIndicesDetail:
 
 
 @dataclass(slots=True, kw_only=True)
-class GetIndustrySystems(EsiResponseBase):
+class GetIndustrySystemsDetail:
     """Detail for industry systems cost indices response."""
 
     solar_system_id: int
     cost_indices: list[CostIndicesDetail]
+
+
+@dataclass(slots=True, kw_only=True)
+class GetIndustrySystems(EsiResponseBase):
+    """Response model for industry systems cost indices."""
+
+    systems: list[GetIndustrySystemsDetail]
 
     def serialize(self, indent: int | None = 2) -> str:
         """Serializes the GetIndustrySystems to a JSON string."""
