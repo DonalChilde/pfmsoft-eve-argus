@@ -67,7 +67,7 @@ class BlueprintRecord:
 
 
 BlueprintsDataset = dict[int, BlueprintRecord]
-BlueprintDatasetRoot = RootModel[BlueprintsDataset]
+BlueprintsDatasetRoot = RootModel[BlueprintsDataset]
 
 
 @dataclass(slots=True, kw_only=True)

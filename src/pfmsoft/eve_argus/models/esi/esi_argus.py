@@ -187,7 +187,7 @@ class OrderSummaries(EsiModelBase):
 
 
 @dataclass(slots=True, kw_only=True)
-class HistorySummaryItem:
+class HistorySummary(EsiModelBase):
     """Represents an aggregate market-history summary for one region and item type.
 
     The summary covers a fixed window of consecutive days and stores the volume-weighted
@@ -216,3 +216,43 @@ class HistorySummaryItem:
     """The average daily order count across the selected window."""
     volume: float
     """The average daily traded volume across the selected window."""
+
+    def serialize(self, indent: int | None = 2) -> str:
+        """Serializes the HistorySummary to a JSON string."""
+        return HistorySummaryRoot(root=self).model_dump_json(indent=indent)
+
+    @classmethod
+    def deserialize(cls, data: str) -> HistorySummary:
+        """Deserializes a JSON string to a HistorySummary model."""
+        result = HistorySummaryRoot.model_validate_json(data).root
+        return result
+
+
+HistorySummaryRoot = RootModel[HistorySummary]
+
+
+@dataclass(slots=True, kw_only=True)
+class RegionalHistorySummaries:
+    """Represents the collection of market-history summaries for a region.
+
+    Each summary covers a fixed window of consecutive days and stores the volume-weighted
+    price averages for that window along with the average daily order count and volume.
+    """
+
+    region_id: int
+    """The region ID associated with this collection of summaries."""
+    summaries: dict[int, HistorySummary]
+    """A mapping of item type IDs to their corresponding market-history summaries."""
+
+    def serialize(self, indent: int | None = 2) -> str:
+        """Serializes the RegionalHistorySummaries to a JSON string."""
+        return RegionalHistorySummariesRoot(root=self).model_dump_json(indent=indent)
+
+    @classmethod
+    def deserialize(cls, data: str) -> RegionalHistorySummaries:
+        """Deserializes a JSON string to a RegionalHistorySummaries model."""
+        result = RegionalHistorySummariesRoot.model_validate_json(data).root
+        return result
+
+
+RegionalHistorySummariesRoot = RootModel[RegionalHistorySummaries]

@@ -1,7 +1,13 @@
+"""Protocols for data loaders in the EVE Argus project.
+
+Protocols should define a method for each type of data that can be loaded, and the
+expected return type for that method.
+"""
+
 from collections.abc import Sequence
 from typing import Protocol
 
-from pfmsoft.eve_argus.models.esd import esd_argus, esd_datasets
+from pfmsoft.eve_argus.models.esd import esd_datasets
 from pfmsoft.eve_argus.models.esi import esi_argus, esi_response
 
 
@@ -108,4 +114,12 @@ class EsiArgusLoaderProtocol(Protocol):
         """Returns the market orders for a region loaded from ESI Argus."""
         raise NotImplementedError(
             "Subclasses must implement the region_market_orders method."
+        )
+
+    def region_market_histories(
+        self, region_id: int, type_ids: set[int]
+    ) -> esi_argus.RegionalHistorySummaries:
+        """Returns the market histories for a region and types loaded from ESI Argus."""
+        raise NotImplementedError(
+            "Subclasses must implement the region_market_histories method."
         )

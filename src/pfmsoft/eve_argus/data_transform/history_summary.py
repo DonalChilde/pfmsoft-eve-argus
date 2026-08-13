@@ -2,7 +2,7 @@
 
 from datetime import date, timedelta
 
-from pfmsoft.eve_argus.models.esi.esi_argus import HistorySummaryItem
+from pfmsoft.eve_argus.models.esi.esi_argus import HistorySummary
 from pfmsoft.eve_argus.models.esi.esi_response import (
     GetMarketsRegionIdHistory,
     GetMarketsRegionIdHistoryDetail,
@@ -42,7 +42,7 @@ def calculate_history_summary(
     history: GetMarketsRegionIdHistory,
     period: int,
     start_date: str | None = None,
-) -> HistorySummaryItem:
+) -> HistorySummary:
     """Calculate a volume-weighted summary for a market history window.
 
     The summary covers `period` consecutive days ending on `start_date`. If
@@ -107,7 +107,9 @@ def calculate_history_summary(
         lowest = lowest + (item.lowest * item.volume)
         order_count = order_count + item.order_count
         volume = volume + item.volume
-    summary: HistorySummaryItem = HistorySummaryItem(
+    summary: HistorySummary = HistorySummary(
+        received_at=history.received_at,
+        expires_at=history.expires_at,
         region_id=history.region_id,
         type_id=history.type_id,
         period=period,
