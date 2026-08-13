@@ -19,6 +19,7 @@ for the collection of items in the response model.
 """
 
 from dataclasses import dataclass, field
+from enum import StrEnum
 from typing import Self
 
 from pydantic import RootModel
@@ -137,6 +138,111 @@ class GetMarketsGroupsMarketGroupId(EsiResponseBase):
         return result
 
 
+@dataclass(slots=True, kw_only=True)
+class GetMarketsPricesDetail:
+    """Detail for market prices response."""
+
+    type_id: int
+    average_price: float | None
+    adjusted_price: float | None
+
+
+@dataclass(slots=True, kw_only=True)
+class GetMarketsPrices(EsiResponseBase):
+    """Response model for market prices."""
+
+    prices: list[GetMarketsPricesDetail]
+
+    def serialize(self, indent: int | None = 2) -> str:
+        """Serializes the GetMarketsPrices to a JSON string."""
+        return GetMarketsPricesRoot(root=self).model_dump_json(
+            indent=indent,
+        )
+
+    @classmethod
+    def deserialize(cls, data: str) -> GetMarketsPrices:
+        """Deserializes a JSON string to a GetMarketsPrices model."""
+        result = GetMarketsPricesRoot.model_validate_json(data).root
+        return result
+
+
+@dataclass(slots=True, kw_only=True)
+class GetMarketsRegionIdHistoryDetail:
+    """Detail for market history response."""
+
+    average: float
+    date: str
+    highest: float
+    lowest: float
+    order_count: int
+    volume: int
+
+
+@dataclass(slots=True, kw_only=True)
+class GetMarketsRegionIdHistory(EsiResponseBase):
+    """Response model for market history."""
+
+    region_id: int
+    type_id: int
+    history: list[GetMarketsRegionIdHistoryDetail]
+
+    def serialize(self, indent: int | None = 2) -> str:
+        """Serializes the GetMarketsRegionIdHistory to a JSON string."""
+        return GetMarketsRegionIdHistoryRoot(root=self).model_dump_json(
+            indent=indent,
+        )
+
+    @classmethod
+    def deserialize(cls, data: str) -> GetMarketsRegionIdHistory:
+        """Deserializes a JSON string to a GetMarketsRegionIdHistory model."""
+        result = GetMarketsRegionIdHistoryRoot.model_validate_json(data).root
+        return result
+
+
+class CostIndicesActivity(StrEnum):
+    COPYING = "copying"
+    DUPLICATING = "duplicating"
+    INVENTION = "invention"
+    MANUFACTURING = "manufacturing"
+    NONE = "none"
+    REACTION = "reaction"
+    RESEARCHING_MATERIAL_EFFICIENCY = "researching_material_efficiency"
+    RESEARCHING_TECHNOLOGY = "researching_technology"
+    RESEARCHING_TIME_EFFICIENCY = "researching_time_efficiency"
+    REVERSE_ENGINEERING = "reverse_engineering"
+
+
+@dataclass(slots=True, kw_only=True)
+class CostIndicesDetail:
+    """Detail for cost index response."""
+
+    activity: CostIndicesActivity
+    cost_index: float
+
+
+@dataclass(slots=True, kw_only=True)
+class GetIndustrySystems(EsiResponseBase):
+    """Detail for industry systems cost indices response."""
+
+    solar_system_id: int
+    cost_indices: list[CostIndicesDetail]
+
+    def serialize(self, indent: int | None = 2) -> str:
+        """Serializes the GetIndustrySystems to a JSON string."""
+        return GetIndustrySystemsRoot(root=self).model_dump_json(
+            indent=indent,
+        )
+
+    @classmethod
+    def deserialize(cls, data: str) -> GetIndustrySystems:
+        """Deserializes a JSON string to a GetIndustrySystems model."""
+        result = GetIndustrySystemsRoot.model_validate_json(data).root
+        return result
+
+
+GetIndustrySystemsRoot = RootModel[GetIndustrySystems]
+GetMarketsRegionIdHistoryRoot = RootModel[GetMarketsRegionIdHistory]
+GetMarketsPricesRoot = RootModel[GetMarketsPrices]
 GetMarketsRegionIdOrdersRoot = RootModel[GetMarketsRegionIdOrders]
 GetMarketsGroupsRoot = RootModel[GetMarketsGroups]
 GetMarketsGroupsMarketGroupIdRoot = RootModel[GetMarketsGroupsMarketGroupId]
