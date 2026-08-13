@@ -2,7 +2,10 @@
 
 from pfmsoft.eve_argus.data_transform.market_groups import transform_market_groups
 from pfmsoft.eve_argus.main import main
-from pfmsoft.eve_argus.models.esi.esi_response import GetMarketsGroupsMarketGroupId
+from pfmsoft.eve_argus.models.esi.esi_response import (
+    GetMarketsGroupsMarketGroupId,
+    GetMarketsGroupsMarketGroupIdDetail,
+)
 
 
 def test_successful_example():
@@ -16,20 +19,24 @@ def test_transform_market_groups_builds_parent_paths():
     root_group = GetMarketsGroupsMarketGroupId(
         received_at="2024-01-01T00:00:00Z",
         expires_at=None,
-        market_group_id=10,
-        name="Root",
-        description="root group",
-        parent_group_id=None,
-        types=[100],
+        market_group=GetMarketsGroupsMarketGroupIdDetail(
+            market_group_id=10,
+            name="Root",
+            description="root group",
+            parent_group_id=None,
+            types=[100],
+        ),
     )
     child_group = GetMarketsGroupsMarketGroupId(
         received_at="2024-01-01T00:00:00Z",
         expires_at=None,
-        market_group_id=20,
-        name="Child",
-        description="child group",
-        parent_group_id=10,
-        types=[200],
+        market_group=GetMarketsGroupsMarketGroupIdDetail(
+            market_group_id=20,
+            name="Child",
+            description="child group",
+            parent_group_id=10,
+            types=[200],
+        ),
     )
 
     transformed = transform_market_groups({10: root_group, 20: child_group})

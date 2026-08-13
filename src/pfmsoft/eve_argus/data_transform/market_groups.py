@@ -15,7 +15,7 @@ def _build_market_group_paths(
         if market_group_id in path_str:
             return path_str[market_group_id]
 
-        market_group = esi_market_groups[market_group_id]
+        market_group = esi_market_groups[market_group_id].market_group
         if market_group.parent_group_id is None:
             result = (market_group.name,)
         elif market_group.parent_group_id in esi_market_groups:
@@ -30,7 +30,7 @@ def _build_market_group_paths(
         if market_group_id in path_int:
             return path_int[market_group_id]
 
-        market_group = esi_market_groups[market_group_id]
+        market_group = esi_market_groups[market_group_id].market_group
         if market_group.parent_group_id is None:
             result = (market_group.market_group_id,)
         elif market_group.parent_group_id in esi_market_groups:
@@ -64,14 +64,15 @@ def transform_market_groups(
     path_str, path_int = _build_market_group_paths(esi_market_groups)
     argus_market_groups: dict[int, MarketGroup] = {}
     for market_group_id, esi_group in esi_market_groups.items():
+        detail = esi_group.market_group
         argus_group = MarketGroup(
             received_at=esi_group.received_at,
             expires_at=esi_group.expires_at,
-            market_group_id=esi_group.market_group_id,
-            name=esi_group.name,
-            description=esi_group.description,
-            parent_group_id=esi_group.parent_group_id,
-            types=esi_group.types,
+            market_group_id=detail.market_group_id,
+            name=detail.name,
+            description=detail.description,
+            parent_group_id=detail.parent_group_id,
+            types=detail.types,
             path_str=path_str.get(market_group_id, ()),
             path_int=path_int.get(market_group_id, ()),
         )
