@@ -19,27 +19,42 @@ def calculate_summaries(
     location_id: int | None = None,
     filter_factor: float = 100.0,
 ) -> OrderSummaries:
-    """Calculate summaries for buy and sell orders in a GetMarketsRegionIdOrders response.
+    """Summarize buy and sell depth for one region, or for a system/location subset.
 
-    Calculates the minimum buy price to buy 5% of the total volume, and the maximum sell
-    price to sell 5% of the total volume.
+    Each item summary is built from the filtered valid orders for that side of the book.
+    The outlier filter removes extreme prices before the 5% depth threshold is computed.
+    For buy orders, prices lower than the best price divided by ``filter_factor`` are
+    discarded. For sell orders, prices higher than the best price multiplied by
+    ``filter_factor`` are discarded. ``filter_factor`` must be greater than 1.0.
+
+    Once the valid orders are selected, the algorithm calculates the price threshold at
+    which 5% of the valid volume is available. This threshold is reported as
+    ``five_price`` and the volume available at or better than that price is reported as
+    ``five_items``.
 
     Args:
-        region_orders: The RegionMarketOrders object containing the orders to summarize.
-        solar_system_id: Optional solar system ID to filter orders by. Defaults to None.
-        location_id: Optional location ID to filter orders by. Defaults to None.
-        filter_factor: Factor used to filter outlier orders. For buy orders, only
-            orders with price >= (highest_price / filter_factor) are included.
-            For sell orders, only orders with price <= (lowest_price * filter_factor)
-            are included. Defaults to 100.0.
+        region_orders: The region-wide order payload to summarize.
+        solar_system_id: Optional solar system ID used to limit the summary to a single
+            solar system. Cannot be combined with ``location_id``.
+        location_id: Optional location ID used to limit the summary to a single station or
+            container. Cannot be combined with ``solar_system_id``.
+        filter_factor: Outlier-removal multiplier. Buy orders below
+            ``best_buy_price / filter_factor`` are excluded, and sell orders above
+            ``best_sell_price * filter_factor`` are excluded. Must be greater than 1.0.
 
     Returns:
-        An OrderSummaries object containing the calculated summaries.
+        An ``OrderSummaries`` object containing a summary for each item type.
+
+    Raises:
+        ValueError: If both ``solar_system_id`` and ``location_id`` are supplied, or if
+            ``filter_factor`` is less than or equal to 1.0.
     """
     if solar_system_id is not None and location_id is not None:
         raise ValueError(
             "Cannot specify both solar_system_id and location_id. Choose one or neither."
         )
+    if filter_factor <= 1.0:
+        raise ValueError("filter_factor must be greater than 1.0.")
     summaries = OrderSummaries(
         received_at=region_orders.received_at,
         expires_at=region_orders.expires_at,
@@ -70,21 +85,26 @@ def calculate_order_summary(
     location_id: int | None = None,
     filter_factor: float = 100.0,
 ) -> OrderSummary:
-    """Calculate a summary of market orders for a specific region and type.
+    """Summarize the buy and sell depth for one item type.
+
+    The function first narrows the order set to the requested scope: whole region,
+    specific solar system, or specific location. It then computes a buy-side and sell-side
+    summary using the same outlier filter and 5% depth algorithm.
 
     Args:
-        region_id: The ID of the region for which the summary is being calculated.
-        type_id: The ID of the item type for which the summary is being calculated.
-        collected_orders: A DividedOrders object containing buy and sell orders for a specific region and type.
-        solar_system_id: Optional solar system ID to include in the summary. Defaults to None.
-        location_id: Optional location ID to include in the summary. Defaults to None.
-        filter_factor: Factor used to filter outlier orders. For buy orders, only
-            orders with price >= (highest_price / filter_factor) are included.
-            For sell orders, only orders with price <= (lowest_price * filter_factor)
-            are included. Defaults to 100.0.
+        region_id: The region containing the orders.
+        type_id: The item type being summarized.
+        collected_orders: The buy and sell orders for the specified item type.
+        solar_system_id: Optional solar system filter. If provided, only orders from that
+            solar system are included.
+        location_id: Optional location filter. If provided, only orders from that location
+            are included.
+        filter_factor: Outlier-removal multiplier. Buy orders below
+            ``best_buy_price / filter_factor`` are excluded, and sell orders above
+            ``best_sell_price * filter_factor`` are excluded.
 
     Returns:
-        An OrderSummary object containing the summary of buy and sell orders for the specified region and type.
+        An ``OrderSummary`` containing the buy and sell summary items for the item type.
     """
     location_filter: Literal["solar_system", "location", "none"]
     if solar_system_id is not None:
@@ -135,46 +155,43 @@ def calculate_order_summary_detail(
     is_buy_summary: bool,
     filter_factor: float = 100.0,
 ) -> OrderSummaryItem:
-    """Calculate a summary of market orders.
+    """Calculate a summary for one side of a market for a single item type.
 
-    Assumes orders are already filtered by type_id and is_buy_order, as well as
-    location if desired.
+    The summary is computed from a list of orders that are already known to be the same
+    item type and same ordering side (buy or sell). The function first drops outlier
+    orders using ``filter_factor``, then calculates the price threshold at which 5% of
+    the remaining valid volume is available. ``five_price`` is the last price included
+    when walking the best-priced orders until the cumulative volume reaches or exceeds
+    5% of the total valid volume.
+
+    For buy orders, the valid book is ordered from highest price to lowest price and the
+    cutoff is the best price divided by ``filter_factor``. For sell orders, the valid book
+    is ordered from lowest price to highest price and the cutoff is the best price
+    multiplied by ``filter_factor``.
 
     Args:
-        orders: A sequence of GetMarketsRegionIdOrdersDetail objects to summarize. Should be
-            pre-filtered by type_id and is_buy_order, and optionally by location.
-        is_buy_summary: If True, summarize buy orders.
-            If False, summarize sell orders.
-        filter_factor: Factor used to filter outlier orders. For buy orders, only
-            orders with price >= (highest_price / filter_factor) are included.
-            For sell orders, only orders with price <= (lowest_price * filter_factor)
-            are included. Defaults to 100.0.
+        orders: A sequence of market orders for one item type and one side of the book.
+        is_buy_summary: ``True`` to summarize buy orders; ``False`` to summarize sell
+            orders.
+        filter_factor: Outlier-removal multiplier. Buy orders below
+            ``best_buy_price / filter_factor`` are excluded, and sell orders above
+            ``best_sell_price * filter_factor`` are excluded. Must be greater than 1.0.
 
     Returns:
-        OrderSummaryDetail containing:
-            - type_id: The item type ID of the orders
-            - is_buy_summary: Whether this is a buy or sell summary
-            - five_price: The price at the 5% volume threshold
-            - five_orders: Number of orders in the top 5% by volume
-            - five_items: Total volume at or better than five_price
-            - lowest: Lowest price among valid orders
-            - highest: Highest price among valid orders
-            - total_items: Total volume of all valid orders
-            - total_orders: Count of valid orders
-            - avg_price: Volume-weighted average price of valid orders
-            - filtered_items: Total volume of filtered/excluded orders
-            - filtered_orders: Count of filtered/excluded orders
+        An ``OrderSummaryItem`` containing the aggregate metrics for that side of the book.
 
     Raises:
-        ValueError: If orders contain mismatched is_buy_order values or multiple
-            type_ids.
+        ValueError: If orders contain mismatched ``is_buy_order`` values or multiple
+            ``type_id`` values.
 
     Note:
-        The function calculates the "five percent" metrics by accumulating orders
-        from the best price until reaching 5% of the total volume, then determining
-        the price and volume at that threshold.
+        The 5% depth bucket is computed from the filtered valid orders only. The returned
+        ``five_items`` value is the volume available at or better than the threshold price,
+        while ``five_orders`` is the count of orders in the threshold bucket used to reach
+        the 5% volume target.
     """
-    # sort orders by price (descending for buys, ascending for sells) to calculate five percent metrics
+    # Walk the best-priced orders first so the 5% depth threshold reflects the current
+    # top-of-book depth, not the entire unfiltered order list.
     if is_buy_summary:
         orders = sorted(orders, key=lambda o: o.price, reverse=True)
     else:
@@ -183,7 +200,7 @@ def calculate_order_summary_detail(
     total_items = total_orders = five_orders_count = 0
     five_items = filtered_items = filtered_orders = 0
 
-    # Check that all orders have the same is_buy_order and type_id
+    # Check that all orders have the same is_buy_order and type_id.
     type_id_check: int = orders[0].type_id if orders else 0
     for order in orders:
         if order.is_buy_order != is_buy_summary:
@@ -193,7 +210,8 @@ def calculate_order_summary_detail(
             msg = "All orders must be of the same type_id."
             raise ValueError(msg)
 
-    # Filter out outlier orders based on filter_factor
+    # Filter out extreme tail orders before calculating the depth threshold. This keeps
+    # a small number of absurd outliers from distorting the price and volume metrics.
     if is_buy_summary:
         price_cutoff = orders[0].price / filter_factor if orders else 0.0
         valid_orders = [o for o in orders if o.price >= price_cutoff]
@@ -205,7 +223,7 @@ def calculate_order_summary_detail(
     highest = max(o.price for o in valid_orders) if valid_orders else 0.0
     lowest = min(o.price for o in valid_orders) if valid_orders else 0.0
     total_volume = sum(o.volume_remain for o in valid_orders)
-    # Calculate volume-weighted average price
+    # Volume-weighted average price is the weighted mean of all valid orders.
     avg_price = (
         sum(o.volume_remain * o.price for o in valid_orders) / total_volume
         if valid_orders
@@ -219,6 +237,8 @@ def calculate_order_summary_detail(
     five_percent_orders: list[MarketOrderDetail] = []
     items = 0
     for order in valid_orders:
+        # Include the order if the cumulative volume is still at or below the 5% target.
+        # The last included order establishes the threshold price.
         if items <= five_percent_of_items:
             five_percent_orders.append(order)
             items += order.volume_remain
@@ -228,19 +248,34 @@ def calculate_order_summary_detail(
     five_price = five_percent_orders[-1].price if five_percent_orders else 0.0
     five_orders_count = len(five_percent_orders)
     if is_buy_summary:
-        # For buy orders, we want the total volume of items at or above the five_price
+        # Buy threshold: the 5% bucket includes all valid orders at or above the threshold.
         five_items = (
             sum(o.volume_remain for o in five_percent_orders if o.price >= five_price)
             if five_percent_orders
             else 0
         )
     else:
-        # For sell orders, we want the total volume of items at or below the five_price
+        # Sell threshold: the 5% bucket includes all valid orders at or below the threshold.
         five_items = (
             sum(o.volume_remain for o in valid_orders if o.price <= five_price)
             if five_percent_orders
             else 0
         )
+
+    summary = OrderSummaryItem(
+        type_id=type_id_check,
+        is_buy_summary=is_buy_summary,
+        five_price=five_price,
+        five_orders=five_orders_count,
+        five_items=five_items,
+        lowest=lowest,
+        highest=highest,
+        total_items=total_items,
+        total_orders=total_orders,
+        avg_price=avg_price,
+        filtered_items=filtered_items,
+        filtered_orders=filtered_orders,
+    )
 
     summary = OrderSummaryItem(
         type_id=type_id_check,
