@@ -181,3 +181,38 @@ class OrderSummaries(EsiModelBase):
     location_id: int | None
     filter_factor: float
     summaries: dict[int, OrderSummary]
+
+
+# -----------Market History Summary Models-----------
+
+
+@dataclass(slots=True, kw_only=True)
+class HistorySummaryItem:
+    """Represents an aggregate market-history summary for one region and item type.
+
+    The summary covers a fixed window of consecutive days and stores the volume-weighted
+    price averages for that window along with the average daily order count and volume.
+    """
+
+    region_id: int
+    """The region ID associated with this summary."""
+    type_id: int
+    """The item type ID associated with this summary."""
+    period: int
+    """The number of days included in the summary window."""
+    start: str
+    """The end date of the window as an ISO date string in `YYYY-MM-DD` format."""
+    end: str
+    """The start date of the window as an ISO date string in `YYYY-MM-DD` format."""
+    missing: int
+    """The number of dates in the requested window that were missing from the source data."""
+    highest: float
+    """The volume-weighted average of the daily highest prices in the window."""
+    average: float
+    """The volume-weighted average of the daily average prices in the window."""
+    lowest: float
+    """The volume-weighted average of the daily lowest prices in the window."""
+    order_count: int
+    """The average daily order count across the selected window."""
+    volume: float
+    """The average daily traded volume across the selected window."""
