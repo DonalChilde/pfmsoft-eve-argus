@@ -120,37 +120,45 @@ MarketGroupRoot = RootModel[MarketGroup]
 # --------Order Summary Models--------
 @dataclass(slots=True, kw_only=True)
 class OrderSummaryItem:
-    """Represents a summary of market orders."""
+    """Represents one side of the market depth for a single item type.
+
+    This summary is built from the valid orders after outlier filtering. The 5% depth
+    metrics describe the best-price threshold needed to reach 5% of the filtered volume.
+    """
 
     type_id: int
-    """The type ID of the item."""
+    """The item type ID represented by this summary."""
     is_buy_summary: bool
-    """Whether the summary is for buy orders."""
+    """True when this summary describes buy orders; False for sell orders."""
     five_price: float
-    """The price at which five percent of the available items can be transacted."""
+    """The price of the last order included in the 5% cumulative-volume threshold."""
     five_orders: int
-    """The number of orders available at the five percent price."""
+    """The number of orders needed to reach the 5% cumulative-volume target."""
     five_items: int
-    """The number of items available at the five percent price."""
+    """The total volume available at or better than ``five_price`` in the threshold bucket."""
     lowest: float
-    """The lowest price."""
+    """The lowest valid order price after outlier filtering."""
     highest: float
-    """The highest price."""
+    """The highest valid order price after outlier filtering."""
     total_items: int
-    """The total number of items available."""
+    """The total valid volume remaining after outlier filtering."""
     total_orders: int
-    """The total number of orders."""
+    """The count of valid orders remaining after outlier filtering."""
     avg_price: float
-    """The volume weighted average price of the available items."""
+    """The volume-weighted average price of the valid orders."""
     filtered_items: int
-    """The number of items that did not meet the threshold."""
+    """The volume removed by the outlier filter."""
     filtered_orders: int
-    """The number of orders that did not meet the threshold."""
+    """The number of orders removed by the outlier filter."""
 
 
 @dataclass(slots=True, kw_only=True)
 class OrderSummary:
-    """Represents a summary of market orders for a specific region and type."""
+    """Represents the buy and sell summary for one item type in a region.
+
+    The summary may be scoped to a single solar system or location instead of the whole
+    region.
+    """
 
     region_id: int
     solar_system_id: int | None
@@ -162,9 +170,10 @@ class OrderSummary:
 
 @dataclass(slots=True, kw_only=True)
 class OrderSummaries(EsiModelBase):
-    """Represents a collection of order summaries for a specific region.
+    """Represents the collection of order summaries for a region.
 
-    Can also be limited by solar system or location, and filtered by a threshold factor.
+    The collection may be limited to a specific solar system or location and uses a shared
+    outlier filter factor for all item summaries.
     """
 
     region_id: int
