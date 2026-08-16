@@ -498,7 +498,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "pfmsoft-eve-link", specifier = ">=0.4.6" },
+    { name = "pfmsoft-eve-link", specifier = ">=0.4.7" },
     { name = "pfmsoft-eve-sd", specifier = ">=0.4.6" },
     { name = "pfmsoft-eve-snippets", specifier = ">=0.1.8" },
     { name = "pydantic", specifier = ">=2.13.4" },
@@ -538,7 +538,7 @@ wheels = [
 
 [[package]]
 name = "pfmsoft-eve-link"
-version = "0.4.6"
+version = "0.4.7"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "httpx2" },
@@ -555,9 +555,9 @@ dependencies = [
     { name = "typer" },
     { name = "whenever" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/87/db/78ec193fdab76cbdfd9ead09d3a952c9cd236fe8006aa1692978bb8e3206/pfmsoft_eve_link-0.4.6.tar.gz", hash = "sha256:520da1c474c19e20cf2059b0e4986a8381124e0e6eba9bee620d1667a611a242", size = 44943, upload-time = "2026-08-11T23:56:05.54Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/f9/e5/294fd4065b2cabe26017160b5ed5f9a54038c75c4c10f91a569d5e639e5b/pfmsoft_eve_link-0.4.7.tar.gz", hash = "sha256:70dac2772faf2c1ec2bc688a267bb8d92a784c58d4ddc686552ff89d2c82a2fe", size = 45013, upload-time = "2026-08-15T23:57:01.359Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/f9/75/85f08fc5cc5cfbc5909a81ccdeb20a8aca61729115fb89ee2201e31210bd/pfmsoft_eve_link-0.4.6-py3-none-any.whl", hash = "sha256:408c021081b57f504e51f1efcab02161e81dc83a7ec3051cd8717afef831c693", size = 76094, upload-time = "2026-08-11T23:56:04.347Z" },
+    { url = "https://files.pythonhosted.org/packages/c1/f9/74b8d647d2fb59445137ae9f3769ec9c2456682f2586ab94d145a918a51c/pfmsoft_eve_link-0.4.7-py3-none-any.whl", hash = "sha256:df99e1dbb03147bcb9bf6a8bf04ac142b5a0000d1289009957f13385e680578a", size = 76189, upload-time = "2026-08-15T23:57:00.063Z" },
 ]
 
 [[package]]
