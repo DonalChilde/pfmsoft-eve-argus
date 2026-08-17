@@ -21,6 +21,7 @@ class EveArgusResources:
         self._esi_link = EsiLink.from_settings(self._settings.eve_link_settings)
         await self._esi_link.__aenter__()
         self._sd_query_manager = EveSdDbQueryManager(self._settings.static_database)
+        self._sd_query_manager.__enter__()
         return self
 
     async def __aexit__(
@@ -54,3 +55,6 @@ class EveArgusResources:
                 "EveSdDbQueryManager is not initialized. Use 'async with' to initialize."
             )
         return self._sd_query_manager
+
+
+__all__ = ["EveArgusResources"]
