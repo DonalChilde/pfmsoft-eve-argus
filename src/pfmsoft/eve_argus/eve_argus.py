@@ -9,7 +9,7 @@ from pfmsoft.eve_sd import EveSdDbQueryManager
 from pfmsoft.eve_argus.settings import EveArgusSettings
 
 
-class EveArgus:
+class EveArgusResources:
     def __init__(self, settings: EveArgusSettings) -> None:
         """Initialize the EveArgus instance."""
         self._settings = settings
