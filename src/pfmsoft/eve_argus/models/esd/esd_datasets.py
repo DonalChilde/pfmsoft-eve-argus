@@ -61,9 +61,9 @@ class BlueprintRecord:
     | maxProductionLimit | yes      | int        | 5082/5082 |
     """
 
-    blueprint_type_id: int
+    blueprintTypeID: int
     activities: BlueprintActivities
-    max_production_limit: int | None = None
+    maxProductionLimit: int | None = None
 
 
 BlueprintsDataset = dict[int, BlueprintRecord]
@@ -72,15 +72,15 @@ BlueprintsDatasetRoot = RootModel[BlueprintsDataset]
 
 @dataclass(slots=True, kw_only=True)
 class TypeMaterials_Material:
-    material_type_id: int
+    materialTypeID: int
     quantity: int
 
 
 @dataclass(slots=True, kw_only=True)
 class TypeMaterials_RandomizedMaterial:
-    material_type_id: int
-    quantity_max: int
-    quantity_min: int
+    materialTypeID: int
+    quantityMax: int
+    quantityMin: int
 
 
 @dataclass(slots=True, kw_only=True)
@@ -187,9 +187,9 @@ TypesDatasetRoot = RootModel[TypesDataset]
 
 @dataclass(slots=True, kw_only=True)
 class Color:
-    b: int
-    g: int
-    r: int
+    b: float
+    g: float
+    r: float
 
 
 @dataclass(slots=True, kw_only=True)
