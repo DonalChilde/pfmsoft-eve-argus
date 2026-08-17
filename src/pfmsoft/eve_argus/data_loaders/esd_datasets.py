@@ -2,7 +2,7 @@
 
 from typing import Any
 
-from pfmsoft.eve_sd import DatasetDbQuery
+from pfmsoft.eve_sd import EveSdDbQueryManager
 
 from pfmsoft.eve_argus.data_loaders.protocols import EsdDatasetsLoaderProtocol
 from pfmsoft.eve_argus.models.esd import esd_datasets
@@ -11,14 +11,15 @@ from pfmsoft.eve_argus.models.esd import esd_datasets
 class EsdDatasetsLoader(EsdDatasetsLoaderProtocol):
     """Loader for ESD datasets."""
 
-    def __init__(self, db_query: DatasetDbQuery):
+    def __init__(self, db_query: EveSdDbQueryManager):
         """Initializes the loader with a database query interface."""
-        self._db_query = db_query
+        self.query_manager = db_query
 
     def blueprints(self) -> esd_datasets.BlueprintsDataset:
         """Returns the blueprints dataset loaded from ESD."""
         raw_dataset: dict[int, Any] = {
-            key: value for key, value in self._db_query.get_int_records("blueprints")
+            key: value
+            for key, value in self.query_manager.query.get_int_records("blueprints")
         }
         blueprints = esd_datasets.BlueprintsDatasetRoot(root=raw_dataset).root
         return blueprints
@@ -27,7 +28,7 @@ class EsdDatasetsLoader(EsdDatasetsLoaderProtocol):
         """Returns the type materials dataset loaded from ESD."""
         raw_dataset: dict[int, Any] = {
             key: value
-            for key, value in self._db_query.get_int_records("type_materials")
+            for key, value in self.query_manager.query.get_int_records("type_materials")
         }
         type_materials = esd_datasets.TypeMaterialsDatasetRoot(root=raw_dataset).root
         return type_materials
@@ -35,7 +36,8 @@ class EsdDatasetsLoader(EsdDatasetsLoaderProtocol):
     def types(self) -> esd_datasets.TypesDataset:
         """Returns the types dataset loaded from ESD."""
         raw_dataset: dict[int, Any] = {
-            key: value for key, value in self._db_query.get_int_records("types")
+            key: value
+            for key, value in self.query_manager.query.get_int_records("types")
         }
         types = esd_datasets.TypesDatasetRoot(root=raw_dataset).root
         return types
@@ -43,7 +45,8 @@ class EsdDatasetsLoader(EsdDatasetsLoaderProtocol):
     def meta_groups(self) -> esd_datasets.MetaGroupsDataset:
         """Returns the meta groups dataset loaded from ESD."""
         raw_dataset: dict[int, Any] = {
-            key: value for key, value in self._db_query.get_int_records("meta_groups")
+            key: value
+            for key, value in self.query_manager.query.get_int_records("meta_groups")
         }
         meta_groups = esd_datasets.MetaGroupsDatasetRoot(root=raw_dataset).root
         return meta_groups
@@ -51,7 +54,8 @@ class EsdDatasetsLoader(EsdDatasetsLoaderProtocol):
     def categories(self) -> esd_datasets.CategoriesDataset:
         """Returns the categories dataset loaded from ESD."""
         raw_dataset: dict[int, Any] = {
-            key: value for key, value in self._db_query.get_int_records("categories")
+            key: value
+            for key, value in self.query_manager.query.get_int_records("categories")
         }
         categories = esd_datasets.CategoriesDatasetRoot(root=raw_dataset).root
         return categories
@@ -59,7 +63,8 @@ class EsdDatasetsLoader(EsdDatasetsLoaderProtocol):
     def groups(self) -> esd_datasets.GroupsDataset:
         """Returns the groups dataset loaded from ESD."""
         raw_dataset: dict[int, Any] = {
-            key: value for key, value in self._db_query.get_int_records("groups")
+            key: value
+            for key, value in self.query_manager.query.get_int_records("groups")
         }
         groups = esd_datasets.GroupsDatasetRoot(root=raw_dataset).root
         return groups
