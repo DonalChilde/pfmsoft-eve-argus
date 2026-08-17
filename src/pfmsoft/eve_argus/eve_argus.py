@@ -36,3 +36,21 @@ class EveArgusResources:
         if self._sd_query_manager is not None:
             self._sd_query_manager.__exit__(exc_type, exc_value, traceback)
             self._sd_query_manager = None
+
+    @property
+    async def esi_link(self) -> EsiLink:
+        """Get the EsiLink instance."""
+        if self._esi_link is None:
+            raise RuntimeError(
+                "EsiLink is not initialized. Use 'async with' to initialize."
+            )
+        return self._esi_link
+
+    @property
+    def sd_query_manager(self) -> EveSdDbQueryManager:
+        """Get the EveSdDbQueryManager instance."""
+        if self._sd_query_manager is None:
+            raise RuntimeError(
+                "EveSdDbQueryManager is not initialized. Use 'async with' to initialize."
+            )
+        return self._sd_query_manager
