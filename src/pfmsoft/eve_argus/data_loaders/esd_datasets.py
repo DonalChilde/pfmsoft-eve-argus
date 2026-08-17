@@ -28,7 +28,7 @@ class EsdDatasetsLoader(EsdDatasetsLoaderProtocol):
         """Returns the type materials dataset loaded from ESD."""
         raw_dataset: dict[int, Any] = {
             key: value
-            for key, value in self.query_manager.query.get_int_records("type_materials")
+            for key, value in self.query_manager.query.get_int_records("typeMaterials")
         }
         type_materials = esd_datasets.TypeMaterialsDatasetRoot(root=raw_dataset).root
         return type_materials
@@ -46,7 +46,7 @@ class EsdDatasetsLoader(EsdDatasetsLoaderProtocol):
         """Returns the meta groups dataset loaded from ESD."""
         raw_dataset: dict[int, Any] = {
             key: value
-            for key, value in self.query_manager.query.get_int_records("meta_groups")
+            for key, value in self.query_manager.query.get_int_records("metaGroups")
         }
         meta_groups = esd_datasets.MetaGroupsDatasetRoot(root=raw_dataset).root
         return meta_groups
