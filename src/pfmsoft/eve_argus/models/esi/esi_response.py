@@ -182,7 +182,7 @@ class GetMarketsRegionIdHistory(EsiResponseBase):
 class GetMarketsRegionIdHistoryCollectedResponse(EsiResponseBaseModel):
     """Pydantic BaseModel for GetMarketsRegionIdHistory response."""
 
-    response_data: dict[tuple[int, int], GetMarketsRegionIdHistory]
+    response_data: list[GetMarketsRegionIdHistory]
     """The response data is a dictionary with keys as tuples of (region_id, type_id) 
         and values as GetMarketsRegionIdHistory instances."""
 
