@@ -1,3 +1,9 @@
+"""Proof script for the ESI data loader.
+
+This script demonstrates the usage of the ESI data loader by loading various ESI responses
+and printing the results.
+"""
+
 import asyncio
 from logging import getLogger
 from time import perf_counter_ns
