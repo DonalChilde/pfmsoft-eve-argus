@@ -74,6 +74,9 @@ class GetMarketsRegionIdOrdersDetail:
     volume_total: int
 
 
+GetMarketsRegionIdOrdersDetailRoot = RootModel[GetMarketsRegionIdOrdersDetail]
+
+
 @dataclass(slots=True, kw_only=True)
 class GetMarketsRegionIdOrders(EsiResponseBase):
     """Response model for market orders."""
@@ -125,6 +128,21 @@ class GetMarketsGroupsMarketGroupIdDetail:
     parent_group_id: int | None = None
     types: list[int] = field(default_factory=list[int])
 
+    def serialize(self, indent: int | None = 2) -> str:
+        """Serializes the GetMarketsGroupsMarketGroupIdDetail to a JSON string."""
+        return GetMarketsGroupsMarketGroupIdDetailRoot(root=self).model_dump_json(
+            indent=indent
+        )
+
+    @classmethod
+    def deserialize(cls, data: str) -> GetMarketsGroupsMarketGroupIdDetail:
+        """Deserializes a JSON string to a GetMarketsGroupsMarketGroupIdDetail model."""
+        result = GetMarketsGroupsMarketGroupIdDetailRoot.model_validate_json(data).root
+        return result
+
+
+GetMarketsGroupsMarketGroupIdDetailRoot = RootModel[GetMarketsGroupsMarketGroupIdDetail]
+
 
 @dataclass(slots=True, kw_only=True)
 class GetMarketsGroupsMarketGroupId(EsiResponseBase):
@@ -150,8 +168,8 @@ class GetMarketsPricesDetail:
     """Detail for market prices response."""
 
     type_id: int
-    average_price: float | None
-    adjusted_price: float | None
+    average_price: float | None = None
+    adjusted_price: float | None = None
 
 
 @dataclass(slots=True, kw_only=True)
@@ -183,6 +201,9 @@ class GetMarketsRegionIdHistoryDetail:
     lowest: float
     order_count: int
     volume: int
+
+
+GetMarketsRegionIdHistoryDetailRoot = RootModel[GetMarketsRegionIdHistoryDetail]
 
 
 @dataclass(slots=True, kw_only=True)
