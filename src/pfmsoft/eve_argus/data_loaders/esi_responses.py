@@ -136,7 +136,7 @@ class EsiResponseLoader(EsiResponseLoaderProtocol):
                 f"Failed to load {failed_count} market histories for region {region_id}: {failed_messages}"
             )
 
-        result_dict: dict[tuple[int, int], dict[str, Any]] = {}
+        result_list: list[dict[str, Any]] = []
         for response_item in response.successful_responses.values():
             response_dict: dict[str, Any] = {
                 "received_at": _received_at_from_response(response_item),
@@ -145,11 +145,9 @@ class EsiResponseLoader(EsiResponseLoaderProtocol):
                 "type_id": response_item.esi_request.query_parameters["type_id"],  # type: ignore
                 "history": response_item.response_data,
             }
-            result_dict[(response_dict["region_id"], response_dict["type_id"])] = (
-                response_dict
-            )
+            result_list.append(response_dict)
         return esi_response.GetMarketsRegionIdHistoryCollectedResponse.model_validate({
-            "response_data": result_dict
+            "response_data": result_list
         })
 
     async def markets_prices(self) -> esi_response.GetMarketsPricesResponse:
