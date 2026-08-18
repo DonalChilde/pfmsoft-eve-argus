@@ -128,10 +128,16 @@ def calculate_order_summary(
             sell_orders = collected_orders.sell_orders
 
     buy_summary = calculate_order_summary_detail(
-        buy_orders, is_buy_summary=True, filter_factor=filter_factor
+        type_id=type_id,
+        orders=buy_orders,
+        is_buy_summary=True,
+        filter_factor=filter_factor,
     )
     sell_summary = calculate_order_summary_detail(
-        sell_orders, is_buy_summary=False, filter_factor=filter_factor
+        type_id=type_id,
+        orders=sell_orders,
+        is_buy_summary=False,
+        filter_factor=filter_factor,
     )
     return esi_argus.OrderSummary(
         region_id=region_id,
@@ -144,6 +150,7 @@ def calculate_order_summary(
 
 
 def calculate_order_summary_detail(
+    type_id: int,
     orders: Sequence[esi_argus.MarketOrderDetail],
     is_buy_summary: bool,
     filter_factor: float = 100.0,
@@ -163,6 +170,7 @@ def calculate_order_summary_detail(
     multiplied by ``filter_factor``.
 
     Args:
+        type_id: The item type being summarized.
         orders: A sequence of market orders for one item type and one side of the book.
         is_buy_summary: ``True`` to summarize buy orders; ``False`` to summarize sell
             orders.
@@ -194,12 +202,11 @@ def calculate_order_summary_detail(
     five_items = filtered_items = filtered_orders = 0
 
     # Check that all orders have the same is_buy_order and type_id.
-    type_id_check: int = orders[0].type_id if orders else 0
     for order in orders:
         if order.is_buy_order != is_buy_summary:
             msg = f"Order is_buy_order {order.is_buy_order} does not match summary type {is_buy_summary}"
             raise ValueError(msg)
-        if order.type_id != type_id_check:
+        if order.type_id != type_id:
             msg = "All orders must be of the same type_id."
             raise ValueError(msg)
 
@@ -255,23 +262,23 @@ def calculate_order_summary_detail(
             else 0
         )
 
-    summary = esi_argus.OrderSummaryItem(
-        type_id=type_id_check,
-        is_buy_summary=is_buy_summary,
-        five_price=five_price,
-        five_orders=five_orders_count,
-        five_items=five_items,
-        lowest=lowest,
-        highest=highest,
-        total_items=total_items,
-        total_orders=total_orders,
-        avg_price=avg_price,
-        filtered_items=filtered_items,
-        filtered_orders=filtered_orders,
-    )
+    # summary = esi_argus.OrderSummaryItem(
+    #     type_id=type_id,
+    #     is_buy_summary=is_buy_summary,
+    #     five_price=five_price,
+    #     five_orders=five_orders_count,
+    #     five_items=five_items,
+    #     lowest=lowest,
+    #     highest=highest,
+    #     total_items=total_items,
+    #     total_orders=total_orders,
+    #     avg_price=avg_price,
+    #     filtered_items=filtered_items,
+    #     filtered_orders=filtered_orders,
+    # )
 
     summary = esi_argus.OrderSummaryItem(
-        type_id=type_id_check,
+        type_id=type_id,
         is_buy_summary=is_buy_summary,
         five_price=five_price,
         five_orders=five_orders_count,

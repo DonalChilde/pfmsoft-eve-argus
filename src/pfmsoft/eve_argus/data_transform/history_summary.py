@@ -3,6 +3,7 @@
 from datetime import date, timedelta
 
 from pfmsoft.eve_argus.models.esi import esi_argus, esi_response
+from pfmsoft.eve_argus.models.types import RegionID, TypeID
 
 
 def date_range_days(start_date: str, days: int, descending: bool = True) -> list[str]:
@@ -119,3 +120,37 @@ def calculate_history_summary(
         volume=volume / len(dates) if len(dates) > 0 else 0.0,
     )
     return summary
+
+
+RegionalHistories = dict[RegionID, dict[TypeID, esi_response.GetMarketsRegionIdHistory]]
+
+
+def calculate_regional_history_summaries(
+    regional_histories: RegionalHistories,
+    period: int,
+) -> esi_argus.RegionalHistorySummaries:
+    """Calculate history summaries for all item types in a region.
+
+    Args:
+        regional_histories: The ESI response containing market history data for multiple
+            item types in a region.
+        period: The number of consecutive days to include in each summary.
+
+    Returns:
+        A `RegionalHistorySummaries` object containing the aggregated summaries for all
+        item types in the region.
+    """
+    if not regional_histories:
+        raise ValueError(
+            "Regional histories data is empty; cannot calculate summaries."
+        )
+    if len(regional_histories) > 1:
+        raise ValueError(
+            "Regional histories data contains multiple regions; expected only one region."
+        )
+    region_id = next(iter(regional_histories.keys()))
+    summaries: dict[TypeID, esi_argus.HistorySummary] = {}
+    for type_id, history in regional_histories[region_id].items():
+        summary = calculate_history_summary(history=history, period=period)
+        summaries[type_id] = summary
+    return esi_argus.RegionalHistorySummaries(region_id=region_id, summaries=summaries)
