@@ -39,6 +39,9 @@ class EveArgusSettings:
     """The settings for the pfmsoft-eve-link package used by the application."""
     eve_sd_settings: EveSDSettings
     """The settings for the pfmsoft-eve-sd package used by the application."""
+    compatibility_date: str | None = None
+    """The date used for ESI compatibility checks, in YYYY-MM-DD format. If None, the 
+    most recent valid date is used."""
 
 
 class EveArgusSettingsPydantic(BaseSettings):
