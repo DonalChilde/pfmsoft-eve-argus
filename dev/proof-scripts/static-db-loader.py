@@ -26,7 +26,7 @@ async def prove_static_data_loader(resource_manager: EveArgusResources):
         print(
             f"Time taken to load blueprints: {(end_time - start_time) / 1_000_000_000:.6f} seconds"
         )
-        print(f"Loaded {len(blueprints)} blueprints.")
+        print(f"Loaded {len(blueprints.dataset)} blueprints.")
 
         start_time = perf_counter_ns()
         type_materials = esd_loader.type_materials()
@@ -34,7 +34,7 @@ async def prove_static_data_loader(resource_manager: EveArgusResources):
         print(
             f"Time taken to load type materials: {(end_time - start_time) / 1_000_000_000:.6f} seconds"
         )
-        print(f"Loaded {len(type_materials)} type materials.")
+        print(f"Loaded {len(type_materials.dataset)} type materials.")
 
         start_time = perf_counter_ns()
         types_published: bool | None = (
@@ -45,7 +45,7 @@ async def prove_static_data_loader(resource_manager: EveArgusResources):
         print(
             f"Time taken to load types: {(end_time - start_time) / 1_000_000_000:.6f} seconds"
         )
-        print(f"Loaded {len(types)} types. Published filter: {types_published}")
+        print(f"Loaded {len(types.dataset)} types. Published filter: {types_published}")
 
         start_time = perf_counter_ns()
         meta_groups = esd_loader.meta_groups()
@@ -53,7 +53,7 @@ async def prove_static_data_loader(resource_manager: EveArgusResources):
         print(
             f"Time taken to load meta groups: {(end_time - start_time) / 1_000_000_000:.6f} seconds"
         )
-        print(f"Loaded {len(meta_groups)} meta groups.")
+        print(f"Loaded {len(meta_groups.dataset)} meta groups.")
 
         start_time = perf_counter_ns()
         categories = esd_loader.categories()
@@ -61,7 +61,7 @@ async def prove_static_data_loader(resource_manager: EveArgusResources):
         print(
             f"Time taken to load categories: {(end_time - start_time) / 1_000_000_000:.6f} seconds"
         )
-        print(f"Loaded {len(categories)} categories.")
+        print(f"Loaded {len(categories.dataset)} categories.")
 
         start_time = perf_counter_ns()
         groups = esd_loader.groups()
@@ -69,7 +69,7 @@ async def prove_static_data_loader(resource_manager: EveArgusResources):
         print(
             f"Time taken to load groups: {(end_time - start_time) / 1_000_000_000:.6f} seconds"
         )
-        print(f"Loaded {len(groups)} groups.")
+        print(f"Loaded {len(groups.dataset)} groups.")
 
 
 if __name__ == "__main__":
