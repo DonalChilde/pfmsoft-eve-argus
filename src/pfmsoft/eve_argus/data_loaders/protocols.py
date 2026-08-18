@@ -49,7 +49,7 @@ class EsdArgusLoaderProtocol(Protocol):
 class EsiResponseLoaderProtocol(Protocol):
     """Protocol for loading ESI response data."""
 
-    async def market_group_ids(self) -> esi_response.GetMarketsGroups:
+    async def market_group_ids(self) -> esi_response.GetMarketsGroupsResponse:
         """Loads the market group IDs from ESI."""
         raise NotImplementedError(
             "Subclasses must implement the market_group_ids method."
@@ -57,7 +57,7 @@ class EsiResponseLoaderProtocol(Protocol):
 
     async def market_groups_details(
         self, market_group_ids: set[int]
-    ) -> dict[int, esi_response.GetMarketsGroupsMarketGroupId]:
+    ) -> esi_response.GetMarketsGroupsMarketGroupIdCollectedResponse:
         """Loads the market group details from ESI."""
         raise NotImplementedError(
             "Subclasses must implement the market_group_details method."
@@ -65,7 +65,7 @@ class EsiResponseLoaderProtocol(Protocol):
 
     async def region_market_orders(
         self, region_id: int
-    ) -> esi_response.GetMarketsRegionIdOrders:
+    ) -> esi_response.GetMarketsRegionIdOrdersResponse:
         """Loads the market orders for a region from ESI."""
         raise NotImplementedError(
             "Subclasses must implement the region_market_orders method."
@@ -73,19 +73,19 @@ class EsiResponseLoaderProtocol(Protocol):
 
     async def region_market_histories(
         self, region_id: int, type_ids: set[int]
-    ) -> dict[int, esi_response.GetMarketsRegionIdHistory]:
+    ) -> esi_response.GetMarketsRegionIdHistoryCollectedResponse:
         """Loads the market history for a region and types from ESI."""
         raise NotImplementedError(
             "Subclasses must implement the region_market_history method."
         )
 
-    async def markets_prices(self) -> esi_response.GetMarketsPrices:
+    async def markets_prices(self) -> esi_response.GetMarketsPricesResponse:
         """Loads the market prices from ESI."""
         raise NotImplementedError(
             "Subclasses must implement the markets_prices method."
         )
 
-    async def industry_systems(self) -> esi_response.GetIndustrySystems:
+    async def industry_systems(self) -> esi_response.GetIndustrySystemsResponse:
         """Loads the industry systems from ESI."""
         raise NotImplementedError(
             "Subclasses must implement the industry_systems method."

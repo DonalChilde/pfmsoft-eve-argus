@@ -5,11 +5,32 @@ These models represent ESI data transformed into formats useful for the Argus ap
 They are meant to be consumed by Argus functions, and possibly persisted in the Argus database.
 """
 
-from dataclasses import dataclass, field
-from typing import Self
+# TODO align this model collection with the other model collections, focus serialization
+# and validation in wrapper classes, and use dataclasses for the data models themselves.
 
-from pydantic import RootModel
+from dataclasses import dataclass, field
+from typing import Any, Self
+
+from pydantic import BaseModel, RootModel
 from whenever import Instant
+
+
+class EsiArgusBaseModel(BaseModel):
+    """BaseModel class for ESI Argus models.
+
+    This class is a wrapper for serialization and validation of ESI Argus model data.
+    """
+
+    dataset: Any
+
+    def serialize(self, indent: int | None = 2) -> str:
+        """Serializes the ESI Argus model to a JSON string."""
+        return self.model_dump_json(indent=indent)
+
+    @classmethod
+    def deserialize(cls, data: str) -> Self:
+        """Deserializes a JSON string to an ESI Argus model."""
+        return cls.model_validate_json(data)
 
 
 @dataclass(slots=True, kw_only=True)
@@ -64,6 +85,12 @@ class MarketGroup(EsiModelBase):
         """Deserializes a JSON string to a MarketGroup model."""
         result = MarketGroupRoot.model_validate_json(data).root
         return result
+
+
+class MarketGroupsDataset(EsiArgusBaseModel):
+    """Argus model for a dataset of market groups."""
+
+    dataset: dict[int, MarketGroup]
 
 
 @dataclass(slots=True, kw_only=True)
@@ -181,6 +208,19 @@ class OrderSummaries(EsiModelBase):
     location_id: int | None
     filter_factor: float
     summaries: dict[int, OrderSummary]
+
+    def serialize(self, indent: int | None = 2) -> str:
+        """Serializes the OrderSummaries to a JSON string."""
+        return OrderSummariesRoot(root=self).model_dump_json(indent=indent)
+
+    @classmethod
+    def deserialize(cls, data: str) -> OrderSummaries:
+        """Deserializes a JSON string to an OrderSummaries model."""
+        result = OrderSummariesRoot.model_validate_json(data).root
+        return result
+
+
+OrderSummariesRoot = RootModel[OrderSummaries]
 
 
 # -----------Market History Summary Models-----------

@@ -1,17 +1,10 @@
 """Tests for the example_project namespace package."""
 
 from pfmsoft.eve_argus.data_transform.market_groups import transform_market_groups
-from pfmsoft.eve_argus.main import main
 from pfmsoft.eve_argus.models.esi.esi_response import (
     GetMarketsGroupsMarketGroupId,
     GetMarketsGroupsMarketGroupIdDetail,
 )
-
-
-def test_successful_example():
-    # main returns "Hello from namespace.example_project.main()!"
-
-    assert main() == "Hello from pfmsoft.eve_argus.main()!"
 
 
 def test_transform_market_groups_builds_parent_paths():

@@ -2,7 +2,7 @@
 
 import typer
 from pfmsoft.eve_link.cli import app as eve_link_app
-from pfmsoft.eve_sd.cli.main_typer import app as eve_sd_app
+from pfmsoft.eve_sd.cli import app as eve_sd_app
 
 app = typer.Typer(
     no_args_is_help=True,

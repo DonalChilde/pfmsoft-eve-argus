@@ -20,10 +20,28 @@ for the collection of items in the response model.
 
 from dataclasses import dataclass, field
 from enum import StrEnum
-from typing import Self
+from typing import Any, Self
 
-from pydantic import RootModel
+from pydantic import BaseModel
 from whenever import Instant
+
+
+class EsiResponseBaseModel(BaseModel):
+    """BaseModel class for ESI response models.
+
+    This class is a wrapper for serialization and validation of ESI response data.
+    """
+
+    response_data: Any
+
+    def serialize(self, indent: int | None = 2) -> str:
+        """Serializes the ESI response model to a JSON string."""
+        return self.model_dump_json(indent=indent)
+
+    @classmethod
+    def deserialize(cls, data: str) -> Self:
+        """Deserializes a JSON string to an ESI response model."""
+        return cls.model_validate_json(data)
 
 
 @dataclass(slots=True, kw_only=True)
@@ -45,15 +63,6 @@ class EsiResponseBase:
     def received_at_instant(self) -> Instant:
         """The timestamp when the ESI data was fetched as an Instant."""
         return Instant.parse_iso(self.received_at)
-
-    def serialize(self, indent: int | None = 2) -> str:
-        """Serializes the ESI response model to a JSON string."""
-        raise NotImplementedError("Subclasses must implement the serialize method.")
-
-    @classmethod
-    def deserialize(cls, data: str) -> Self:
-        """Deserializes a JSON string to an ESI response model."""
-        raise NotImplementedError("Subclasses must implement the deserialize method.")
 
 
 @dataclass(slots=True, kw_only=True)
@@ -82,36 +91,24 @@ class GetMarketsRegionIdOrders(EsiResponseBase):
     """The region ID for which the market orders were fetched."""
     orders: list[GetMarketsRegionIdOrdersDetail]
 
-    def serialize(self, indent: int | None = 2) -> str:
-        """Serializes the GetMarketsRegionIdOrders to a JSON string."""
-        return GetMarketsRegionIdOrdersRoot(root=self).model_dump_json(
-            indent=indent,
-        )
 
-    @classmethod
-    def deserialize(cls, data: str) -> GetMarketsRegionIdOrders:
-        """Deserializes a JSON string to a GetMarketsRegionIdOrders model."""
-        result = GetMarketsRegionIdOrdersRoot.model_validate_json(data).root
-        return result
+class GetMarketsRegionIdOrdersResponse(EsiResponseBaseModel):
+    """Pydantic BaseModel for GetMarketsRegionIdOrders response."""
+
+    response_data: GetMarketsRegionIdOrders
 
 
 @dataclass(slots=True, kw_only=True)
 class GetMarketsGroups(EsiResponseBase):
     """Response model for market groups."""
 
-    group_ids: list[int]
+    market_group_ids: list[int]
 
-    def serialize(self, indent: int | None = 2) -> str:
-        """Serializes the GetMarketsGroups to a JSON string."""
-        return GetMarketsGroupsRoot(root=self).model_dump_json(
-            indent=indent,
-        )
 
-    @classmethod
-    def deserialize(cls, data: str) -> GetMarketsGroups:
-        """Deserializes a JSON string to a GetMarketsGroups model."""
-        result = GetMarketsGroupsRoot.model_validate_json(data).root
-        return result
+class GetMarketsGroupsResponse(EsiResponseBaseModel):
+    """Pydantic BaseModel for GetMarketsGroups response."""
+
+    response_data: GetMarketsGroups
 
 
 @dataclass(slots=True, kw_only=True)
@@ -132,17 +129,11 @@ class GetMarketsGroupsMarketGroupId(EsiResponseBase):
 
     market_group: GetMarketsGroupsMarketGroupIdDetail
 
-    def serialize(self, indent: int | None = 2) -> str:
-        """Serializes the GetMarketsGroupsMarketGroupId to a JSON string."""
-        return GetMarketsGroupsMarketGroupIdRoot(root=self).model_dump_json(
-            indent=indent,
-        )
 
-    @classmethod
-    def deserialize(cls, data: str) -> GetMarketsGroupsMarketGroupId:
-        """Deserializes a JSON string to a GetMarketsGroupsMarketGroupId model."""
-        result = GetMarketsGroupsMarketGroupIdRoot.model_validate_json(data).root
-        return result
+class GetMarketsGroupsMarketGroupIdCollectedResponse(EsiResponseBaseModel):
+    """Pydantic BaseModel for GetMarketsGroupsMarketGroupId response."""
+
+    response_data: dict[int, GetMarketsGroupsMarketGroupId]
 
 
 @dataclass(slots=True, kw_only=True)
@@ -150,27 +141,21 @@ class GetMarketsPricesDetail:
     """Detail for market prices response."""
 
     type_id: int
-    average_price: float | None
-    adjusted_price: float | None
+    average_price: float | None = None
+    adjusted_price: float | None = None
 
 
 @dataclass(slots=True, kw_only=True)
 class GetMarketsPrices(EsiResponseBase):
     """Response model for market prices."""
 
-    prices: list[GetMarketsPricesDetail]
+    markets_prices: list[GetMarketsPricesDetail]
 
-    def serialize(self, indent: int | None = 2) -> str:
-        """Serializes the GetMarketsPrices to a JSON string."""
-        return GetMarketsPricesRoot(root=self).model_dump_json(
-            indent=indent,
-        )
 
-    @classmethod
-    def deserialize(cls, data: str) -> GetMarketsPrices:
-        """Deserializes a JSON string to a GetMarketsPrices model."""
-        result = GetMarketsPricesRoot.model_validate_json(data).root
-        return result
+class GetMarketsPricesResponse(EsiResponseBaseModel):
+    """Pydantic BaseModel for GetMarketsPrices response."""
+
+    response_data: GetMarketsPrices
 
 
 @dataclass(slots=True, kw_only=True)
@@ -193,17 +178,13 @@ class GetMarketsRegionIdHistory(EsiResponseBase):
     type_id: int
     history: list[GetMarketsRegionIdHistoryDetail]
 
-    def serialize(self, indent: int | None = 2) -> str:
-        """Serializes the GetMarketsRegionIdHistory to a JSON string."""
-        return GetMarketsRegionIdHistoryRoot(root=self).model_dump_json(
-            indent=indent,
-        )
 
-    @classmethod
-    def deserialize(cls, data: str) -> GetMarketsRegionIdHistory:
-        """Deserializes a JSON string to a GetMarketsRegionIdHistory model."""
-        result = GetMarketsRegionIdHistoryRoot.model_validate_json(data).root
-        return result
+class GetMarketsRegionIdHistoryCollectedResponse(EsiResponseBaseModel):
+    """Pydantic BaseModel for GetMarketsRegionIdHistory response."""
+
+    response_data: list[GetMarketsRegionIdHistory]
+    """The response data is a dictionary with keys as tuples of (region_id, type_id) 
+        and values as GetMarketsRegionIdHistory instances."""
 
 
 class CostIndicesActivity(StrEnum):
@@ -239,24 +220,10 @@ class GetIndustrySystemsDetail:
 class GetIndustrySystems(EsiResponseBase):
     """Response model for industry systems cost indices."""
 
-    systems: list[GetIndustrySystemsDetail]
-
-    def serialize(self, indent: int | None = 2) -> str:
-        """Serializes the GetIndustrySystems to a JSON string."""
-        return GetIndustrySystemsRoot(root=self).model_dump_json(
-            indent=indent,
-        )
-
-    @classmethod
-    def deserialize(cls, data: str) -> GetIndustrySystems:
-        """Deserializes a JSON string to a GetIndustrySystems model."""
-        result = GetIndustrySystemsRoot.model_validate_json(data).root
-        return result
+    industry_systems: list[GetIndustrySystemsDetail]
 
 
-GetIndustrySystemsRoot = RootModel[GetIndustrySystems]
-GetMarketsRegionIdHistoryRoot = RootModel[GetMarketsRegionIdHistory]
-GetMarketsPricesRoot = RootModel[GetMarketsPrices]
-GetMarketsRegionIdOrdersRoot = RootModel[GetMarketsRegionIdOrders]
-GetMarketsGroupsRoot = RootModel[GetMarketsGroups]
-GetMarketsGroupsMarketGroupIdRoot = RootModel[GetMarketsGroupsMarketGroupId]
+class GetIndustrySystemsResponse(EsiResponseBaseModel):
+    """Pydantic BaseModel for GetIndustrySystems response."""
+
+    response_data: GetIndustrySystems

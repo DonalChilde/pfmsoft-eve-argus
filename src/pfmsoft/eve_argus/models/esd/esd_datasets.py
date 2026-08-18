@@ -1,8 +1,22 @@
 """Data models for EVE Online Static Data Export (ESD) datasets."""
 
 from dataclasses import dataclass, field
+from typing import Any, Self
 
-from pydantic import RootModel
+from pydantic import BaseModel
+
+
+class SdeDataset(BaseModel):
+    dataset: Any
+
+    def serialize(self, indent: int | None = None) -> str:
+        """Serialize the dataset to a JSON string."""
+        return self.model_dump_json(indent=indent)
+
+    @classmethod
+    def deserialize(cls, data: str) -> Self:
+        """Deserialize the dataset from a JSON string."""
+        return cls.model_validate_json(data)
 
 
 @dataclass(slots=True, kw_only=True)
@@ -61,26 +75,26 @@ class BlueprintRecord:
     | maxProductionLimit | yes      | int        | 5082/5082 |
     """
 
-    blueprint_type_id: int
+    blueprintTypeID: int
     activities: BlueprintActivities
-    max_production_limit: int | None = None
+    maxProductionLimit: int | None = None
 
 
-BlueprintsDataset = dict[int, BlueprintRecord]
-BlueprintsDatasetRoot = RootModel[BlueprintsDataset]
+class BlueprintsDataset(SdeDataset):
+    dataset: dict[int, BlueprintRecord]
 
 
 @dataclass(slots=True, kw_only=True)
 class TypeMaterials_Material:
-    material_type_id: int
+    materialTypeID: int
     quantity: int
 
 
 @dataclass(slots=True, kw_only=True)
 class TypeMaterials_RandomizedMaterial:
-    material_type_id: int
-    quantity_max: int
-    quantity_min: int
+    materialTypeID: int
+    quantityMax: int
+    quantityMin: int
 
 
 @dataclass(slots=True, kw_only=True)
@@ -105,8 +119,8 @@ class TypeMaterialsRecord:
     )
 
 
-TypeMaterialsDataset = dict[int, TypeMaterialsRecord]
-TypeMaterialsDatasetRoot = RootModel[TypeMaterialsDataset]
+class TypeMaterialsDataset(SdeDataset):
+    dataset: dict[int, TypeMaterialsRecord]
 
 
 @dataclass(slots=True, kw_only=True)
@@ -181,15 +195,15 @@ class TypesRecord:
     volume: float | None = None
 
 
-TypesDataset = dict[int, TypesRecord]
-TypesDatasetRoot = RootModel[TypesDataset]
+class TypesDataset(SdeDataset):
+    dataset: dict[int, TypesRecord]
 
 
 @dataclass(slots=True, kw_only=True)
 class Color:
-    b: int
-    g: int
-    r: int
+    b: float
+    g: float
+    r: float
 
 
 @dataclass(slots=True, kw_only=True)
@@ -216,8 +230,8 @@ class MetaGroupsRecord:
     color: Color | None = None
 
 
-MetaGroupsDataset = dict[int, MetaGroupsRecord]
-MetaGroupsDatasetRoot = RootModel[MetaGroupsDataset]
+class MetaGroupsDataset(SdeDataset):
+    dataset: dict[int, MetaGroupsRecord]
 
 
 @dataclass(slots=True, kw_only=True)
@@ -240,8 +254,8 @@ class CategoriesRecord:
     iconID: int | None = None
 
 
-CategoriesDataset = dict[int, CategoriesRecord]
-CategoriesDatasetRoot = RootModel[CategoriesDataset]
+class CategoriesDataset(SdeDataset):
+    dataset: dict[int, CategoriesRecord]
 
 
 @dataclass(slots=True, kw_only=True)
@@ -275,5 +289,5 @@ class GroupsRecord:
     useBasePrice: bool
 
 
-GroupsDataset = dict[int, GroupsRecord]
-GroupsDatasetRoot = RootModel[GroupsDataset]
+class GroupsDataset(SdeDataset):
+    dataset: dict[int, GroupsRecord]

@@ -1,11 +1,10 @@
 """Transforms ESI market group details to Argus market group models."""
 
-from pfmsoft.eve_argus.models.esi.esi_argus import MarketGroup
-from pfmsoft.eve_argus.models.esi.esi_response import GetMarketsGroupsMarketGroupId
+from pfmsoft.eve_argus.models.esi import esi_argus, esi_response
 
 
 def _build_market_group_paths(
-    esi_market_groups: dict[int, GetMarketsGroupsMarketGroupId],
+    esi_market_groups: dict[int, esi_response.GetMarketsGroupsMarketGroupId],
 ) -> tuple[dict[int, tuple[str, ...]], dict[int, tuple[int, ...]]]:
     """Build the ancestor-name and ancestor-ID path chains for each market group."""
     path_str: dict[int, tuple[str, ...]] = {}
@@ -51,8 +50,8 @@ def _build_market_group_paths(
 
 
 def transform_market_groups(
-    esi_market_groups: dict[int, GetMarketsGroupsMarketGroupId],
-) -> dict[int, MarketGroup]:
+    esi_market_groups: dict[int, esi_response.GetMarketsGroupsMarketGroupId],
+) -> dict[int, esi_argus.MarketGroup]:
     """Transforms ESI market group details to Argus market group models.
 
     Args:
@@ -62,10 +61,10 @@ def transform_market_groups(
         A dictionary of Argus MarketGroup models keyed by market group ID.
     """
     path_str, path_int = _build_market_group_paths(esi_market_groups)
-    argus_market_groups: dict[int, MarketGroup] = {}
+    argus_market_groups: dict[int, esi_argus.MarketGroup] = {}
     for market_group_id, esi_group in esi_market_groups.items():
         detail = esi_group.market_group
-        argus_group = MarketGroup(
+        argus_group = esi_argus.MarketGroup(
             received_at=esi_group.received_at,
             expires_at=esi_group.expires_at,
             market_group_id=detail.market_group_id,
