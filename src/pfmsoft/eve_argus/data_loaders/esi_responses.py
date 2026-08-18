@@ -26,7 +26,7 @@ class EsiResponseLoader(EsiResponseLoaderProtocol):
         self._esi_link = esi_link
         self._schema = schema
 
-    async def market_group_ids(self) -> esi_response.GetMarketsGroups:
+    async def market_group_ids(self) -> esi_response.GetMarketsGroupsResponse:
         """Loads the market group IDs from ESI."""
         request = EsiRequest(operation_id="GetMarketsGroups")
         response = await self._esi_link.make_request(request, schema=self._schema)
@@ -34,21 +34,19 @@ class EsiResponseLoader(EsiResponseLoaderProtocol):
             raise RuntimeError(
                 f"Failed to load market group IDs: {response.failed_response.error_messages}"
             )
-        expires_at = _expires_at_from_response(response)
-        received_at = _received_at_from_response(response)
+
         response_dict: dict[str, Any] = {
-            "received_at": received_at,
-            "expires_at": expires_at,
-            "group_ids": response.response_data,
+            "response_data": {
+                "received_at": _received_at_from_response(response),
+                "expires_at": _expires_at_from_response(response),
+                "market_group_ids": response.response_data,
+            }
         }
-        validated_result = esi_response.GetMarketsGroupsRoot.model_validate(
-            response_dict
-        ).root
-        return validated_result
+        return esi_response.GetMarketsGroupsResponse.model_validate(response_dict)
 
     async def market_groups_details(
         self, market_group_ids: set[int]
-    ) -> dict[int, esi_response.GetMarketsGroupsMarketGroupId]:
+    ) -> esi_response.GetMarketsGroupsMarketGroupIdCollectedResponse:
         """Loads the market group details from ESI."""
         requests = [
             EsiRequest(
@@ -71,26 +69,25 @@ class EsiResponseLoader(EsiResponseLoaderProtocol):
                 f"Failed to load {failed_count} market group details: {failed_messages}"
             )
 
-        result_dict: dict[int, esi_response.GetMarketsGroupsMarketGroupId] = {}
+        collected_dict: dict[str, Any] = {}
         for response_item in response.successful_responses.values():
             response_dict: dict[str, Any] = {
                 "received_at": _received_at_from_response(response_item),
                 "expires_at": _expires_at_from_response(response_item),
                 "market_group": response_item.response_data,
             }
-            validated_result = (
-                esi_response.GetMarketsGroupsMarketGroupIdRoot.model_validate(
-                    response_dict
-                ).root
-            )
-            result_dict[validated_result.market_group.market_group_id] = (
-                validated_result
-            )
-        return result_dict
+            market_group_id = response_item.response_data["market_group_id"]
+            collected_dict[market_group_id] = response_dict
+
+        return (
+            esi_response.GetMarketsGroupsMarketGroupIdCollectedResponse.model_validate({
+                "response_data": collected_dict
+            })
+        )
 
     async def region_market_orders(
         self, region_id: int
-    ) -> esi_response.GetMarketsRegionIdOrders:
+    ) -> esi_response.GetMarketsRegionIdOrdersResponse:
         """Loads the market orders for a region from ESI."""
         request = EsiRequest(
             operation_id="GetMarketsRegionIdOrders",
@@ -108,14 +105,14 @@ class EsiResponseLoader(EsiResponseLoaderProtocol):
             "region_id": region_id,
             "orders": response.response_data,
         }
-        validated_result = esi_response.GetMarketsRegionIdOrdersRoot.model_validate(
-            response_dict
-        ).root
-        return validated_result
+
+        return esi_response.GetMarketsRegionIdOrdersResponse.model_validate({
+            "response_data": response_dict
+        })
 
     async def region_market_histories(
         self, region_id: int, type_ids: set[int]
-    ) -> dict[int, esi_response.GetMarketsRegionIdHistory]:
+    ) -> esi_response.GetMarketsRegionIdHistoryCollectedResponse:
         """Loads the market history for a region and types from ESI."""
         requests = [
             EsiRequest(
@@ -139,7 +136,7 @@ class EsiResponseLoader(EsiResponseLoaderProtocol):
                 f"Failed to load {failed_count} market histories for region {region_id}: {failed_messages}"
             )
 
-        result_dict: dict[int, esi_response.GetMarketsRegionIdHistory] = {}
+        result_dict: dict[tuple[int, int], dict[str, Any]] = {}
         for response_item in response.successful_responses.values():
             response_dict: dict[str, Any] = {
                 "received_at": _received_at_from_response(response_item),
@@ -148,15 +145,14 @@ class EsiResponseLoader(EsiResponseLoaderProtocol):
                 "type_id": response_item.esi_request.query_parameters["type_id"],  # type: ignore
                 "history": response_item.response_data,
             }
-            validated_result = (
-                esi_response.GetMarketsRegionIdHistoryRoot.model_validate(
-                    response_dict
-                ).root
+            result_dict[(response_dict["region_id"], response_dict["type_id"])] = (
+                response_dict
             )
-            result_dict[validated_result.type_id] = validated_result
-        return result_dict
+        return esi_response.GetMarketsRegionIdHistoryCollectedResponse.model_validate({
+            "response_data": result_dict
+        })
 
-    async def markets_prices(self) -> esi_response.GetMarketsPrices:
+    async def markets_prices(self) -> esi_response.GetMarketsPricesResponse:
         """Loads the market prices from ESI."""
         request = EsiRequest(operation_id="GetMarketsPrices")
         response = await self._esi_link.make_request(request, schema=self._schema)
@@ -167,14 +163,13 @@ class EsiResponseLoader(EsiResponseLoaderProtocol):
         response_dict: dict[str, Any] = {
             "received_at": _received_at_from_response(response),
             "expires_at": _expires_at_from_response(response),
-            "prices": response.response_data,
+            "markets_prices": response.response_data,
         }
-        validated_result = esi_response.GetMarketsPricesRoot.model_validate(
-            response_dict
-        ).root
-        return validated_result
+        return esi_response.GetMarketsPricesResponse.model_validate({
+            "response_data": response_dict
+        })
 
-    async def industry_systems(self) -> esi_response.GetIndustrySystems:
+    async def industry_systems(self) -> esi_response.GetIndustrySystemsResponse:
         """Loads the industry systems from ESI."""
         request = EsiRequest(operation_id="GetIndustrySystems")
         response = await self._esi_link.make_request(request, schema=self._schema)
@@ -185,12 +180,11 @@ class EsiResponseLoader(EsiResponseLoaderProtocol):
         response_dict: dict[str, Any] = {
             "received_at": _received_at_from_response(response),
             "expires_at": _expires_at_from_response(response),
-            "systems": response.response_data,
+            "industry_systems": response.response_data,
         }
-        validated_result = esi_response.GetIndustrySystemsRoot.model_validate(
-            response_dict
-        ).root
-        return validated_result
+        return esi_response.GetIndustrySystemsResponse.model_validate({
+            "response_data": response_dict
+        })
 
 
 def _expires_at_from_response(response: EsiResponse) -> str | None:

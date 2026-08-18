@@ -21,8 +21,7 @@ class EsdDatasetsLoader(EsdDatasetsLoaderProtocol):
             key: value
             for key, value in self.query_manager.query.get_int_records("blueprints")
         }
-        blueprints = esd_datasets.BlueprintsDatasetRoot(root=raw_dataset).root
-        return blueprints
+        return esd_datasets.BlueprintsDataset(dataset=raw_dataset)
 
     def type_materials(self) -> esd_datasets.TypeMaterialsDataset:
         """Returns the type materials dataset loaded from ESD."""
@@ -30,7 +29,7 @@ class EsdDatasetsLoader(EsdDatasetsLoaderProtocol):
             key: value
             for key, value in self.query_manager.query.get_int_records("typeMaterials")
         }
-        type_materials = esd_datasets.TypeMaterialsDatasetRoot(root=raw_dataset).root
+        type_materials = esd_datasets.TypeMaterialsDataset(dataset=raw_dataset)
         return type_materials
 
     def types(self, published: bool | None = None) -> esd_datasets.TypesDataset:
@@ -62,8 +61,7 @@ class EsdDatasetsLoader(EsdDatasetsLoaderProtocol):
                 raise ValueError(
                     f"Invalid value for 'published': {published}. Must be True, False, or None."
                 )
-        types = esd_datasets.TypesDatasetRoot(root=raw_dataset).root
-        return types
+        return esd_datasets.TypesDataset(dataset=raw_dataset)
 
     def meta_groups(self) -> esd_datasets.MetaGroupsDataset:
         """Returns the meta groups dataset loaded from ESD."""
@@ -71,7 +69,7 @@ class EsdDatasetsLoader(EsdDatasetsLoaderProtocol):
             key: value
             for key, value in self.query_manager.query.get_int_records("metaGroups")
         }
-        meta_groups = esd_datasets.MetaGroupsDatasetRoot(root=raw_dataset).root
+        meta_groups = esd_datasets.MetaGroupsDataset(dataset=raw_dataset)
         return meta_groups
 
     def categories(self) -> esd_datasets.CategoriesDataset:
@@ -80,7 +78,7 @@ class EsdDatasetsLoader(EsdDatasetsLoaderProtocol):
             key: value
             for key, value in self.query_manager.query.get_int_records("categories")
         }
-        categories = esd_datasets.CategoriesDatasetRoot(root=raw_dataset).root
+        categories = esd_datasets.CategoriesDataset(dataset=raw_dataset)
         return categories
 
     def groups(self) -> esd_datasets.GroupsDataset:
@@ -89,5 +87,5 @@ class EsdDatasetsLoader(EsdDatasetsLoaderProtocol):
             key: value
             for key, value in self.query_manager.query.get_int_records("groups")
         }
-        groups = esd_datasets.GroupsDatasetRoot(root=raw_dataset).root
+        groups = esd_datasets.GroupsDataset(dataset=raw_dataset)
         return groups
