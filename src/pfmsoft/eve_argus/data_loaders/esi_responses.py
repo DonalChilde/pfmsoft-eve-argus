@@ -1,5 +1,7 @@
 """Data loader for ESI responses in the EVE Argus project."""
 
+from typing import Any
+
 from pfmsoft.eve_link import (
     EsiLink,
     EsiRequest,
@@ -34,12 +36,14 @@ class EsiResponseLoader(EsiResponseLoaderProtocol):
             )
         expires_at = _expires_at_from_response(response)
         received_at = _received_at_from_response(response)
-        result = esi_response.GetMarketsGroups(
-            received_at=received_at,
-            expires_at=expires_at,
-            group_ids=response.response_data,
-        )
-        validated_result = esi_response.GetMarketsGroupsRoot(root=result).root
+        response_dict: dict[str, Any] = {
+            "received_at": received_at,
+            "expires_at": expires_at,
+            "group_ids": response.response_data,
+        }
+        validated_result = esi_response.GetMarketsGroupsRoot.model_validate(
+            response_dict
+        ).root
         return validated_result
 
     async def market_groups_details(
@@ -69,21 +73,19 @@ class EsiResponseLoader(EsiResponseLoaderProtocol):
 
         result_dict: dict[int, esi_response.GetMarketsGroupsMarketGroupId] = {}
         for response_item in response.successful_responses.values():
-            if isinstance(response, FailedEsiResponse):
-                raise RuntimeError(
-                    f"Failed to load market group details: {response.failed_response.error_messages}"
-                )
-            expires_at = _expires_at_from_response(response_item)
-            received_at = _received_at_from_response(response_item)
-            value = esi_response.GetMarketsGroupsMarketGroupId(
-                received_at=received_at,
-                expires_at=expires_at,
-                market_group=response_item.response_data,
+            response_dict: dict[str, Any] = {
+                "received_at": _received_at_from_response(response_item),
+                "expires_at": _expires_at_from_response(response_item),
+                "market_group": response_item.response_data,
+            }
+            validated_result = (
+                esi_response.GetMarketsGroupsMarketGroupIdRoot.model_validate(
+                    response_dict
+                ).root
             )
-            validated_value = esi_response.GetMarketsGroupsMarketGroupIdRoot(
-                root=value
-            ).root
-            result_dict[validated_value.market_group.market_group_id] = validated_value
+            result_dict[validated_result.market_group.market_group_id] = (
+                validated_result
+            )
         return result_dict
 
     async def region_market_orders(
@@ -100,15 +102,15 @@ class EsiResponseLoader(EsiResponseLoaderProtocol):
             raise RuntimeError(
                 f"Failed to load market orders for region {region_id}: {response.failed_response.error_messages}"
             )
-        expires_at = _expires_at_from_response(response)
-        received_at = _received_at_from_response(response)
-        result = esi_response.GetMarketsRegionIdOrders(
-            received_at=received_at,
-            expires_at=expires_at,
-            region_id=region_id,
-            orders=response.response_data,
-        )
-        validated_result = esi_response.GetMarketsRegionIdOrdersRoot(root=result).root
+        response_dict: dict[str, Any] = {
+            "received_at": _received_at_from_response(response),
+            "expires_at": _expires_at_from_response(response),
+            "region_id": region_id,
+            "orders": response.response_data,
+        }
+        validated_result = esi_response.GetMarketsRegionIdOrdersRoot.model_validate(
+            response_dict
+        ).root
         return validated_result
 
     async def region_market_histories(
@@ -139,23 +141,19 @@ class EsiResponseLoader(EsiResponseLoaderProtocol):
 
         result_dict: dict[int, esi_response.GetMarketsRegionIdHistory] = {}
         for response_item in response.successful_responses.values():
-            if isinstance(response_item, FailedEsiResponse):
-                raise RuntimeError(
-                    f"Failed to load market history for region {region_id}: {response_item.failed_response.error_messages}"
-                )
-            expires_at = _expires_at_from_response(response_item)
-            received_at = _received_at_from_response(response_item)
-            value = esi_response.GetMarketsRegionIdHistory(
-                received_at=received_at,
-                expires_at=expires_at,
-                region_id=region_id,
-                type_id=response_item.esi_request.query_parameters["type_id"],  # type: ignore
-                history=response_item.response_data,
+            response_dict: dict[str, Any] = {
+                "received_at": _received_at_from_response(response_item),
+                "expires_at": _expires_at_from_response(response_item),
+                "region_id": region_id,
+                "type_id": response_item.esi_request.query_parameters["type_id"],  # type: ignore
+                "history": response_item.response_data,
+            }
+            validated_result = (
+                esi_response.GetMarketsRegionIdHistoryRoot.model_validate(
+                    response_dict
+                ).root
             )
-            validated_value = esi_response.GetMarketsRegionIdHistoryRoot(
-                root=value
-            ).root
-            result_dict[validated_value.type_id] = validated_value
+            result_dict[validated_result.type_id] = validated_result
         return result_dict
 
     async def markets_prices(self) -> esi_response.GetMarketsPrices:
@@ -166,14 +164,14 @@ class EsiResponseLoader(EsiResponseLoaderProtocol):
             raise RuntimeError(
                 f"Failed to load market prices: {response.failed_response.error_messages}"
             )
-        expires_at = _expires_at_from_response(response)
-        received_at = _received_at_from_response(response)
-        result = esi_response.GetMarketsPrices(
-            received_at=received_at,
-            expires_at=expires_at,
-            prices=response.response_data,
-        )
-        validated_result = esi_response.GetMarketsPricesRoot(root=result).root
+        response_dict: dict[str, Any] = {
+            "received_at": _received_at_from_response(response),
+            "expires_at": _expires_at_from_response(response),
+            "prices": response.response_data,
+        }
+        validated_result = esi_response.GetMarketsPricesRoot.model_validate(
+            response_dict
+        ).root
         return validated_result
 
     async def industry_systems(self) -> esi_response.GetIndustrySystems:
@@ -184,14 +182,14 @@ class EsiResponseLoader(EsiResponseLoaderProtocol):
             raise RuntimeError(
                 f"Failed to load industry systems: {response.failed_response.error_messages}"
             )
-        expires_at = _expires_at_from_response(response)
-        received_at = _received_at_from_response(response)
-        result = esi_response.GetIndustrySystems(
-            received_at=received_at,
-            expires_at=expires_at,
-            systems=response.response_data,
-        )
-        validated_result = esi_response.GetIndustrySystemsRoot(root=result).root
+        response_dict: dict[str, Any] = {
+            "received_at": _received_at_from_response(response),
+            "expires_at": _expires_at_from_response(response),
+            "systems": response.response_data,
+        }
+        validated_result = esi_response.GetIndustrySystemsRoot.model_validate(
+            response_dict
+        ).root
         return validated_result
 
 
