@@ -37,12 +37,15 @@ async def prove_static_data_loader(resource_manager: EveArgusResources):
         print(f"Loaded {len(type_materials)} type materials.")
 
         start_time = perf_counter_ns()
-        types = esd_loader.types()
+        types_published: bool | None = (
+            True  # Change this to False or None to test other cases
+        )
+        types = esd_loader.types(published=types_published)
         end_time = perf_counter_ns()
         print(
             f"Time taken to load types: {(end_time - start_time) / 1_000_000_000:.6f} seconds"
         )
-        print(f"Loaded {len(types)} types.")
+        print(f"Loaded {len(types)} types. Published filter: {types_published}")
 
         start_time = perf_counter_ns()
         meta_groups = esd_loader.meta_groups()

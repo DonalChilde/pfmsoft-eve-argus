@@ -33,12 +33,35 @@ class EsdDatasetsLoader(EsdDatasetsLoaderProtocol):
         type_materials = esd_datasets.TypeMaterialsDatasetRoot(root=raw_dataset).root
         return type_materials
 
-    def types(self) -> esd_datasets.TypesDataset:
-        """Returns the types dataset loaded from ESD."""
-        raw_dataset: dict[int, Any] = {
-            key: value
-            for key, value in self.query_manager.query.get_int_records("types")
-        }
+    def types(self, published: bool | None = None) -> esd_datasets.TypesDataset:
+        """Returns the types dataset loaded from ESD.
+
+        Args:
+            published (bool | None): If True, returns only published types. None returns
+                all types. Defaults to None.
+        """
+        match published:
+            case True:
+                raw_dataset: dict[int, Any] = {
+                    key: value
+                    for key, value in self.query_manager.query.get_int_records("types")
+                    if value.get("published") is True
+                }
+            case False:
+                raw_dataset: dict[int, Any] = {
+                    key: value
+                    for key, value in self.query_manager.query.get_int_records("types")
+                    if value.get("published") is False
+                }
+            case None:
+                raw_dataset: dict[int, Any] = {
+                    key: value
+                    for key, value in self.query_manager.query.get_int_records("types")
+                }
+            case _:
+                raise ValueError(
+                    f"Invalid value for 'published': {published}. Must be True, False, or None."
+                )
         types = esd_datasets.TypesDatasetRoot(root=raw_dataset).root
         return types
 
