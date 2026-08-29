@@ -100,6 +100,12 @@ class EsiResponseLoaderProtocol(Protocol):
             "Subclasses must implement the universe_names method."
         )
 
+    async def universe_type_ids(self) -> esi_response.GetUniverseTypesResponse:
+        """Loads the universe type IDs from ESI."""
+        raise NotImplementedError(
+            "Subclasses must implement the universe_type_ids method."
+        )
+
     async def corporation_industry_jobs(
         self, corporation_id: int, character_id: int, credential_id: UUID
     ) -> esi_response.GetCorporationsCorporationIdIndustryJobsResponse:

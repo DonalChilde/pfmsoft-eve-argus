@@ -306,3 +306,16 @@ class GetCorporationsCorporationIdIndustryJobsResponse(EsiResponseBaseModel):
     """Pydantic BaseModel for GetCorporationsCorporationIdIndustryJobs response."""
 
     response_data: GetCorporationsCorporationIdIndustryJobs
+
+
+@dataclass(slots=True, kw_only=True)
+class GetUniverseTypes(EsiResponseBase):
+    """Response model for universe types."""
+
+    type_ids: list[int]
+
+
+class GetUniverseTypesResponse(EsiResponseBaseModel):
+    """Pydantic BaseModel for GetUniverseTypes response."""
+
+    response_data: GetUniverseTypes
