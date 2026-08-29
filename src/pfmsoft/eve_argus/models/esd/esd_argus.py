@@ -7,6 +7,12 @@ from pfmsoft.eve_argus.models.esd.esd_datasets import BlueprintsDataset, TypesDa
 
 logger = logging.getLogger(__name__)
 
+# FIXME: This is not the final design, more work is needed to simplify the argus specific datamodel.
+# - make activity output a single product instead of a list of products for manufacturing and reaction activities.
+# - include the portion size in the activity output instead of looking it up in the types dataset.
+# - make other changes that represent the specific model realities, instead of follwing the
+#    more generalized ESD model. This will make the structure based guarantees more clear.
+
 
 @dataclass(slots=True, kw_only=True)
 class ArgusBlueprintsDataset(BlueprintsDataset):
