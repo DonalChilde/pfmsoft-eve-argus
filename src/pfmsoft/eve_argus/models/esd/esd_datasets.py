@@ -5,6 +5,8 @@ from typing import Any, Self
 
 from pydantic import BaseModel
 
+from pfmsoft.eve_argus.models.types import LanguageEnum
+
 
 class SdeDataset(BaseModel):
     dataset: Any
@@ -128,13 +130,13 @@ class LocalizedString:
     """Localized string for a specific language."""
 
     en: str
-    de: str | None = None
-    fr: str | None = None
-    ja: str | None = None
-    ru: str | None = None
-    zh: str | None = None
-    es: str | None = None
-    ko: str | None = None
+    de: str = "NOT_DEFINED"
+    fr: str = "NOT_DEFINED"
+    ja: str = "NOT_DEFINED"
+    ru: str = "NOT_DEFINED"
+    zh: str = "NOT_DEFINED"
+    es: str = "NOT_DEFINED"
+    ko: str = "NOT_DEFINED"
 
 
 @dataclass(slots=True, kw_only=True)
@@ -194,6 +196,30 @@ class TypesRecord:
     variationParentTypeID: int | None = None
     volume: float | None = None
 
+    def name_localized(self, language: LanguageEnum = LanguageEnum.EN) -> str:
+        """Get the localized name for the specified language.
+
+        Args:
+            language (LanguageEnum): The language code (default: LanguageEnum.EN).
+
+        Returns:
+            str: The localized name.
+        """
+        return getattr(self.name, language, self.name.en)
+
+    def description_localized(self, language: LanguageEnum = LanguageEnum.EN) -> str:
+        """Get the localized description for the specified language.
+
+        Args:
+            language (LanguageEnum): The language code (default: LanguageEnum.EN).
+
+        Returns:
+            str: The localized description.
+        """
+        if self.description is None:
+            return "NOT_DEFINED"
+        return getattr(self.description, language, self.description.en)
+
 
 class TypesDataset(SdeDataset):
     dataset: dict[int, TypesRecord]
@@ -229,6 +255,30 @@ class MetaGroupsRecord:
     iconSuffix: str | None = None
     color: Color | None = None
 
+    def name_localized(self, language: LanguageEnum = LanguageEnum.EN) -> str:
+        """Get the localized name for the specified language.
+
+        Args:
+            language (LanguageEnum): The language code (default: LanguageEnum.EN).
+
+        Returns:
+            str: The localized name.
+        """
+        return getattr(self.name, language, self.name.en)
+
+    def description_localized(self, language: LanguageEnum = LanguageEnum.EN) -> str:
+        """Get the localized description for the specified language.
+
+        Args:
+            language (LanguageEnum): The language code (default: LanguageEnum.EN).
+
+        Returns:
+            str: The localized description.
+        """
+        if self.description is None:
+            return "NOT_DEFINED"
+        return getattr(self.description, language, self.description.en)
+
 
 class MetaGroupsDataset(SdeDataset):
     dataset: dict[int, MetaGroupsRecord]
@@ -252,6 +302,17 @@ class CategoriesRecord:
     name: LocalizedString
     published: bool
     iconID: int | None = None
+
+    def name_localized(self, language: LanguageEnum = LanguageEnum.EN) -> str:
+        """Get the localized name for the specified language.
+
+        Args:
+            language (LanguageEnum): The language code (default: LanguageEnum.EN).
+
+        Returns:
+            str: The localized name.
+        """
+        return getattr(self.name, language, self.name.en)
 
 
 class CategoriesDataset(SdeDataset):
@@ -287,6 +348,17 @@ class GroupsRecord:
     name: LocalizedString
     published: bool
     useBasePrice: bool
+
+    def name_localized(self, language: LanguageEnum = LanguageEnum.EN) -> str:
+        """Get the localized name for the specified language.
+
+        Args:
+            language (LanguageEnum): The language code (default: LanguageEnum.EN).
+
+        Returns:
+            str: The localized name.
+        """
+        return getattr(self.name, language, self.name.en)
 
 
 class GroupsDataset(SdeDataset):

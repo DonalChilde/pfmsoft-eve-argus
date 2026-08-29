@@ -1,3 +1,5 @@
+"""Script to prove the static data loader functionality."""
+
 import asyncio
 from time import perf_counter_ns
 
