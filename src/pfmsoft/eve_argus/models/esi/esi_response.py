@@ -227,3 +227,39 @@ class GetIndustrySystemsResponse(EsiResponseBaseModel):
     """Pydantic BaseModel for GetIndustrySystems response."""
 
     response_data: GetIndustrySystems
+
+
+class PostUniverseNamesCategory(StrEnum):
+    """Enumeration for universe names categories."""
+
+    ALLIANCE = "alliance"
+    CHARACTER = "character"
+    CONSTELLATION = "constellation"
+    CORPORATION = "corporation"
+    FACTION = "faction"
+    INVENTORY_TYPE = "inventory_type"
+    REGION = "region"
+    SOLAR_SYSTEM = "solar_system"
+    STATION = "station"
+
+
+@dataclass(slots=True, kw_only=True)
+class PostUniverseNamesDetail:
+    """Detail for universe names response."""
+
+    category: PostUniverseNamesCategory
+    id: int
+    name: str
+
+
+@dataclass(slots=True, kw_only=True)
+class PostUniverseNames(EsiResponseBase):
+    """Response model for universe names."""
+
+    names: list[PostUniverseNamesDetail]
+
+
+class PostUniverseNamesResponse(EsiResponseBaseModel):
+    """Pydantic BaseModel for PostUniverseNames response."""
+
+    response_data: PostUniverseNames
