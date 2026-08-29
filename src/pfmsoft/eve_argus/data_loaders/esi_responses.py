@@ -266,6 +266,23 @@ class EsiResponseLoader(EsiResponseLoaderProtocol):
             "response_data": response_dict
         })
 
+    async def universe_type_ids(self) -> esi_response.GetUniverseTypesResponse:
+        """Loads the universe type IDs from ESI."""
+        request = EsiRequest(operation_id="GetUniverseTypes")
+        response = await self._esi_link.make_request(request, schema=self._schema)
+        if isinstance(response, FailedEsiResponse):
+            raise RuntimeError(
+                f"Failed to load universe type IDs: {response.failed_response.error_messages}"
+            )
+        response_dict: dict[str, Any] = {
+            "received_at": _received_at_from_response(response),
+            "expires_at": _expires_at_from_response(response),
+            "type_ids": response.response_data,
+        }
+        return esi_response.GetUniverseTypesResponse.model_validate({
+            "response_data": response_dict
+        })
+
 
 def _expires_at_from_response(response: EsiResponse) -> str | None:
     """Extracts the expires_at timestamp from an ESI response."""
