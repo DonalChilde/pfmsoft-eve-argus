@@ -217,7 +217,7 @@ class EsiResponseLoader(EsiResponseLoaderProtocol):
             response_dict: dict[str, Any] = {
                 "received_at": _received_at_from_response(response),
                 "expires_at": _expires_at_from_response(response),
-                "universe_names": response.response_data,
+                "names": response.response_data,
             }
             return esi_response.PostUniverseNamesResponse.model_validate({
                 "response_data": response_dict
