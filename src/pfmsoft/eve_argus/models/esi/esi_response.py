@@ -263,3 +263,46 @@ class PostUniverseNamesResponse(EsiResponseBaseModel):
     """Pydantic BaseModel for PostUniverseNames response."""
 
     response_data: PostUniverseNames
+
+
+@dataclass(slots=True, kw_only=True)
+class GetCorporationsCorporationIdIndustryJobsDetail:
+    """Detail for corporation industry jobs response."""
+
+    activity_id: int
+    blueprint_id: int
+    blueprint_location_id: int
+    blueprint_type_id: int
+    completed_character_id: int | None = None
+    completed_date: str | None = None
+    cost: float | None = None
+    duration: int
+    end_date: str
+    facility_id: int
+    installer_id: int
+    job_id: int
+    licensed_runs: int | None = None
+    location_id: int
+    output_location_id: int
+    pause_date: str | None = None
+    probability: float | None = None
+    product_type_id: int | None = None
+    runs: int
+    start_date: str
+    status: str
+    successful_runs: int | None = None
+
+
+@dataclass(slots=True, kw_only=True)
+class GetCorporationsCorporationIdIndustryJobs(EsiResponseBase):
+    """Response model for corporation industry jobs."""
+
+    corporation_id: int
+    """The corporation ID for which the industry jobs were fetched."""
+    industry_jobs: list[GetCorporationsCorporationIdIndustryJobsDetail]
+
+
+class GetCorporationsCorporationIdIndustryJobsResponse(EsiResponseBaseModel):
+    """Pydantic BaseModel for GetCorporationsCorporationIdIndustryJobs response."""
+
+    response_data: GetCorporationsCorporationIdIndustryJobs

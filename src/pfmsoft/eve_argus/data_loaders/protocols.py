@@ -5,6 +5,7 @@ expected return type for that method.
 """
 
 from typing import Protocol
+from uuid import UUID
 
 from pfmsoft.eve_argus.models.esd import esd_datasets
 from pfmsoft.eve_argus.models.esi import esi_argus, esi_response
@@ -97,6 +98,14 @@ class EsiResponseLoaderProtocol(Protocol):
         """Loads the universe names for a set of IDs from ESI."""
         raise NotImplementedError(
             "Subclasses must implement the universe_names method."
+        )
+
+    async def corporation_industry_jobs(
+        self, corporation_id: int, character_id: int, credential_id: UUID
+    ) -> esi_response.GetCorporationsCorporationIdIndustryJobsResponse:
+        """Loads the industry jobs for a corporation from ESI."""
+        raise NotImplementedError(
+            "Subclasses must implement the corporation_industry_jobs method."
         )
 
 

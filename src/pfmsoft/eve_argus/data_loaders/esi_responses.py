@@ -2,6 +2,7 @@
 
 import asyncio
 from typing import Any
+from uuid import UUID
 
 from pfmsoft.eve_link import (
     EsiLink,
@@ -235,6 +236,34 @@ class EsiResponseLoader(EsiResponseLoaderProtocol):
         }
         return esi_response.PostUniverseNamesResponse.model_validate({
             "response_data": combined_response_dict
+        })
+
+    async def corporation_industry_jobs(
+        self,
+        corporation_id: int,
+        character_id: int,
+        credential_id: UUID,
+    ) -> esi_response.GetCorporationsCorporationIdIndustryJobsResponse:
+        """Loads the industry jobs for a corporation from ESI."""
+        request = EsiRequest(
+            operation_id="GetCorporationsCorporationIdIndustryJobs",
+            path_parameters={"corporation_id": corporation_id},
+            auth_character_id=character_id,
+            auth_credential_id=credential_id,
+        )
+        response = await self._esi_link.make_request(request, schema=self._schema)
+        if isinstance(response, FailedEsiResponse):
+            raise RuntimeError(
+                f"Failed to load industry jobs for corporation {corporation_id}: {response.failed_response.error_messages}"
+            )
+        response_dict: dict[str, Any] = {
+            "received_at": _received_at_from_response(response),
+            "expires_at": _expires_at_from_response(response),
+            "corporation_id": corporation_id,
+            "industry_jobs": response.response_data,
+        }
+        return esi_response.GetCorporationsCorporationIdIndustryJobsResponse.model_validate({
+            "response_data": response_dict
         })
 
 
