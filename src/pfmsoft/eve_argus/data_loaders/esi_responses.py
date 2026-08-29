@@ -1,5 +1,6 @@
 """Data loader for ESI responses in the EVE Argus project."""
 
+import asyncio
 from typing import Any
 
 from pfmsoft.eve_link import (
@@ -182,6 +183,58 @@ class EsiResponseLoader(EsiResponseLoaderProtocol):
         }
         return esi_response.GetIndustrySystemsResponse.model_validate({
             "response_data": response_dict
+        })
+
+    async def universe_names(
+        self, ids: set[int]
+    ) -> esi_response.PostUniverseNamesResponse:
+        """Loads the universe names for given IDs from ESI."""
+        if not ids:
+            raise ValueError("The set of IDs must not be empty.")
+        # The ESI endpoint for universe names requires a POST request with a JSON body
+        # containing the list of IDs. The max number of IDs that can be sent in a single
+        # request is 1000, so we need to batch the requests if there are more than 1000 IDs.
+        # We will batch at 975 to leave some room for potential future changes in the API limit.
+        batch_size = 975
+        batches = [
+            list(ids)[i : i + batch_size] for i in range(0, len(ids), batch_size)
+        ]
+
+        async def _load_batch(
+            batch: list[int],
+        ) -> esi_response.PostUniverseNamesResponse:
+            """Loads a batch of universe names from ESI."""
+            request = EsiRequest(
+                operation_id="PostUniverseNames",
+                request_body=batch,
+            )
+            response = await self._esi_link.make_request(request, schema=self._schema)
+            if isinstance(response, FailedEsiResponse):
+                raise RuntimeError(
+                    f"Failed to load universe names for IDs {batch}: {response.failed_response.error_messages}"
+                )
+            response_dict: dict[str, Any] = {
+                "received_at": _received_at_from_response(response),
+                "expires_at": _expires_at_from_response(response),
+                "universe_names": response.response_data,
+            }
+            return esi_response.PostUniverseNamesResponse.model_validate({
+                "response_data": response_dict
+            })
+
+        responses = await asyncio.gather(*[_load_batch(batch) for batch in batches])
+        # Combine the results from all batches into a single response. Use the first
+        # batch's received_at and expires_at for the combined response.
+
+        combined_response_dict: dict[str, Any] = {
+            "received_at": responses[0].response_data.received_at,
+            "expires_at": responses[0].response_data.expires_at,
+            "names": [
+                name for response in responses for name in response.response_data.names
+            ],
+        }
+        return esi_response.PostUniverseNamesResponse.model_validate({
+            "response_data": combined_response_dict
         })
 
 
