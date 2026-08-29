@@ -91,6 +91,14 @@ class EsiResponseLoaderProtocol(Protocol):
             "Subclasses must implement the industry_systems method."
         )
 
+    async def universe_names(
+        self, ids: set[int]
+    ) -> esi_response.PostUniverseNamesResponse:
+        """Loads the universe names for a set of IDs from ESI."""
+        raise NotImplementedError(
+            "Subclasses must implement the universe_names method."
+        )
+
 
 class EsiArgusLoaderProtocol(Protocol):
     """Protocol for loading ESI Argus data."""
