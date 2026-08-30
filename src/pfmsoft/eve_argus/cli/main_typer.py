@@ -5,6 +5,7 @@ from dataclasses import asdict
 from typing import Annotated
 
 import typer
+from pfmsoft.eve_auth_manager.settings import SETTINGS_KEY as AUTH_MANAGER_SETTINGS_KEY
 from pfmsoft.eve_link.settings import SETTINGS_KEY as EVE_LINK_SETTINGS_KEY
 from pfmsoft.eve_sd.settings import SETTINGS_KEY as EVE_SD_SETTINGS_KEY
 from rich.console import Console
@@ -48,6 +49,7 @@ def default_options(
         SETTINGS_KEY: settings,
         EVE_LINK_SETTINGS_KEY: settings.eve_link_settings,
         EVE_SD_SETTINGS_KEY: settings.eve_sd_settings,
+        AUTH_MANAGER_SETTINGS_KEY: settings.eve_link_settings.eve_auth_manager_settings,
     }
     logger.info(
         f"Starting {__app_name__} v{__version__} with settings: {asdict(settings)!r}"
