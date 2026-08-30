@@ -286,11 +286,12 @@ class EsiResponseLoader(EsiResponseLoaderProtocol):
 
 def _expires_at_from_response(response: EsiResponse) -> str | None:
     """Extracts the expires_at timestamp from an ESI response."""
-    if response.response.metadata.expires:
-        return Instant.parse_rfc2822(response.response.metadata.expires).format_iso()
+    expires_at = response.response.metadata.expires_at_instant
+    if expires_at:
+        return expires_at.format_iso()
     return None
 
 
 def _received_at_from_response(response: EsiResponse) -> str:
     """Extracts the received_at timestamp from an ESI response."""
-    return response.response.metadata.received_at.format_iso()
+    return response.response.metadata.received_at

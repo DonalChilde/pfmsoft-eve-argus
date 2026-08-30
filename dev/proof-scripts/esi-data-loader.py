@@ -5,7 +5,7 @@ and printing the results.
 """
 
 import asyncio
-from logging import getLogger
+from logging import basicConfig, getLogger
 from pathlib import Path
 from time import perf_counter_ns
 from uuid import UUID
@@ -16,9 +16,16 @@ from pfmsoft.eve_argus.models.esi import esi_response
 from pfmsoft.eve_argus.settings import get_settings
 
 logger = getLogger(__name__)
+
 PROOF_OUTPUT_DIR = Path(__file__).parent / "proof-output"
 PROOF_OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+LOGGING_DIR = Path(__file__).parent / "logging"
+LOGGING_DIR.mkdir(parents=True, exist_ok=True)
+LOGGING_FILEPATH = LOGGING_DIR / "esi-data-loader.log"
+basicConfig(filename=LOGGING_FILEPATH, level="INFO")
+
 MARKET_GROUP_IDS_FILENAME = PROOF_OUTPUT_DIR / "market_group_ids_response.json"
+logger.info(f"Logging to {LOGGING_FILEPATH}")
 MARKET_GROUPS_DETAILS_FILENAME = (
     PROOF_OUTPUT_DIR / "market_groups_details_collected_response.json"
 )
@@ -59,8 +66,13 @@ async def prove_esi_data_loader():
         )
         _ = await markets_prices(loader=esi_loader)
         _ = await industry_systems(loader=esi_loader)
-        _ = await universe_names(loader=esi_loader, ids={34, 35, 36, 37, 38})
-        _ = await universe_type_ids(loader=esi_loader)
+
+        universe_type_ids_response = await universe_type_ids(loader=esi_loader)
+
+        first_2000_type_ids = set(
+            universe_type_ids_response.response_data.type_ids[:2000]
+        )
+        _ = await universe_names(loader=esi_loader, ids=first_2000_type_ids)
 
 
 async def universe_type_ids(
