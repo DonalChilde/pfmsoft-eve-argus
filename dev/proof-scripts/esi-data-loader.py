@@ -5,9 +5,11 @@ and printing the results.
 """
 
 import asyncio
+import json
 from logging import basicConfig, getLogger
 from pathlib import Path
 from time import perf_counter_ns
+from typing import TypedDict
 from uuid import UUID
 
 from pfmsoft.eve_argus.data_loaders.esi_responses import EsiResponseLoader
@@ -17,8 +19,16 @@ from pfmsoft.eve_argus.settings import get_settings
 
 logger = getLogger(__name__)
 
-PROOF_OUTPUT_DIR = Path(__file__).parent / "proof-output"
+
+class SampleAuthData(TypedDict):
+    character_id: int
+    corporation_id: int
+    cred_id: UUID
+
+
+PROOF_OUTPUT_DIR = Path(__file__).parent / "proof-output" / "esi-data-loader"
 PROOF_OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+DEV_SECRETS_DIR = Path(__file__).parent.parent / "secrets"
 LOGGING_DIR = Path(__file__).parent / "logging"
 LOGGING_DIR.mkdir(parents=True, exist_ok=True)
 LOGGING_FILEPATH = LOGGING_DIR / "esi-data-loader.log"
@@ -41,7 +51,7 @@ CORPORATION_INDUSTRY_JOBS_FILENAME = (
 )
 
 
-async def prove_esi_data_loader():
+async def prove_esi_data_loader(sample_auth_data: SampleAuthData | None = None) -> None:
     """Prove the ESI data loader by loading and printing ESI responses."""
     settings = get_settings()
     print(f"Using settings: {settings}")
@@ -73,6 +83,13 @@ async def prove_esi_data_loader():
             universe_type_ids_response.response_data.type_ids[:2000]
         )
         _ = await universe_names(loader=esi_loader, ids=first_2000_type_ids)
+        if sample_auth_data:
+            _ = await corporation_industry_jobs(
+                loader=esi_loader,
+                corporation_id=sample_auth_data["corporation_id"],
+                character_id=sample_auth_data["character_id"],
+                credential_id=sample_auth_data["cred_id"],
+            )
 
 
 async def universe_type_ids(
@@ -266,6 +283,22 @@ async def industry_systems(
     return industry_systems_response
 
 
+def get_sample_auth_data() -> SampleAuthData | None:
+    """Loads sample auth data from the secrets directory."""
+    sample_auth_filepath = DEV_SECRETS_DIR / "auth.json"
+    if not sample_auth_filepath.exists():
+        logger.warning(f"Sample auth file {sample_auth_filepath} does not exist.")
+        return None
+    sample_auth_data = json.loads(sample_auth_filepath.read_text())
+    return SampleAuthData(
+        character_id=sample_auth_data["character_id"],
+        corporation_id=sample_auth_data["corporation_id"],
+        cred_id=UUID(sample_auth_data["cred_id"]),
+    )
+
+
 if __name__ == "__main__":
+    sample_auth_data = get_sample_auth_data()
+    print(f"Using sample auth data: {sample_auth_data}")
     # Run the proof script
-    asyncio.run(prove_esi_data_loader())
+    asyncio.run(prove_esi_data_loader(sample_auth_data=sample_auth_data))
