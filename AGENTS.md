@@ -4,6 +4,8 @@
 
 Using the pfmsoft collection of EVE Online apps to colate information.
 
+The github repository url for this project is https://github.com/DonalChilde/pfmsoft-eve-argus
+
 ## Current State and Goals
 
 ### State

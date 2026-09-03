@@ -7,6 +7,7 @@ authors = [{ name = "Chad Lowe", email = "pfmsoft.dev@gmail.com" }]
 requires-python = ">=3.14"
 dependencies = [
     "cryptography>=50.0.0",
+    "jinja2>=3.1.6",
     "pfmsoft-eve-link>=0.4.9",
     "pfmsoft-eve-sd>=0.4.6",
     "pfmsoft-eve-snippets>=0.1.8",

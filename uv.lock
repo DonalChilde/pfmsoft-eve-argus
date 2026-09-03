@@ -600,6 +600,7 @@ version = "0.1.0"
 source = { editable = "." }
 dependencies = [
     { name = "cryptography" },
+    { name = "jinja2" },
     { name = "pfmsoft-eve-link" },
     { name = "pfmsoft-eve-sd" },
     { name = "pfmsoft-eve-snippets" },
@@ -619,6 +620,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "cryptography", specifier = ">=50.0.0" },
+    { name = "jinja2", specifier = ">=3.1.6" },
     { name = "pfmsoft-eve-link", specifier = ">=0.4.9" },
     { name = "pfmsoft-eve-sd", specifier = ">=0.4.6" },
     { name = "pfmsoft-eve-snippets", specifier = ">=0.1.8" },
