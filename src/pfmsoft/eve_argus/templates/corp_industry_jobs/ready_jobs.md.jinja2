@@ -1,0 +1,6 @@
+## Ready Jobs
+
+| Character | Activity | Blueprint | Facility | End |
+| --- | --- | --- | --- | --- |
+{% for row in ready_jobs %}| {{ row.job.installer_name }} | {{ row.job.activity_name }} | {{ row.job.blueprint_name }} | {{ row.job.facility_name }} | {{ row.end_date }} |
+{% endfor %}

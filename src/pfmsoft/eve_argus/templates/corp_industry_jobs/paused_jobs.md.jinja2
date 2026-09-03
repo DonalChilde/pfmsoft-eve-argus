@@ -1,0 +1,6 @@
+## Paused Jobs
+
+| Character | Activity | Blueprint | Facility | Paused At | Expected End |
+| --- | --- | --- | --- | --- | --- |
+{% for row in paused_jobs %}| {{ row.job.installer_name }} | {{ row.job.activity_name }} | {{ row.job.blueprint_name }} | {{ row.job.facility_name }} | {{ row.pause_date or "Unknown" }} | {{ row.end_date }} |
+{% endfor %}

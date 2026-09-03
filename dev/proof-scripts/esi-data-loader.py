@@ -24,6 +24,9 @@ from pfmsoft.eve_argus.reports.corp_industry_jobs import (
     collect_ids_for_lookup,
     create_corporation_industry_jobs_named,
 )
+from pfmsoft.eve_argus.reports.corp_industry_jobs_markdown import (
+    render_corporation_industry_jobs_markdown,
+)
 from pfmsoft.eve_argus.settings import get_settings
 
 logger = getLogger(__name__)
@@ -66,6 +69,9 @@ CORPORATION_INDUSTRY_JOBS_UNIVERSE_NAMES_FILENAME = (
 )
 CORPORATION_INDUSTRY_JOBS_NAMED_FILENAME = (
     PROOF_OUTPUT_DIR / "corporation_industry_jobs_named.json"
+)
+CORPORATION_INDUSTRY_JOBS_NAMED_REPORT_FILENAME = (
+    PROOF_OUTPUT_DIR / "corporation_industry_jobs_named_report.md"
 )
 
 
@@ -139,6 +145,11 @@ async def corporation_industry_jobs_named(
     corp_jobs_named = create_corporation_industry_jobs_named(
         jobs=corporation_industry_jobs_response.response_data,
         names=corp_jobs_names_dict,
+    )
+    report = render_corporation_industry_jobs_markdown(corp_jobs_named)
+    CORPORATION_INDUSTRY_JOBS_NAMED_REPORT_FILENAME.write_text(report)
+    print(
+        f"Saved corporation industry jobs named report to {CORPORATION_INDUSTRY_JOBS_NAMED_REPORT_FILENAME}"
     )
     return corp_jobs_named
 

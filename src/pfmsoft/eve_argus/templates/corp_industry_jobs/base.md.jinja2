@@ -1,0 +1,17 @@
+# {{ corporation.corporation_name }} Industry Jobs
+
+Generated at (UTC): `{{ generated_at }}`
+
+{% include "character_summary.md.jinja2" %}
+{% include "ready_jobs.md.jinja2" %}
+{% include "running_jobs.md.jinja2" %}
+{% include "paused_jobs.md.jinja2" %}
+{% include "completed_jobs.md.jinja2" %}
+{% if other_jobs %}
+## Other Jobs
+
+| Character | Activity | Blueprint | Status | End |
+| --- | --- | --- | --- | --- |
+{% for row in other_jobs %}| {{ row.job.installer_name }} | {{ row.job.activity_name }} | {{ row.job.blueprint_name }} | {{ row.job.status }} | {{ row.end_date }} |
+{% endfor %}
+{% endif %}

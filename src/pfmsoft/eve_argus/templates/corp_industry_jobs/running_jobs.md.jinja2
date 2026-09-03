@@ -1,0 +1,6 @@
+## Running Jobs
+
+| Character | Activity | Blueprint | Facility | End | Time Remaining |
+| --- | --- | --- | --- | --- | --- |
+{% for row in running_jobs %}| {{ row.job.installer_name }} | {{ row.job.activity_name }} | {{ row.job.blueprint_name }} | {{ row.job.facility_name }} | {{ row.end_date }} | {{ row.remaining }} |
+{% endfor %}

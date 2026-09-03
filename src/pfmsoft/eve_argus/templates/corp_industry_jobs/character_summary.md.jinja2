@@ -1,0 +1,6 @@
+## Character Summary
+
+| Character | Manufacturing (total/ready) | Research (total/ready) | Copying (total/ready) | Invention (total/ready) | ME (total/ready) | TE (total/ready) | Reactions (total/ready) |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+{% for summary in summaries %}| {{ summary.installer_name }} | {{ summary.manufacturing.total }}/{{ summary.manufacturing.ready }} | {{ summary.research.total }}/{{ summary.research.ready }} | {{ summary.copying.total }}/{{ summary.copying.ready }} | {{ summary.invention.total }}/{{ summary.invention.ready }} | {{ summary.me.total }}/{{ summary.me.ready }} | {{ summary.te.total }}/{{ summary.te.ready }} | {{ summary.reactions.total }}/{{ summary.reactions.ready }} |
+{% endfor %}
