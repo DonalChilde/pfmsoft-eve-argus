@@ -248,6 +248,7 @@ class EsiResponseLoader(EsiResponseLoaderProtocol):
         request = EsiRequest(
             operation_id="GetCorporationsCorporationIdIndustryJobs",
             path_parameters={"corporation_id": corporation_id},
+            query_parameters={"include_completed": True},
             auth_character_id=character_id,
             auth_credential_id=credential_id,
         )

@@ -7,6 +7,9 @@ from importlib.resources import files
 from jinja2 import Environment, FileSystemLoader, StrictUndefined
 from whenever import Instant
 
+from pfmsoft.eve_argus.models.esi.esi_response_models import (
+    GetCorporationsCorporationIdIndustryJobsDetail_Status,
+)
 from pfmsoft.eve_argus.reports.corp_industry_jobs import (
     CorporationIndustryJobDetailedNamed,
     CorporationIndustryJobsNamed,
@@ -19,6 +22,10 @@ _ACTIVITY_CATEGORIES = {
     5: "copying",
     8: "invention",
     11: "reactions",
+}
+_STATUS_TABLES = {
+    status.value: status.name.title()
+    for status in GetCorporationsCorporationIdIndustryJobsDetail_Status
 }
 
 
@@ -35,10 +42,12 @@ class JobRow:
 
 @dataclass(frozen=True, slots=True)
 class JobCounts:
-    """Total and ready counts for one job category."""
+    """Total, active, ready, and paused counts for one job category."""
 
     total: int
+    active: int
     ready: int
+    paused: int
 
 
 @dataclass(frozen=True, slots=True)
@@ -100,14 +109,7 @@ def _classify_jobs(
     classified: dict[str, list[JobRow]] = defaultdict(list)
     for job in jobs:
         row = _job_row(job, report_time)
-        if job.status == "active":
-            group = "ready" if row.remaining == "Ready" else "running"
-        elif job.status == "paused":
-            group = "paused"
-        elif job.status == "completed":
-            group = "completed"
-        else:
-            group = "other"
+        group = job.status if job.status in _STATUS_TABLES else "other"
         classified[group].append(row)
 
     for rows in classified.values():
@@ -130,37 +132,46 @@ def _summarize_jobs(
             category = _ACTIVITY_CATEGORIES.get(job.activity_id)
             if category is None:
                 continue
-            previous = counts.get(category, JobCounts(total=0, ready=0))
+            previous = counts.get(category, JobCounts(0, 0, 0, 0))
+            active = previous.active + (job.status == "active")
+            ready = previous.ready + (job.status == "ready")
+            paused = previous.paused + (job.status == "paused")
             counts[category] = JobCounts(
-                total=previous.total + 1,
-                ready=previous.ready
-                + (
-                    job.status == "active"
-                    and Instant.parse_iso(job.end_date) <= report_time
-                ),
+                total=active + ready + paused,
+                active=active,
+                ready=ready,
+                paused=paused,
             )
 
         research_categories = ("copying", "invention", "me", "te")
         research = JobCounts(
             total=sum(
-                counts.get(category, JobCounts(0, 0)).total
+                counts.get(category, JobCounts(0, 0, 0, 0)).total
                 for category in research_categories
             ),
             ready=sum(
-                counts.get(category, JobCounts(0, 0)).ready
+                counts.get(category, JobCounts(0, 0, 0, 0)).ready
+                for category in research_categories
+            ),
+            active=sum(
+                counts.get(category, JobCounts(0, 0, 0, 0)).active
+                for category in research_categories
+            ),
+            paused=sum(
+                counts.get(category, JobCounts(0, 0, 0, 0)).paused
                 for category in research_categories
             ),
         )
         summaries.append(
             CharacterSummary(
                 installer_name=character_jobs[0].installer_name,
-                manufacturing=counts.get("manufacturing", JobCounts(0, 0)),
+                manufacturing=counts.get("manufacturing", JobCounts(0, 0, 0, 0)),
                 research=research,
-                copying=counts.get("copying", JobCounts(0, 0)),
-                invention=counts.get("invention", JobCounts(0, 0)),
-                me=counts.get("me", JobCounts(0, 0)),
-                te=counts.get("te", JobCounts(0, 0)),
-                reactions=counts.get("reactions", JobCounts(0, 0)),
+                copying=counts.get("copying", JobCounts(0, 0, 0, 0)),
+                invention=counts.get("invention", JobCounts(0, 0, 0, 0)),
+                me=counts.get("me", JobCounts(0, 0, 0, 0)),
+                te=counts.get("te", JobCounts(0, 0, 0, 0)),
+                reactions=counts.get("reactions", JobCounts(0, 0, 0, 0)),
             )
         )
     return sorted(summaries, key=lambda summary: summary.installer_name)
@@ -178,10 +189,9 @@ def render_corporation_industry_jobs_markdown(
         "corporation": jobs,
         "generated_at": report_time.format_iso(),
         "summaries": _summarize_jobs(jobs.industry_jobs, report_time),
-        "ready_jobs": classified.get("ready", []),
-        "running_jobs": classified.get("running", []),
-        "paused_jobs": classified.get("paused", []),
-        "completed_jobs": classified.get("completed", []),
+        "status_tables": {
+            status: classified.get(status, []) for status in _STATUS_TABLES
+        },
         "other_jobs": classified.get("other", []),
     }
     template_root = files("pfmsoft.eve_argus.templates") / "corp_industry_jobs"

@@ -4,9 +4,11 @@ Generated at (UTC): `{{ generated_at }}`
 
 {% include "character_summary.md.jinja2" %}
 {% include "ready_jobs.md.jinja2" %}
-{% include "running_jobs.md.jinja2" %}
+{% include "active_jobs.md.jinja2" %}
 {% include "paused_jobs.md.jinja2" %}
-{% include "completed_jobs.md.jinja2" %}
+{% include "delivered_jobs.md.jinja2" %}
+{% include "cancelled_jobs.md.jinja2" %}
+{% include "reverted_jobs.md.jinja2" %}
 {% if other_jobs %}
 ## Other Jobs
 
