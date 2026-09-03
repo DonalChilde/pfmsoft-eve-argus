@@ -15,7 +15,7 @@ from pfmsoft.eve_link import (
 from whenever import Instant
 
 from pfmsoft.eve_argus.data_loaders.protocols import EsiResponseLoaderProtocol
-from pfmsoft.eve_argus.models.esi import esi_response
+from pfmsoft.eve_argus.models.esi import esi_response_models
 
 
 # TODO make a sensible error/exception hierarchy for ESI response loading errors, and use
@@ -28,7 +28,7 @@ class EsiResponseLoader(EsiResponseLoaderProtocol):
         self._esi_link = esi_link
         self._schema = schema
 
-    async def market_group_ids(self) -> esi_response.GetMarketsGroupsResponse:
+    async def market_group_ids(self) -> esi_response_models.GetMarketsGroupsResponse:
         """Loads the market group IDs from ESI."""
         request = EsiRequest(operation_id="GetMarketsGroups")
         response = await self._esi_link.make_request(request, schema=self._schema)
@@ -44,11 +44,13 @@ class EsiResponseLoader(EsiResponseLoaderProtocol):
                 "market_group_ids": response.response_data,
             }
         }
-        return esi_response.GetMarketsGroupsResponse.model_validate(response_dict)
+        return esi_response_models.GetMarketsGroupsResponse.model_validate(
+            response_dict
+        )
 
     async def market_groups_details(
         self, market_group_ids: set[int]
-    ) -> esi_response.GetMarketsGroupsMarketGroupIdCollectedResponse:
+    ) -> esi_response_models.GetMarketsGroupsMarketGroupIdCollectedResponse:
         """Loads the market group details from ESI."""
         requests = [
             EsiRequest(
@@ -81,15 +83,13 @@ class EsiResponseLoader(EsiResponseLoaderProtocol):
             market_group_id = response_item.response_data["market_group_id"]
             collected_dict[market_group_id] = response_dict
 
-        return (
-            esi_response.GetMarketsGroupsMarketGroupIdCollectedResponse.model_validate({
-                "response_data": collected_dict
-            })
-        )
+        return esi_response_models.GetMarketsGroupsMarketGroupIdCollectedResponse.model_validate({
+            "response_data": collected_dict
+        })
 
     async def region_market_orders(
         self, region_id: int
-    ) -> esi_response.GetMarketsRegionIdOrdersResponse:
+    ) -> esi_response_models.GetMarketsRegionIdOrdersResponse:
         """Loads the market orders for a region from ESI."""
         request = EsiRequest(
             operation_id="GetMarketsRegionIdOrders",
@@ -108,13 +108,13 @@ class EsiResponseLoader(EsiResponseLoaderProtocol):
             "orders": response.response_data,
         }
 
-        return esi_response.GetMarketsRegionIdOrdersResponse.model_validate({
+        return esi_response_models.GetMarketsRegionIdOrdersResponse.model_validate({
             "response_data": response_dict
         })
 
     async def region_market_histories(
         self, region_id: int, type_ids: set[int]
-    ) -> esi_response.GetMarketsRegionIdHistoryCollectedResponse:
+    ) -> esi_response_models.GetMarketsRegionIdHistoryCollectedResponse:
         """Loads the market history for a region and types from ESI."""
         requests = [
             EsiRequest(
@@ -148,11 +148,11 @@ class EsiResponseLoader(EsiResponseLoaderProtocol):
                 "history": response_item.response_data,
             }
             result_list.append(response_dict)
-        return esi_response.GetMarketsRegionIdHistoryCollectedResponse.model_validate({
+        return esi_response_models.GetMarketsRegionIdHistoryCollectedResponse.model_validate({
             "response_data": result_list
         })
 
-    async def markets_prices(self) -> esi_response.GetMarketsPricesResponse:
+    async def markets_prices(self) -> esi_response_models.GetMarketsPricesResponse:
         """Loads the market prices from ESI."""
         request = EsiRequest(operation_id="GetMarketsPrices")
         response = await self._esi_link.make_request(request, schema=self._schema)
@@ -165,11 +165,11 @@ class EsiResponseLoader(EsiResponseLoaderProtocol):
             "expires_at": _expires_at_from_response(response),
             "markets_prices": response.response_data,
         }
-        return esi_response.GetMarketsPricesResponse.model_validate({
+        return esi_response_models.GetMarketsPricesResponse.model_validate({
             "response_data": response_dict
         })
 
-    async def industry_systems(self) -> esi_response.GetIndustrySystemsResponse:
+    async def industry_systems(self) -> esi_response_models.GetIndustrySystemsResponse:
         """Loads the industry systems from ESI."""
         request = EsiRequest(operation_id="GetIndustrySystems")
         response = await self._esi_link.make_request(request, schema=self._schema)
@@ -182,13 +182,13 @@ class EsiResponseLoader(EsiResponseLoaderProtocol):
             "expires_at": _expires_at_from_response(response),
             "industry_systems": response.response_data,
         }
-        return esi_response.GetIndustrySystemsResponse.model_validate({
+        return esi_response_models.GetIndustrySystemsResponse.model_validate({
             "response_data": response_dict
         })
 
     async def universe_names(
         self, ids: set[int]
-    ) -> esi_response.PostUniverseNamesResponse:
+    ) -> esi_response_models.PostUniverseNamesResponse:
         """Loads the universe names for given IDs from ESI."""
         if not ids:
             raise ValueError("The set of IDs must not be empty.")
@@ -203,7 +203,7 @@ class EsiResponseLoader(EsiResponseLoaderProtocol):
 
         async def _load_batch(
             batch: list[int],
-        ) -> esi_response.PostUniverseNamesResponse:
+        ) -> esi_response_models.PostUniverseNamesResponse:
             """Loads a batch of universe names from ESI."""
             request = EsiRequest(
                 operation_id="PostUniverseNames",
@@ -219,7 +219,7 @@ class EsiResponseLoader(EsiResponseLoaderProtocol):
                 "expires_at": _expires_at_from_response(response),
                 "names": response.response_data,
             }
-            return esi_response.PostUniverseNamesResponse.model_validate({
+            return esi_response_models.PostUniverseNamesResponse.model_validate({
                 "response_data": response_dict
             })
 
@@ -234,7 +234,7 @@ class EsiResponseLoader(EsiResponseLoaderProtocol):
                 name for response in responses for name in response.response_data.names
             ],
         }
-        return esi_response.PostUniverseNamesResponse.model_validate({
+        return esi_response_models.PostUniverseNamesResponse.model_validate({
             "response_data": combined_response_dict
         })
 
@@ -243,7 +243,7 @@ class EsiResponseLoader(EsiResponseLoaderProtocol):
         corporation_id: int,
         character_id: int,
         credential_id: UUID,
-    ) -> esi_response.GetCorporationsCorporationIdIndustryJobsResponse:
+    ) -> esi_response_models.GetCorporationsCorporationIdIndustryJobsResponse:
         """Loads the industry jobs for a corporation from ESI."""
         request = EsiRequest(
             operation_id="GetCorporationsCorporationIdIndustryJobs",
@@ -262,11 +262,11 @@ class EsiResponseLoader(EsiResponseLoaderProtocol):
             "corporation_id": corporation_id,
             "industry_jobs": response.response_data,
         }
-        return esi_response.GetCorporationsCorporationIdIndustryJobsResponse.model_validate({
+        return esi_response_models.GetCorporationsCorporationIdIndustryJobsResponse.model_validate({
             "response_data": response_dict
         })
 
-    async def universe_type_ids(self) -> esi_response.GetUniverseTypesResponse:
+    async def universe_type_ids(self) -> esi_response_models.GetUniverseTypesResponse:
         """Loads the universe type IDs from ESI."""
         request = EsiRequest(operation_id="GetUniverseTypes")
         response = await self._esi_link.make_request(request, schema=self._schema)
@@ -279,7 +279,7 @@ class EsiResponseLoader(EsiResponseLoaderProtocol):
             "expires_at": _expires_at_from_response(response),
             "type_ids": response.response_data,
         }
-        return esi_response.GetUniverseTypesResponse.model_validate({
+        return esi_response_models.GetUniverseTypesResponse.model_validate({
             "response_data": response_dict
         })
 

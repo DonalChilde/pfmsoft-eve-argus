@@ -7,7 +7,7 @@ from pathlib import Path
 from pfmsoft.eve_argus.data_loaders.esd_datasets import EsdDatasetsLoader
 from pfmsoft.eve_argus.eve_argus import EveArgusResources
 from pfmsoft.eve_argus.models.esd import esd_datasets
-from pfmsoft.eve_argus.models.esi import esi_argus
+from pfmsoft.eve_argus.models.esi import argus_response_models
 from pfmsoft.eve_argus.reports.blueprint_summary_1 import (
     BlueprintSummary1Report,
     generate_blueprint_summary_1_report,
@@ -22,9 +22,9 @@ BLUEPRINTS_REPORT_SUMMARY_1_FILENAME = (
 REPORT_FIELDNAMES = tuple(BlueprintSummary1Report.__annotations__)
 
 
-def load_market_groups() -> esi_argus.MarketGroupsDataset:
+def load_market_groups() -> argus_response_models.MarketGroupsDataset:
     """Load transformed market groups from the existing proof output."""
-    return esi_argus.MarketGroupsDataset.deserialize(
+    return argus_response_models.MarketGroupsDataset.deserialize(
         MARKET_GROUPS_TRANSFORMED_FILENAME.read_text()
     )
 

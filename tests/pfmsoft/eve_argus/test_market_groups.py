@@ -1,7 +1,7 @@
 """Tests for the example_project namespace package."""
 
 from pfmsoft.eve_argus.data_transform.market_groups import transform_market_groups
-from pfmsoft.eve_argus.models.esi.esi_response import (
+from pfmsoft.eve_argus.models.esi.esi_response_models import (
     GetMarketsGroupsMarketGroupId,
     GetMarketsGroupsMarketGroupIdDetail,
 )

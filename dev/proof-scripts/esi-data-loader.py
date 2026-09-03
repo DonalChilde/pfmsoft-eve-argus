@@ -6,6 +6,7 @@ and printing the results.
 
 import asyncio
 import json
+from dataclasses import asdict
 from logging import basicConfig, getLogger
 from pathlib import Path
 from time import perf_counter_ns
@@ -14,7 +15,15 @@ from uuid import UUID
 
 from pfmsoft.eve_argus.data_loaders.esi_responses import EsiResponseLoader
 from pfmsoft.eve_argus.eve_argus import EveArgusResources
-from pfmsoft.eve_argus.models.esi import esi_response
+from pfmsoft.eve_argus.models.esi import esi_response_models
+from pfmsoft.eve_argus.reports.corp_industry_jobs import (
+    CollectedIds,
+    CollectedIdsRoot,
+    CorporationIndustryJobsNamed,
+    CorporationIndustryJobsNamedRoot,
+    collect_ids_for_lookup,
+    create_corporation_industry_jobs_named,
+)
 from pfmsoft.eve_argus.settings import get_settings
 
 logger = getLogger(__name__)
@@ -48,6 +57,15 @@ INDUSTRY_SYSTEMS_FILENAME = PROOF_OUTPUT_DIR / "industry_systems_response.json"
 UNIVERSE_NAMES_FILENAME = PROOF_OUTPUT_DIR / "universe_names_response.json"
 CORPORATION_INDUSTRY_JOBS_FILENAME = (
     PROOF_OUTPUT_DIR / "corporation_industry_jobs_response.json"
+)
+CORPORATION_INDUSTRY_JOBS_IDS_FILENAME = (
+    PROOF_OUTPUT_DIR / "corporation_industry_jobs_ids.json"
+)
+CORPORATION_INDUSTRY_JOBS_UNIVERSE_NAMES_FILENAME = (
+    PROOF_OUTPUT_DIR / "corporation_industry_jobs_universe_names_response.json"
+)
+CORPORATION_INDUSTRY_JOBS_NAMED_FILENAME = (
+    PROOF_OUTPUT_DIR / "corporation_industry_jobs_named.json"
 )
 
 
@@ -84,17 +102,87 @@ async def prove_esi_data_loader(sample_auth_data: SampleAuthData | None = None) 
         )
         _ = await universe_names(loader=esi_loader, ids=first_2000_type_ids)
         if sample_auth_data:
-            _ = await corporation_industry_jobs(
+            corporation_industry_jobs_response = await corporation_industry_jobs(
                 loader=esi_loader,
                 corporation_id=sample_auth_data["corporation_id"],
                 character_id=sample_auth_data["character_id"],
                 credential_id=sample_auth_data["cred_id"],
             )
+            corp_jobs_named = await corporation_industry_jobs_named(
+                corporation_industry_jobs_response=corporation_industry_jobs_response,
+                loader=esi_loader,
+            )
+            print()
+            root_model = CorporationIndustryJobsNamedRoot(root=corp_jobs_named)
+            CORPORATION_INDUSTRY_JOBS_NAMED_FILENAME.write_text(
+                root_model.model_dump_json(indent=2)
+            )
+            print(
+                f"Saved corporation industry jobs named response to {CORPORATION_INDUSTRY_JOBS_NAMED_FILENAME}"
+            )
+
+
+async def corporation_industry_jobs_named(
+    corporation_industry_jobs_response: esi_response_models.GetCorporationsCorporationIdIndustryJobsResponse,
+    loader: EsiResponseLoader,
+) -> CorporationIndustryJobsNamed:
+    corp_jobs_ids = collect_corporation_industry_jobs_ids(
+        corporation_industry_jobs_response
+    )
+    corp_jobs_universe_names = await corporation_industry_jobs_universe_names(
+        corp_jobs_ids=corp_jobs_ids.universe_ids, loader=loader
+    )
+    corp_jobs_names_dict = {
+        name.id: name.name for name in corp_jobs_universe_names.response_data.names
+    }
+
+    corp_jobs_named = create_corporation_industry_jobs_named(
+        jobs=corporation_industry_jobs_response.response_data,
+        names=corp_jobs_names_dict,
+    )
+    return corp_jobs_named
+
+
+async def corporation_industry_jobs_universe_names(
+    corp_jobs_ids: set[int], loader: EsiResponseLoader
+) -> esi_response_models.PostUniverseNamesResponse:
+    """Loads the universe names for the given corporation industry jobs IDs from ESI."""
+    print()
+    start_time = perf_counter_ns()
+    universe_names_response = await loader.universe_names(ids=corp_jobs_ids)
+    end_time = perf_counter_ns()
+    CORPORATION_INDUSTRY_JOBS_UNIVERSE_NAMES_FILENAME.write_text(
+        universe_names_response.serialize(indent=2)
+    )
+    print(
+        f"Saved corporation industry jobs universe names response to {CORPORATION_INDUSTRY_JOBS_UNIVERSE_NAMES_FILENAME}"
+    )
+    print(
+        f"Time taken to load corporation industry jobs universe names: {(end_time - start_time) / 1_000_000_000:.6f} seconds"
+    )
+    return universe_names_response
+
+
+def collect_corporation_industry_jobs_ids(
+    corporation_industry_jobs_response: esi_response_models.GetCorporationsCorporationIdIndustryJobsResponse,
+) -> CollectedIds:
+    """Loads and collects the IDs for corporation industry jobs from the given response."""
+    print()
+    collected_ids = collect_ids_for_lookup(
+        corporation_industry_jobs_response.response_data
+    )
+    print(
+        f"Found {len(collected_ids.universe_ids)} universe IDs and {len(collected_ids.corporation_ids)} corporation IDs."
+    )
+    CORPORATION_INDUSTRY_JOBS_IDS_FILENAME.write_text(
+        CollectedIdsRoot(root=collected_ids).model_dump_json(indent=2)
+    )
+    return collected_ids
 
 
 async def universe_type_ids(
     loader: EsiResponseLoader,
-) -> esi_response.GetUniverseTypesResponse:
+) -> esi_response_models.GetUniverseTypesResponse:
     """Loads the universe type IDs from ESI."""
     print()
     start_time = perf_counter_ns()
@@ -117,7 +205,7 @@ async def corporation_industry_jobs(
     corporation_id: int,
     character_id: int,
     credential_id: UUID,
-) -> esi_response.GetCorporationsCorporationIdIndustryJobsResponse:
+) -> esi_response_models.GetCorporationsCorporationIdIndustryJobsResponse:
     """Loads the corporation industry jobs from ESI."""
     print()
     start_time = perf_counter_ns()
@@ -141,7 +229,7 @@ async def corporation_industry_jobs(
 
 async def universe_names(
     loader: EsiResponseLoader, ids: set[int]
-) -> esi_response.PostUniverseNamesResponse:
+) -> esi_response_models.PostUniverseNamesResponse:
     """Loads the universe names for the given IDs from ESI."""
     print()
     start_time = perf_counter_ns()
@@ -159,7 +247,7 @@ async def universe_names(
 
 async def market_groups_details(
     loader: EsiResponseLoader, market_group_ids: set[int]
-) -> esi_response.GetMarketsGroupsMarketGroupIdCollectedResponse:
+) -> esi_response_models.GetMarketsGroupsMarketGroupIdCollectedResponse:
     """Loads the market group details from ESI."""
     print()
     start_time = perf_counter_ns()
@@ -181,7 +269,7 @@ async def market_groups_details(
 
 async def market_group_ids(
     loader: EsiResponseLoader,
-) -> esi_response.GetMarketsGroupsResponse:
+) -> esi_response_models.GetMarketsGroupsResponse:
     """Loads the market group IDs from ESI."""
     print()
     start_time = perf_counter_ns()
@@ -201,7 +289,7 @@ async def market_group_ids(
 
 async def region_market_orders(
     loader: EsiResponseLoader, region_id: int
-) -> esi_response.GetMarketsRegionIdOrdersResponse:
+) -> esi_response_models.GetMarketsRegionIdOrdersResponse:
     """Loads the market orders for a region from ESI."""
     print()
     start_time = perf_counter_ns()
@@ -223,7 +311,7 @@ async def region_market_orders(
 
 async def region_market_history(
     loader: EsiResponseLoader, region_id: int, type_ids: set[int]
-) -> esi_response.GetMarketsRegionIdHistoryCollectedResponse:
+) -> esi_response_models.GetMarketsRegionIdHistoryCollectedResponse:
     """Loads the market history for a region and types from ESI."""
     print()
     start_time = perf_counter_ns()
@@ -245,7 +333,7 @@ async def region_market_history(
 
 async def markets_prices(
     loader: EsiResponseLoader,
-) -> esi_response.GetMarketsPricesResponse:
+) -> esi_response_models.GetMarketsPricesResponse:
     """Loads the market prices from ESI."""
     print()
     start_time = perf_counter_ns()
@@ -265,7 +353,7 @@ async def markets_prices(
 
 async def industry_systems(
     loader: EsiResponseLoader,
-) -> esi_response.GetIndustrySystemsResponse:
+) -> esi_response_models.GetIndustrySystemsResponse:
     """Loads the industry systems from ESI."""
     print()
     start_time = perf_counter_ns()

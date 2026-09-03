@@ -3,7 +3,7 @@
 from typing import TypedDict
 
 from pfmsoft.eve_argus.models.esd import esd_datasets
-from pfmsoft.eve_argus.models.esi import esi_argus
+from pfmsoft.eve_argus.models.esi import argus_response_models
 from pfmsoft.eve_argus.models.types import LanguageEnum
 
 
@@ -22,7 +22,7 @@ class BlueprintSummary1Report(TypedDict):
 
 def generate_blueprint_summary_1_report(
     blueprints: esd_datasets.BlueprintsDataset,
-    market_groups: esi_argus.MarketGroupsDataset,
+    market_groups: argus_response_models.MarketGroupsDataset,
     meta_groups: esd_datasets.MetaGroupsDataset,
     types: esd_datasets.TypesDataset,
     language: LanguageEnum = LanguageEnum.EN,
