@@ -78,10 +78,8 @@ def test_generate_blueprint_summary_1_report_builds_and_sorts_rows():
             "market_path": "",
             "meta_group_id": None,
             "meta_group_name": None,
-            "tech_level": None,
-            "meta_level": None,
             "base_price": None,
-            "portion_size": 10,
+            "portion_size": -1,
             "published": False,
         },
         {
@@ -90,10 +88,8 @@ def test_generate_blueprint_summary_1_report_builds_and_sorts_rows():
             "market_path": "Ships > Frigates",
             "meta_group_id": 2,
             "meta_group_name": "Tech II DE",
-            "tech_level": 2,
-            "meta_level": 5,
             "base_price": 125.5,
-            "portion_size": 1,
+            "portion_size": -1,
             "published": True,
         },
     ]
