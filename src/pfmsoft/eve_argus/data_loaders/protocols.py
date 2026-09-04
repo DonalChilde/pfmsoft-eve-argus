@@ -14,6 +14,12 @@ from pfmsoft.eve_argus.models.esi import argus_response_models, esi_response_mod
 class EsdDatasetsLoaderProtocol(Protocol):
     """Protocol for loading ESD datasets."""
 
+    def published_types(self) -> set[int]:
+        """Returns the set of published type IDs."""
+        raise NotImplementedError(
+            "Subclasses must implement the published_types method."
+        )
+
     def blueprints(self) -> esd_datasets.BlueprintsDataset:
         """Returns the blueprints dataset loaded from ESD."""
         raise NotImplementedError("Subclasses must implement the blueprints method.")

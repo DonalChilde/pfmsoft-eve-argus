@@ -1,4 +1,10 @@
-"""Data loader for ESD datasets in the EVE Argus project."""
+"""Data loader for ESD datasets in the EVE Argus project.
+
+These loaders work, but the current implementation may not be the most efficient.
+In the future, consider importing the required datasets into an argus format,
+which can support things like localized datasets, and data subsets like published_type_id
+sets.
+"""
 
 from typing import Any
 
@@ -14,6 +20,13 @@ class EsdDatasetsLoader(EsdDatasetsLoaderProtocol):
     def __init__(self, db_query: EveSdDbQueryManager):
         """Initializes the loader with a database query interface."""
         self.query_manager = db_query
+        self._published_types_cache: set[int] | None = None
+
+    def published_types(self) -> set[int]:
+        """Returns the set of published type IDs."""
+        if self._published_types_cache is None:
+            self._published_types_cache = set(self.types(published=True).dataset.keys())
+        return self._published_types_cache
 
     def blueprints(self) -> esd_datasets.BlueprintsDataset:
         """Returns the blueprints dataset loaded from ESD."""
