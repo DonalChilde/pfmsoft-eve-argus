@@ -7,7 +7,7 @@ import asyncio
 from logging import getLogger
 from time import perf_counter_ns
 
-from _shared import PROOF_OUTPUT_DIR, create_esi_loader, setup_logging
+from _shared import PROOF_OUTPUT_DIR, create_resources, setup_logging
 
 from pfmsoft.eve_argus.data_loaders.esi_responses import EsiResponseLoader
 from pfmsoft.eve_argus.models.esi import esi_response_models
@@ -20,7 +20,10 @@ REGION_MARKET_ORDERS_FILENAME = PROOF_OUTPUT_DIR / "region_market_orders_respons
 
 async def prove_region_market_orders() -> None:
     """Prove loading regional market orders from ESI."""
-    async with create_esi_loader() as loader:
+    async with create_resources() as resources:
+        loader = EsiResponseLoader(
+            esi_link=resources.esi_link, schema=resources.esi_schema
+        )
         _ = await region_market_orders(loader=loader, region_id=REGION_ID)
 
 

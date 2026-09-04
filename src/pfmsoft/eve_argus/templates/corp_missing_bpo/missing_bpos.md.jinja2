@@ -1,0 +1,9 @@
+## Missing Blueprints
+
+{% for group in context.missing_groups %}### {{ group.market_path }}
+
+| Blueprint | Base Price |
+| --- | --- |
+{% for row in group.rows %}| {{ row.name }} | {{ row.base_price if row.base_price is not none else "—" }} |
+{% endfor %}
+{% endfor %}

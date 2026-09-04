@@ -9,7 +9,7 @@ import asyncio
 from logging import getLogger
 from time import perf_counter_ns
 
-from _shared import PROOF_OUTPUT_DIR, create_esi_loader, setup_logging
+from _shared import PROOF_OUTPUT_DIR, create_resources, setup_logging
 
 from pfmsoft.eve_argus.data_loaders.esi_responses import EsiResponseLoader
 from pfmsoft.eve_argus.models.esi import esi_response_models
@@ -24,7 +24,10 @@ MARKET_GROUPS_DETAILS_FILENAME = (
 
 async def prove_market_groups() -> None:
     """Prove loading market group IDs and market group details from ESI."""
-    async with create_esi_loader() as loader:
+    async with create_resources() as resources:
+        loader = EsiResponseLoader(
+            esi_link=resources.esi_link, schema=resources.esi_schema
+        )
         market_group_ids_response = await market_group_ids(loader=loader)
         market_group_ids_set = set(
             market_group_ids_response.response_data.market_group_ids
