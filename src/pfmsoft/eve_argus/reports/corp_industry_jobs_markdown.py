@@ -64,6 +64,29 @@ class CharacterSummary:
     reactions: JobCounts
 
 
+@dataclass(frozen=True, slots=True)
+class StatusTables:
+    """Industry job rows grouped by status for the report templates."""
+
+    active: list[JobRow]
+    cancelled: list[JobRow]
+    delivered: list[JobRow]
+    paused: list[JobRow]
+    ready: list[JobRow]
+    reverted: list[JobRow]
+
+
+@dataclass(frozen=True, slots=True)
+class CorporationIndustryJobsContext:
+    """Dataclass context supplied to the corporation industry jobs templates."""
+
+    corporation: CorporationIndustryJobsNamed
+    generated_at: str
+    summaries: list[CharacterSummary]
+    status_tables: StatusTables
+    other_jobs: list[JobRow]
+
+
 def _format_remaining(seconds: float) -> str:
     if seconds <= 0:
         return "Ready"
@@ -125,7 +148,7 @@ def _summarize_jobs(
     for job in jobs:
         grouped[job.installer_id].append(job)
 
-    summaries = []
+    summaries: list[CharacterSummary] = []
     for character_jobs in grouped.values():
         counts: dict[str, JobCounts] = {}
         for job in character_jobs:
@@ -185,15 +208,20 @@ def render_corporation_industry_jobs_markdown(
     """Render corporation industry jobs as a Markdown report."""
     report_time = report_generated_at or Instant.now()
     classified = _classify_jobs(jobs.industry_jobs, report_time)
-    context = {
-        "corporation": jobs,
-        "generated_at": report_time.format_iso(),
-        "summaries": _summarize_jobs(jobs.industry_jobs, report_time),
-        "status_tables": {
-            status: classified.get(status, []) for status in _STATUS_TABLES
-        },
-        "other_jobs": classified.get("other", []),
-    }
+    context = CorporationIndustryJobsContext(
+        corporation=jobs,
+        generated_at=report_time.format_iso(),
+        summaries=_summarize_jobs(jobs.industry_jobs, report_time),
+        status_tables=StatusTables(
+            active=classified.get("active", []),
+            cancelled=classified.get("cancelled", []),
+            delivered=classified.get("delivered", []),
+            paused=classified.get("paused", []),
+            ready=classified.get("ready", []),
+            reverted=classified.get("reverted", []),
+        ),
+        other_jobs=classified.get("other", []),
+    )
     template_root = files("pfmsoft.eve_argus.templates") / "corp_industry_jobs"
     environment = Environment(
         loader=FileSystemLoader(str(template_root)),
@@ -202,7 +230,7 @@ def render_corporation_industry_jobs_markdown(
         trim_blocks=True,
         lstrip_blocks=True,
     )
-    return environment.get_template("base.md.jinja2").render(**context)
+    return environment.get_template("base.md.jinja2").render(context=context)
 
 
 __all__ = ["render_corporation_industry_jobs_markdown"]

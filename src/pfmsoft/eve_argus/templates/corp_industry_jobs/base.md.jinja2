@@ -1,6 +1,6 @@
-# {{ corporation.corporation_name }} Industry Jobs
+# {{ context.corporation.corporation_name }} Industry Jobs
 
-Generated at (UTC): `{{ generated_at }}`
+Generated at (UTC): `{{ context.generated_at }}`
 
 {% include "character_summary.md.jinja2" %}
 {% include "ready_jobs.md.jinja2" %}
@@ -9,11 +9,11 @@ Generated at (UTC): `{{ generated_at }}`
 {% include "delivered_jobs.md.jinja2" %}
 {% include "cancelled_jobs.md.jinja2" %}
 {% include "reverted_jobs.md.jinja2" %}
-{% if other_jobs %}
+{% if context.other_jobs %}
 ## Other Jobs
 
 | Character | Activity | Blueprint | Status | End |
 | --- | --- | --- | --- | --- |
-{% for row in other_jobs %}| {{ row.job.installer_name }} | {{ row.job.activity_name }} | {{ row.job.blueprint_name }} | {{ row.job.status }} | {{ row.end_date }} |
+{% for row in context.other_jobs %}| {{ row.job.installer_name }} | {{ row.job.activity_name }} | {{ row.job.blueprint_name }} | {{ row.job.status }} | {{ row.end_date }} |
 {% endfor %}
 {% endif %}
