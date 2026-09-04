@@ -9,7 +9,7 @@ import asyncio
 from logging import getLogger
 from time import perf_counter_ns
 
-from _shared import PROOF_OUTPUT_DIR, create_esi_loader, setup_logging
+from _shared import PROOF_OUTPUT_DIR, create_resources, setup_logging
 
 from pfmsoft.eve_argus.data_loaders.esi_responses import EsiResponseLoader
 from pfmsoft.eve_argus.models.esi import esi_response_models
@@ -23,7 +23,10 @@ TYPE_ID_SAMPLE_SIZE = 2000
 
 async def prove_universe_names() -> None:
     """Prove loading universe type IDs and resolving names from ESI."""
-    async with create_esi_loader() as loader:
+    async with create_resources() as resources:
+        loader = EsiResponseLoader(
+            esi_link=resources.esi_link, schema=resources.esi_schema
+        )
         universe_type_ids_response = await universe_type_ids(loader=loader)
         first_2000_type_ids = set(
             universe_type_ids_response.response_data.type_ids[:TYPE_ID_SAMPLE_SIZE]

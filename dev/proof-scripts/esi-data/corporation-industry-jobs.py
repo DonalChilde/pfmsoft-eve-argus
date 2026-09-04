@@ -14,7 +14,7 @@ from uuid import UUID
 
 from _shared import (
     PROOF_OUTPUT_DIR,
-    create_esi_loader,
+    create_resources,
     get_sample_auth_data,
     setup_logging,
 )
@@ -60,7 +60,10 @@ async def prove_corporation_industry_jobs() -> None:
         print("No sample auth data available, skipping corporation industry jobs.")
         return
 
-    async with create_esi_loader() as loader:
+    async with create_resources() as resources:
+        loader = EsiResponseLoader(
+            esi_link=resources.esi_link, schema=resources.esi_schema
+        )
         corporation_industry_jobs_response = await corporation_industry_jobs(
             loader=loader,
             corporation_id=sample_auth_data["corporation_id"],

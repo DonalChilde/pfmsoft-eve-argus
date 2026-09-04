@@ -14,7 +14,6 @@ from pathlib import Path
 from typing import TypedDict
 from uuid import UUID
 
-from pfmsoft.eve_argus.data_loaders.esi_responses import EsiResponseLoader
 from pfmsoft.eve_argus.eve_argus import EveArgusResources
 from pfmsoft.eve_argus.settings import get_settings
 
@@ -48,19 +47,17 @@ def setup_logging(script_name: str) -> Path:
 
 
 @asynccontextmanager
-async def create_esi_loader() -> AsyncGenerator[EsiResponseLoader]:
-    """Build an EsiResponseLoader from managed EveArgusResources.
+async def create_resources() -> AsyncGenerator[EveArgusResources]:
+    """Yield managed EveArgusResources for scripts needing both ESI and ESD access.
 
     Yields:
-        An EsiResponseLoader backed by an open resource manager.
+        An open EveArgusResources (esi link, esi schema, and static data query manager).
     """
     settings = get_settings()
     print(f"Using settings: {settings}")
     resource_manager = EveArgusResources(settings=settings)
     async with resource_manager as resources:
-        yield EsiResponseLoader(
-            esi_link=resources.esi_link, schema=resources.esi_schema
-        )
+        yield resources
 
 
 def get_sample_auth_data() -> SampleAuthData | None:

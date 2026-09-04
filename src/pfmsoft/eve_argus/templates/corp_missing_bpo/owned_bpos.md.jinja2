@@ -1,0 +1,9 @@
+## Owned Blueprints
+
+{% for group in context.owned_groups %}### {{ group.market_path }}
+
+| Blueprint | Quantity | ME | TE |
+| --- | --- | --- | --- |
+{% for row in group.rows %}| {{ row.name }} | {{ row.quantity }} | {{ row.material_efficiency }} | {{ row.time_efficiency }} |
+{% endfor %}
+{% endfor %}
