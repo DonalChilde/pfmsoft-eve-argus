@@ -3,15 +3,15 @@
 from collections.abc import Sequence
 from typing import Literal
 
-from pfmsoft.eve_argus.models.esi import esi_argus
+from pfmsoft.eve_argus.models.esi import argus_response_models
 
 
 def calculate_summaries(
-    region_orders: esi_argus.RegionMarketOrders,
+    region_orders: argus_response_models.RegionMarketOrders,
     solar_system_id: int | None = None,
     location_id: int | None = None,
     filter_factor: float = 100.0,
-) -> esi_argus.OrderSummaries:
+) -> argus_response_models.OrderSummaries:
     """Summarize buy and sell depth for one region, or for a system/location subset.
 
     Each item summary is built from the filtered valid orders for that side of the book.
@@ -48,7 +48,7 @@ def calculate_summaries(
         )
     if filter_factor <= 1.0:
         raise ValueError("filter_factor must be greater than 1.0.")
-    summaries = esi_argus.OrderSummaries(
+    summaries = argus_response_models.OrderSummaries(
         received_at=region_orders.received_at,
         expires_at=region_orders.expires_at,
         region_id=region_orders.region_id,
@@ -73,11 +73,11 @@ def calculate_summaries(
 def calculate_order_summary(
     region_id: int,
     type_id: int,
-    collected_orders: esi_argus.DividedOrders,
+    collected_orders: argus_response_models.DividedOrders,
     solar_system_id: int | None = None,
     location_id: int | None = None,
     filter_factor: float = 100.0,
-) -> esi_argus.OrderSummary:
+) -> argus_response_models.OrderSummary:
     """Summarize the buy and sell depth for one item type.
 
     The function first narrows the order set to the requested scope: whole region,
@@ -139,7 +139,7 @@ def calculate_order_summary(
         is_buy_summary=False,
         filter_factor=filter_factor,
     )
-    return esi_argus.OrderSummary(
+    return argus_response_models.OrderSummary(
         region_id=region_id,
         solar_system_id=solar_system_id,
         location_id=location_id,
@@ -151,10 +151,10 @@ def calculate_order_summary(
 
 def calculate_order_summary_detail(
     type_id: int,
-    orders: Sequence[esi_argus.MarketOrderDetail],
+    orders: Sequence[argus_response_models.MarketOrderDetail],
     is_buy_summary: bool,
     filter_factor: float = 100.0,
-) -> esi_argus.OrderSummaryItem:
+) -> argus_response_models.OrderSummaryItem:
     """Calculate a summary for one side of a market for a single item type.
 
     The summary is computed from a list of orders that are already known to be the same
@@ -234,7 +234,7 @@ def calculate_order_summary_detail(
     filtered_items = sum(o.volume_remain for o in excluded_orders)
     filtered_orders = len(excluded_orders)
     five_percent_of_items = total_items * 0.05
-    five_percent_orders: list[esi_argus.MarketOrderDetail] = []
+    five_percent_orders: list[argus_response_models.MarketOrderDetail] = []
     items = 0
     for order in valid_orders:
         # Include the order if the cumulative volume is still at or below the 5% target.
@@ -277,7 +277,7 @@ def calculate_order_summary_detail(
     #     filtered_orders=filtered_orders,
     # )
 
-    summary = esi_argus.OrderSummaryItem(
+    summary = argus_response_models.OrderSummaryItem(
         type_id=type_id,
         is_buy_summary=is_buy_summary,
         five_price=five_price,

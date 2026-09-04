@@ -2,7 +2,7 @@
 
 from datetime import date, timedelta
 
-from pfmsoft.eve_argus.models.esi import esi_argus, esi_response
+from pfmsoft.eve_argus.models.esi import argus_response_models, esi_response_models
 from pfmsoft.eve_argus.models.types import RegionID, TypeID
 
 
@@ -36,10 +36,10 @@ def date_range_days(start_date: str, days: int, descending: bool = True) -> list
 
 
 def calculate_history_summary(
-    history: esi_response.GetMarketsRegionIdHistory,
+    history: esi_response_models.GetMarketsRegionIdHistory,
     period: int,
     start_date: str | None = None,
-) -> esi_argus.HistorySummary:
+) -> argus_response_models.HistorySummary:
     """Calculate a volume-weighted summary for a market history window.
 
     The summary covers `period` consecutive days ending on `start_date`. If
@@ -78,7 +78,7 @@ def calculate_history_summary(
         raise ValueError("Period must be a positive integer.")
     # Sort the history entries by date in descending order to ensure we process the most
     # recent data first
-    history_entries: list[esi_response.GetMarketsRegionIdHistoryDetail] = sorted(
+    history_entries: list[esi_response_models.GetMarketsRegionIdHistoryDetail] = sorted(
         history.history, key=lambda x: x.date, reverse=True
     )
     if not history_entries:
@@ -89,7 +89,7 @@ def calculate_history_summary(
         if start_date not in [entry.date for entry in history_entries]:
             raise ValueError(f"Start date {start_date} not in market history data")
     dates = list(date_range_days(start_date=start_date, days=period, descending=True))
-    history_dict: dict[str, esi_response.GetMarketsRegionIdHistoryDetail] = {
+    history_dict: dict[str, esi_response_models.GetMarketsRegionIdHistoryDetail] = {
         entry.date: entry for entry in history_entries
     }
     missing = order_count = 0
@@ -104,7 +104,7 @@ def calculate_history_summary(
         lowest = lowest + (item.lowest * item.volume)
         order_count = order_count + item.order_count
         volume = volume + item.volume
-    summary = esi_argus.HistorySummary(
+    summary = argus_response_models.HistorySummary(
         received_at=history.received_at,
         expires_at=history.expires_at,
         region_id=history.region_id,
@@ -122,13 +122,15 @@ def calculate_history_summary(
     return summary
 
 
-RegionalHistories = dict[RegionID, dict[TypeID, esi_response.GetMarketsRegionIdHistory]]
+RegionalHistories = dict[
+    RegionID, dict[TypeID, esi_response_models.GetMarketsRegionIdHistory]
+]
 
 
 def calculate_regional_history_summaries(
     regional_histories: RegionalHistories,
     period: int,
-) -> esi_argus.RegionalHistorySummaries:
+) -> argus_response_models.RegionalHistorySummaries:
     """Calculate history summaries for all item types in a region.
 
     Args:
@@ -149,8 +151,10 @@ def calculate_regional_history_summaries(
             "Regional histories data contains multiple regions; expected only one region."
         )
     region_id = next(iter(regional_histories.keys()))
-    summaries: dict[TypeID, esi_argus.HistorySummary] = {}
+    summaries: dict[TypeID, argus_response_models.HistorySummary] = {}
     for type_id, history in regional_histories[region_id].items():
         summary = calculate_history_summary(history=history, period=period)
         summaries[type_id] = summary
-    return esi_argus.RegionalHistorySummaries(region_id=region_id, summaries=summaries)
+    return argus_response_models.RegionalHistorySummaries(
+        region_id=region_id, summaries=summaries
+    )

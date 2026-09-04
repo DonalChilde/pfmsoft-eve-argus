@@ -21,6 +21,9 @@ class EsiArgusBaseModel(BaseModel):
     This class is a wrapper for serialization and validation of ESI Argus model data.
     """
 
+    # FIXME Because this is a serialization wrapper, the name should reflect that. Use
+    # a different scheme to hold an full dataset so that it can be used independently of the wrapper.
+
     dataset: Any
 
     def serialize(self, indent: int | None = 2) -> str:

@@ -265,6 +265,17 @@ class PostUniverseNamesResponse(EsiResponseBaseModel):
     response_data: PostUniverseNames
 
 
+class GetCorporationsCorporationIdIndustryJobsDetail_Status(StrEnum):
+    """Enumeration for the status of corporation industry jobs."""
+
+    ACTIVE = "active"
+    CANCELLED = "cancelled"
+    DELIVERED = "delivered"
+    PAUSED = "paused"
+    READY = "ready"
+    REVERTED = "reverted"
+
+
 @dataclass(slots=True, kw_only=True)
 class GetCorporationsCorporationIdIndustryJobsDetail:
     """Detail for corporation industry jobs response."""
@@ -289,7 +300,7 @@ class GetCorporationsCorporationIdIndustryJobsDetail:
     product_type_id: int | None = None
     runs: int
     start_date: str
-    status: str
+    status: GetCorporationsCorporationIdIndustryJobsDetail_Status
     successful_runs: int | None = None
 
 

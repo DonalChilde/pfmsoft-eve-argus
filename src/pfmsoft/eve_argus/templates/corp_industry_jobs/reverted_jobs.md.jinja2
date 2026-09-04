@@ -1,0 +1,6 @@
+## Reverted Jobs
+
+| Character | Activity | Blueprint | Blueprint Location | Output Location | Facility | End |
+| --- | --- | --- | --- | --- | --- | --- |
+{% for row in context.status_tables.reverted %}| {{ row.job.installer_name }} | {{ row.job.activity_name }} | {{ row.job.blueprint_name }} | {{ row.job.blueprint_location_name }} | {{ row.job.output_location_name }} | {{ row.job.facility_name }} | {{ row.end_date }} |
+{% endfor %}

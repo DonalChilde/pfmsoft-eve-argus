@@ -3,8 +3,8 @@
 from pfmsoft.eve_argus.data_transform.regional_market_orders import (
     transform_region_market_orders,
 )
-from pfmsoft.eve_argus.models.esi.esi_argus import MarketOrderDetail
-from pfmsoft.eve_argus.models.esi.esi_response import (
+from pfmsoft.eve_argus.models.esi.argus_response_models import MarketOrderDetail
+from pfmsoft.eve_argus.models.esi.esi_response_models import (
     GetMarketsRegionIdOrders,
     GetMarketsRegionIdOrdersDetail,
 )

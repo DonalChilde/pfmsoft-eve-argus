@@ -7,7 +7,7 @@ from pfmsoft.eve_argus.data_transform.history_summary import (
     calculate_regional_history_summaries,
     date_range_days,
 )
-from pfmsoft.eve_argus.models.esi.esi_response import (
+from pfmsoft.eve_argus.models.esi.esi_response_models import (
     GetMarketsRegionIdHistory,
     GetMarketsRegionIdHistoryDetail,
 )

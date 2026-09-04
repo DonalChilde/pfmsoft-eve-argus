@@ -26,7 +26,10 @@ def successful_response(
 ) -> SimpleNamespace:
     """Build the transport attributes consumed by the loader."""
     request = SimpleNamespace(query_parameters=query_parameters or {})
-    metadata = SimpleNamespace(received_at=RECEIVED_AT, expires=EXPIRES_AT)
+    metadata = SimpleNamespace(
+        received_at=RECEIVED_AT.format_iso(),
+        expires_at_instant=Instant.parse_rfc2822(EXPIRES_AT),
+    )
     return SimpleNamespace(
         response_data=response_data,
         response=SimpleNamespace(metadata=metadata),

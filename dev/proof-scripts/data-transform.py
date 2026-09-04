@@ -6,7 +6,7 @@ from pfmsoft.eve_argus.data_transform import (
     order_summaries,
     regional_market_orders,
 )
-from pfmsoft.eve_argus.models.esi import esi_argus, esi_response
+from pfmsoft.eve_argus.models.esi import argus_response_models, esi_response_models
 
 PROOF_OUTPUT_DIR = Path(__file__).parent / "proof-output"
 PROOF_OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
@@ -39,7 +39,7 @@ def history_summary_transform():
     print()
     print(f"Loading history response from {REGION_MARKET_HISTORY_FILENAME}")
     history_response = (
-        esi_response.GetMarketsRegionIdHistoryCollectedResponse.deserialize(
+        esi_response_models.GetMarketsRegionIdHistoryCollectedResponse.deserialize(
             REGION_MARKET_HISTORY_FILENAME.read_text()
         )
     )
@@ -59,7 +59,7 @@ def market_groups_transform():
     print()
     print(f"Loading market group details from {MARKET_GROUPS_DETAILS_FILENAME}")
     market_groups_details_response = (
-        esi_response.GetMarketsGroupsMarketGroupIdCollectedResponse.deserialize(
+        esi_response_models.GetMarketsGroupsMarketGroupIdCollectedResponse.deserialize(
             MARKET_GROUPS_DETAILS_FILENAME.read_text()
         )
     )
@@ -74,7 +74,7 @@ def regional_market_orders_transform():
     print()
     print(f"Loading regional market orders from {REGION_MARKET_ORDERS_FILENAME}")
     regional_market_orders_response = (
-        esi_response.GetMarketsRegionIdOrdersResponse.deserialize(
+        esi_response_models.GetMarketsRegionIdOrdersResponse.deserialize(
             REGION_MARKET_ORDERS_FILENAME.read_text()
         )
     )
@@ -90,7 +90,7 @@ def order_summaries_transform():
     print(
         f"Loading regional market orders from {REGION_MARKET_ORDERS_TRANSFORMED_FILENAME}"
     )
-    region_market_orders = esi_argus.RegionMarketOrders.deserialize(
+    region_market_orders = argus_response_models.RegionMarketOrders.deserialize(
         REGION_MARKET_ORDERS_TRANSFORMED_FILENAME.read_text()
     )
     result = order_summaries.calculate_summaries(region_orders=region_market_orders)
@@ -105,7 +105,9 @@ if __name__ == "__main__":
     print(f"History summary written to {REGION_HISTORY_SUMMARY_FILENAME}")
 
     market_groups_result = market_groups_transform()
-    market_groups_dataset = esi_argus.MarketGroupsDataset(dataset=market_groups_result)
+    market_groups_dataset = argus_response_models.MarketGroupsDataset(
+        dataset=market_groups_result
+    )
     MARKET_GROUPS_TRANSFORMED_FILENAME.write_text(
         market_groups_dataset.serialize(indent=2)
     )

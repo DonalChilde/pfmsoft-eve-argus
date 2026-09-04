@@ -1,7 +1,7 @@
 """Tests for the blueprint summary 1 report."""
 
 from pfmsoft.eve_argus.models.esd import esd_datasets
-from pfmsoft.eve_argus.models.esi import esi_argus
+from pfmsoft.eve_argus.models.esi import argus_response_models
 from pfmsoft.eve_argus.models.types import LanguageEnum
 from pfmsoft.eve_argus.reports.blueprint_summary_1 import (
     generate_blueprint_summary_1_report,
@@ -50,9 +50,9 @@ def test_generate_blueprint_summary_1_report_builds_and_sorts_rows():
             )
         }
     )
-    market_groups = esi_argus.MarketGroupsDataset(
+    market_groups = argus_response_models.MarketGroupsDataset(
         dataset={
-            20: esi_argus.MarketGroup(
+            20: argus_response_models.MarketGroup(
                 received_at="2024-01-01T00:00:00Z",
                 expires_at=None,
                 market_group_id=20,
@@ -78,10 +78,8 @@ def test_generate_blueprint_summary_1_report_builds_and_sorts_rows():
             "market_path": "",
             "meta_group_id": None,
             "meta_group_name": None,
-            "tech_level": None,
-            "meta_level": None,
             "base_price": None,
-            "portion_size": 10,
+            "portion_size": -1,
             "published": False,
         },
         {
@@ -90,10 +88,8 @@ def test_generate_blueprint_summary_1_report_builds_and_sorts_rows():
             "market_path": "Ships > Frigates",
             "meta_group_id": 2,
             "meta_group_name": "Tech II DE",
-            "tech_level": 2,
-            "meta_level": 5,
             "base_price": 125.5,
-            "portion_size": 1,
+            "portion_size": -1,
             "published": True,
         },
     ]
@@ -112,7 +108,7 @@ def test_generate_blueprint_summary_1_report_skips_missing_type():
 
     result = generate_blueprint_summary_1_report(
         blueprints=blueprints,
-        market_groups=esi_argus.MarketGroupsDataset(dataset={}),
+        market_groups=argus_response_models.MarketGroupsDataset(dataset={}),
         meta_groups=esd_datasets.MetaGroupsDataset(dataset={}),
         types=esd_datasets.TypesDataset(dataset={}),
     )

@@ -7,7 +7,7 @@ from pfmsoft.eve_argus.data_transform.order_summaries import (
     calculate_order_summary_detail,
     calculate_summaries,
 )
-from pfmsoft.eve_argus.models.esi.esi_argus import (
+from pfmsoft.eve_argus.models.esi.argus_response_models import (
     DividedOrders,
     MarketOrderDetail,
     RegionMarketOrders,

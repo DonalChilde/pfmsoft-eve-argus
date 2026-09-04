@@ -1,0 +1,6 @@
+## Completed Jobs
+
+| Character | Activity | Blueprint | Facility | Completed | Delivered By |
+| --- | --- | --- | --- | --- | --- |
+{% for row in completed_jobs %}| {{ row.job.installer_name }} | {{ row.job.activity_name }} | {{ row.job.blueprint_name }} | {{ row.job.facility_name }} | {{ row.completed_date or row.end_date }} | {{ row.job.completed_character_name or "Unknown" }} |
+{% endfor %}
