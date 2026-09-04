@@ -12,3 +12,7 @@ docs:
     @echo "Building Sphinx documentation..."
     sphinx-apidoc -f -o ./docs/source/documentation/api-generated/ ./src/eve_argus/
     sphinx-build -M html docs/source docs/build --fail-on-warning
+
+# Clean local git branches - removes local branches that are not tracked on origin.
+git-cleanup:
+    git fetch --prune && git branch -vv | awk '/: gone]/ {print $1}' | xargs -r git branch -d
