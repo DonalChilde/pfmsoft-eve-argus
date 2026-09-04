@@ -3,6 +3,7 @@
 import asyncio
 from types import SimpleNamespace
 from typing import Any
+from uuid import uuid4
 
 import pytest
 from whenever import Instant
@@ -197,9 +198,69 @@ def test_region_market_histories_collects_type_ids_and_request_parameters(
     } == {(10000002, 34), (10000002, 35)}
 
 
+def test_corporation_blueprints_builds_request_and_maps_response(
+    schema: object,
+) -> None:
+    """Corporation blueprints should include auth fields and map blueprint items."""
+    credential_id = uuid4()
+    link = FakeEsiLink([
+        successful_response([
+            {
+                "item_id": 1000000016835,
+                "type_id": 691,
+                "location_id": 60014719,
+                "location_flag": "CorpSAG1",
+                "quantity": -1,
+                "time_efficiency": 10,
+                "material_efficiency": 20,
+                "runs": -1,
+            },
+            {
+                "item_id": 1000000016836,
+                "type_id": 692,
+                "location_id": 1026060253567,
+                "location_flag": "Hangar",
+                "quantity": -2,
+                "time_efficiency": 0,
+                "material_efficiency": 0,
+                "runs": 5,
+            },
+        ])
+    ])
+    loader = EsiResponseLoader(link, schema)
+
+    result = run(loader.corporation_blueprints(98777771, 90000001, credential_id))
+
+    response_data = result.response_data
+    assert response_data.corporation_id == 98777771
+    assert response_data.received_at == RECEIVED_AT.format_iso()
+    assert len(response_data.blueprints) == 2
+    original = response_data.blueprints[0]
+    assert original.item_id == 1000000016835
+    assert original.type_id == 691
+    assert original.location_flag.value == "CorpSAG1"
+    assert original.quantity == -1
+    assert original.runs == -1
+    copy = response_data.blueprints[1]
+    assert copy.location_flag.value == "Hangar"
+    assert copy.quantity == -2
+    assert copy.runs == 5
+    request = link.requests[0]
+    assert request.operation_id == "GetCorporationsCorporationIdBlueprints"
+    assert request.path_parameters == {"corporation_id": 98777771}
+    assert request.auth_character_id == 90000001
+    assert request.auth_credential_id == credential_id
+
+
 @pytest.mark.parametrize(
     "method_name",
-    ["market_group_ids", "region_market_orders", "markets_prices", "industry_systems"],
+    [
+        "market_group_ids",
+        "region_market_orders",
+        "markets_prices",
+        "industry_systems",
+        "corporation_blueprints",
+    ],
 )
 def test_single_response_loaders_raise_for_failed_response(
     monkeypatch: pytest.MonkeyPatch,
@@ -216,7 +277,10 @@ def test_single_response_loaders_raise_for_failed_response(
     link = FakeEsiLink([FakeFailedResponse()])
     loader = EsiResponseLoader(link, schema)
 
-    arguments = {"region_market_orders": (7,)}.get(method_name, ())
+    arguments = {
+        "region_market_orders": (7,),
+        "corporation_blueprints": (7, 90000001, uuid4()),
+    }.get(method_name, ())
     with pytest.raises(RuntimeError, match="boom"):
         run(getattr(loader, method_name)(*arguments))
 

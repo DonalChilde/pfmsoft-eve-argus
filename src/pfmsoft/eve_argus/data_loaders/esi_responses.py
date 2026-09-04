@@ -12,7 +12,6 @@ from pfmsoft.eve_link import (
     EsiSchema,
     FailedEsiResponse,
 )
-from whenever import Instant
 
 from pfmsoft.eve_argus.data_loaders.protocols import EsiResponseLoaderProtocol
 from pfmsoft.eve_argus.models.esi import esi_response_models
@@ -264,6 +263,34 @@ class EsiResponseLoader(EsiResponseLoaderProtocol):
             "industry_jobs": response.response_data,
         }
         return esi_response_models.GetCorporationsCorporationIdIndustryJobsResponse.model_validate({
+            "response_data": response_dict
+        })
+
+    async def corporation_blueprints(
+        self,
+        corporation_id: int,
+        character_id: int,
+        credential_id: UUID,
+    ) -> esi_response_models.GetCorporationsCorporationIdBlueprintsResponse:
+        """Loads the blueprints for a corporation from ESI."""
+        request = EsiRequest(
+            operation_id="GetCorporationsCorporationIdBlueprints",
+            path_parameters={"corporation_id": corporation_id},
+            auth_character_id=character_id,
+            auth_credential_id=credential_id,
+        )
+        response = await self._esi_link.make_request(request, schema=self._schema)
+        if isinstance(response, FailedEsiResponse):
+            raise RuntimeError(
+                f"Failed to load blueprints for corporation {corporation_id}: {response.failed_response.error_messages}"
+            )
+        response_dict: dict[str, Any] = {
+            "received_at": _received_at_from_response(response),
+            "expires_at": _expires_at_from_response(response),
+            "corporation_id": corporation_id,
+            "blueprints": response.response_data,
+        }
+        return esi_response_models.GetCorporationsCorporationIdBlueprintsResponse.model_validate({
             "response_data": response_dict
         })
 

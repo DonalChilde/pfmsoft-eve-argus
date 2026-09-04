@@ -120,6 +120,14 @@ class EsiResponseLoaderProtocol(Protocol):
             "Subclasses must implement the corporation_industry_jobs method."
         )
 
+    async def corporation_blueprints(
+        self, corporation_id: int, character_id: int, credential_id: UUID
+    ) -> esi_response_models.GetCorporationsCorporationIdBlueprintsResponse:
+        """Loads the blueprints for a corporation from ESI."""
+        raise NotImplementedError(
+            "Subclasses must implement the corporation_blueprints method."
+        )
+
 
 class EsiArgusLoaderProtocol(Protocol):
     """Protocol for loading ESI Argus data."""
