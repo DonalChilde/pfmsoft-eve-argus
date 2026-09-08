@@ -18,6 +18,7 @@ Intended use: copy the space-separated name list for a group and feed it to
 
 Usage:
     uv run dependency-report.py [path-to-directory-or-pyproject.toml]
+    uv run dependency-report.py --check-latest [path-to-directory-or-pyproject.toml]
     uv remove <names>  # to remove old versions
     uv add <names>     # to add new versions
     uv remove --dev <names>  # to remove old versions from dev/test groups
@@ -27,11 +28,16 @@ If no path is given, searches the current working directory (and then
 walks upward through parent directories) for a pyproject.toml.
 """
 
+import argparse
+import json
 import sys
 import tomllib
+import urllib.request
 from pathlib import Path
+from urllib.error import HTTPError, URLError
 
 from packaging.requirements import InvalidRequirement, Requirement
+from packaging.utils import canonicalize_name
 
 
 def find_pyproject(start: Path) -> Path:
@@ -72,8 +78,50 @@ def parse_requirement(raw: str) -> tuple[str, str]:
     return name, specifier
 
 
-def print_group(title: str, raw_entries: list[str]) -> None:
-    """Print a group of dependencies with both "name  version-range" and a space-separated name-only list."""
+def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
+    """Parse CLI arguments for the dependency report script."""
+    parser = argparse.ArgumentParser(
+        description=(
+            "List dependencies from a pyproject.toml and optionally look up the latest "
+            "published PyPI version for each package."
+        )
+    )
+    parser.add_argument(
+        "path",
+        nargs="?",
+        default=".",
+        help="Path to a pyproject.toml or directory to search for one.",
+    )
+    parser.add_argument(
+        "--check-latest",
+        action="store_true",
+        help="Check the latest published version from PyPI for each dependency.",
+    )
+    return parser.parse_args(argv)
+
+
+def latest_pypi_version(package_name: str) -> str | None:
+    """Return the latest published PyPI version for a package, or None on failure."""
+    normalized = canonicalize_name(package_name)
+    url = f"https://pypi.org/pypi/{normalized}/json"
+
+    try:
+        with urllib.request.urlopen(url, timeout=10) as response:
+            payload = json.load(response)
+    except HTTPError, OSError, TimeoutError, URLError, ValueError:
+        return None
+
+    info = payload.get("info", {})
+    return info.get("version")
+
+
+def print_group(
+    title: str,
+    raw_entries: list[str],
+    *,
+    check_latest: bool = False,
+) -> None:
+    """Print grouped dependency info, with optional latest PyPI versions."""
     print(f"\n=== {title} ({len(raw_entries)}) ===")
     if not raw_entries:
         print("  (none)")
@@ -83,7 +131,15 @@ def print_group(title: str, raw_entries: list[str]) -> None:
     name_width = max(len(name) for name, _ in parsed)
 
     for name, version_range in parsed:
-        print(f"  {name.ljust(name_width)}   {version_range}")
+        package_name = name.split("[", 1)[0]
+        latest = ""
+        if check_latest:
+            latest_version = latest_pypi_version(package_name)
+            if latest_version is None:
+                latest = "   latest: unavailable (offline or PyPI lookup failed)"
+            else:
+                latest = f"   latest: {latest_version}"
+        print(f"  {name.ljust(name_width)}   {version_range}{latest}")
 
     names_only = [name.split("[", 1)[0] for name, _ in parsed]
     print(f"\n  names: {' '.join(names_only)}")
@@ -91,7 +147,8 @@ def print_group(title: str, raw_entries: list[str]) -> None:
 
 def main() -> None:
     """Main entry point: find pyproject.toml, read dependencies, and print them."""
-    target = Path(sys.argv[1]) if len(sys.argv) > 1 else Path.cwd()
+    args = parse_args()
+    target = Path(args.path)
 
     try:
         pyproject_path = find_pyproject(target)
@@ -107,12 +164,20 @@ def main() -> None:
     project = data.get("project", {})
 
     # Standard [project] dependencies
-    print_group("project.dependencies", project.get("dependencies", []))
+    print_group(
+        "project.dependencies",
+        project.get("dependencies", []),
+        check_latest=args.check_latest,
+    )
 
     # [project.optional-dependencies] (extras) - keyed by extra name
     optional_deps = project.get("optional-dependencies", {})
     for extra_name, entries in optional_deps.items():
-        print_group(f"project.optional-dependencies.{extra_name}", entries)
+        print_group(
+            f"project.optional-dependencies.{extra_name}",
+            entries,
+            check_latest=args.check_latest,
+        )
 
     # [dependency-groups] (PEP 735) - keyed by group name. Entries can be
     # plain requirement strings OR {"include-group": "other-group"} dicts;
@@ -126,7 +191,11 @@ def main() -> None:
             for e in entries
             if isinstance(e, dict) and "include-group" in e
         ]
-        print_group(f"dependency-groups.{group_name}", str_entries)
+        print_group(
+            f"dependency-groups.{group_name}",
+            str_entries,
+            check_latest=args.check_latest,
+        )
         if includes:
             print(f"  (also includes group(s): {', '.join(includes)})")
 
