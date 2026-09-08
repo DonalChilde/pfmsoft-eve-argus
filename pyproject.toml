@@ -6,13 +6,12 @@ readme = "README.md"
 authors = [{ name = "Chad Lowe", email = "pfmsoft.dev@gmail.com" }]
 requires-python = ">=3.14"
 dependencies = [
-    "cryptography>=50.0.0",
     "jinja2>=3.1.6",
-    "pfmsoft-eve-link>=0.4.9",
+    "pfmsoft-eve-link>=0.4.10",
     "pfmsoft-eve-sd>=0.4.6",
     "pfmsoft-eve-snippets>=0.1.8",
-    "pydantic>=2.13.4",
-    "whenever>=0.10.3",
+    "pydantic>=2.13.5",
+    "whenever>=0.10.5",
 ]
 
 [project.scripts]
@@ -64,9 +63,9 @@ docstring-code-line-length = 88
 
 [dependency-groups]
 dev = [
-    "mkdocstrings-python>=2.0.5",
+    "mkdocstrings-python>=2.0.8",
     "pytest>=9.1.1",
     "pytest-cov>=7.1.0",
-    "ruff>=0.15.22",
-    "zensical>=0.0.51",
+    "ruff>=0.16.5",
+    "zensical>=0.0.57",
 ]
