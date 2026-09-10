@@ -15,7 +15,7 @@ from pfmsoft.eve_link.settings import EsiLinkSettings
 from pfmsoft.eve_link.settings import get_settings as get_eve_link_settings
 from pfmsoft.eve_sd.settings import EveSDSettings
 from pfmsoft.eve_sd.settings import get_settings as get_eve_sd_settings
-from pydantic import RootModel
+from pydantic import BaseModel, ConfigDict, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from typer import get_app_dir
 
@@ -76,18 +76,18 @@ class EveArgusSettingsPydantic(BaseSettings):
     application_directory: Path = Path(get_app_dir(__app_name__))
 
 
-@dataclass(slots=True, kw_only=True)
-class RateLimitSettings:
+class RateLimitSettings(BaseModel):
     """Settings for rate limiting of ESI requests."""
 
-    max_rate: float = 50.0
+    model_config = ConfigDict(allow_inf_nan=False)
+
+    max_rate: float = Field(default=50.0, gt=0)
     """The maximum rate for ESI requests per time period."""
-    time_period: float = 1.0
+    time_period: float = Field(default=1.0, gt=0)
     """The time period over which the maximum rate is applied."""
 
 
-@dataclass(slots=True, kw_only=True)
-class EveArgusTomlSettings:
+class EveArgusTomlSettings(BaseModel):
     """Settings loaded from the TOML configuration file."""
 
     rate_limit: RateLimitSettings
@@ -97,9 +97,6 @@ class EveArgusTomlSettings:
 def _default_settings() -> EveArgusTomlSettings:
     """Return the default TOML settings."""
     return EveArgusTomlSettings(rate_limit=RateLimitSettings())
-
-
-EveArgusTomlSettingsRoot = RootModel[EveArgusTomlSettings]
 
 
 def _load_toml_settings(toml_file: Path) -> EveArgusTomlSettings:
@@ -125,7 +122,7 @@ def _load_toml_settings(toml_file: Path) -> EveArgusTomlSettings:
             logger.error("Failed to read TOML file '%s': %s", toml_file, e)
             raise e
     try:
-        toml_settings = EveArgusTomlSettingsRoot.model_validate(toml_data).root
+        toml_settings = EveArgusTomlSettings.model_validate(toml_data)
     except Exception as e:
         logger.error("Failed to load TOML settings from '%s': %s", toml_file, e)
         # FIXME Use an argus specific exception instead of ValueError, include possible solutions.
