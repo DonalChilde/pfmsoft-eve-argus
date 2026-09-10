@@ -79,7 +79,7 @@ class EveArgusSettingsPydantic(BaseSettings):
 class RateLimitSettings(BaseModel):
     """Settings for rate limiting of ESI requests."""
 
-    model_config = ConfigDict(allow_inf_nan=False)
+    model_config = ConfigDict(allow_inf_nan=False, extra="forbid")
 
     max_rate: float = Field(default=50.0, gt=0)
     """The maximum rate for ESI requests per time period."""
@@ -89,6 +89,8 @@ class RateLimitSettings(BaseModel):
 
 class EveArgusTomlSettings(BaseModel):
     """Settings loaded from the TOML configuration file."""
+
+    model_config = ConfigDict(extra="forbid")
 
     rate_limit: RateLimitSettings
     """The rate limit settings for ESI requests."""
@@ -185,17 +187,22 @@ def _initialize_settings(application_directory: Path) -> EveArgusSettings:
     return settings
 
 
-def _ensure_toml_settings_file(application_directory: Path):
+def _ensure_toml_settings_file(application_directory: Path) -> None:
     """Ensure that the TOML settings file exists in the application directory.
 
     If the file does not exist, it will be created with default settings.
     """
-    if not (application_directory / TOML_SETTINGS_FILE).exists():
-        # load the toml-settings-example.toml file as a package resource
-        example_toml = load_package_resouce_text(
-            "pfmsoft.eve_argus", "toml-settings-example.toml"
-        )
-        (application_directory / TOML_SETTINGS_FILE).write_text(example_toml)
+    toml_file = application_directory / TOML_SETTINGS_FILE
+    if toml_file.exists():
+        if not toml_file.is_file():
+            raise ValueError(f"TOML settings path '{toml_file}' is not a file.")
+        return
+
+    # load the toml-settings-example.toml file as a package resource
+    example_toml = load_package_resouce_text(
+        "pfmsoft.eve_argus", "toml-settings-example.toml"
+    )
+    toml_file.write_text(example_toml)
 
 
 def _apply_toml_settings(

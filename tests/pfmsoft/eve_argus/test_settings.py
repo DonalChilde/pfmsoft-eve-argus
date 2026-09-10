@@ -3,7 +3,12 @@
 import pytest
 from pydantic import ValidationError
 
-from pfmsoft.eve_argus.settings import RateLimitSettings
+from pfmsoft.eve_argus.settings import (
+    TOML_SETTINGS_FILE,
+    EveArgusTomlSettings,
+    RateLimitSettings,
+    get_settings,
+)
 
 
 def test_rate_limit_settings_accepts_positive_finite_values() -> None:
@@ -33,3 +38,23 @@ def test_rate_limit_settings_rejects_non_positive_or_non_finite_values(
     """Non-positive and non-finite rate-limit values should be rejected."""
     with pytest.raises(ValidationError):
         RateLimitSettings(**{field: value})
+
+
+def test_rate_limit_settings_rejects_extra_fields() -> None:
+    """Unknown rate-limit fields should be rejected rather than ignored."""
+    with pytest.raises(ValidationError):
+        RateLimitSettings(maxrate=7.0)
+
+
+def test_toml_settings_rejects_extra_fields() -> None:
+    """Unknown top-level TOML fields should be rejected rather than ignored."""
+    with pytest.raises(ValidationError):
+        EveArgusTomlSettings(rate_limit=RateLimitSettings(), retries=3)
+
+
+def test_get_settings_rejects_toml_directory(tmp_path) -> None:
+    """A directory at the TOML configuration path should raise an error."""
+    (tmp_path / TOML_SETTINGS_FILE).mkdir()
+
+    with pytest.raises(ValueError, match="is not a file"):
+        get_settings(tmp_path)
