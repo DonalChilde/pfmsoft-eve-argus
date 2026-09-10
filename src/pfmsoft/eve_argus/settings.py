@@ -103,12 +103,12 @@ def _default_settings() -> EveArgusTomlSettings:
 
 def _load_toml_settings(toml_file: Path) -> EveArgusTomlSettings:
     """Load settings from a TOML configuration file."""
-    if not toml_file.exists() or not toml_file.is_file():
-        logger.info(
-            "TOML file '%s' does not exist or is not a file. Using default settings.",
-            toml_file,
-        )
-        return _default_settings()
+    if not toml_file.exists():
+        logger.warning("TOML file '%s' does not exist.", toml_file)
+        raise ValueError(f"TOML file '{toml_file}' does not exist.")
+    if toml_file.is_dir():
+        logger.warning("TOML file '%s' is a directory.", toml_file)
+        raise ValueError(f"TOML file '{toml_file}' is a directory.")
     with toml_file.open("rb") as f:
         try:
             toml_data = tomllib.load(f)
