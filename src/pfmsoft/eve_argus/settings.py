@@ -1,5 +1,12 @@
-"""Application settings for pfmsoft-eve-argus."""
+"""Application settings for pfmsoft-eve-argus.
 
+The application directory setting can be configured via an environment variable or .env file.
+
+Other settings are also configurable via a TOML configuration file in the application directory.
+"""
+
+import logging
+import tomllib
 from dataclasses import dataclass
 from pathlib import Path
 from uuid import NAMESPACE_DNS, uuid5
@@ -8,6 +15,7 @@ from pfmsoft.eve_link.settings import EsiLinkSettings
 from pfmsoft.eve_link.settings import get_settings as get_eve_link_settings
 from pfmsoft.eve_sd.settings import EveSDSettings
 from pfmsoft.eve_sd.settings import get_settings as get_eve_sd_settings
+from pydantic import RootModel
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from typer import get_app_dir
 
@@ -16,6 +24,9 @@ from pfmsoft.eve_argus import (
     __url__,
     __version__,
 )
+from pfmsoft.eve_argus.helpers.package_resource import load_package_resouce_text
+
+logger = logging.getLogger(__name__)
 
 # Typical application settings
 USER_AGENT = f"{__app_name__}/{__version__} ({__url__})"
@@ -23,6 +34,7 @@ APP_DOMAIN = f"{__app_name__}"
 APP_NAMESPACE = uuid5(NAMESPACE_DNS, __app_name__)
 ENV_PREFIX = __app_name__.replace(".", "_").replace("-", "_").upper() + "_"
 SETTINGS_KEY = ENV_PREFIX + "SETTINGS"
+TOML_SETTINGS_FILE = f"{__app_name__}.toml"
 
 
 @dataclass(slots=True)
@@ -62,6 +74,63 @@ class EveArgusSettingsPydantic(BaseSettings):
     )
 
     application_directory: Path = Path(get_app_dir(__app_name__))
+
+
+@dataclass(slots=True, kw_only=True)
+class RateLimitSettings:
+    """Settings for rate limiting of ESI requests."""
+
+    max_rate: float = 50.0
+    """The maximum rate for ESI requests per time period."""
+    time_period: float = 1.0
+    """The time period over which the maximum rate is applied."""
+
+
+@dataclass(slots=True, kw_only=True)
+class EveArgusTomlSettings:
+    """Settings loaded from the TOML configuration file."""
+
+    rate_limit: RateLimitSettings
+    """The rate limit settings for ESI requests."""
+
+
+def _default_settings() -> EveArgusTomlSettings:
+    """Return the default TOML settings."""
+    return EveArgusTomlSettings(rate_limit=RateLimitSettings())
+
+
+EveArgusTomlSettingsRoot = RootModel[EveArgusTomlSettings]
+
+
+def _load_toml_settings(toml_file: Path) -> EveArgusTomlSettings:
+    """Load settings from a TOML configuration file."""
+    if not toml_file.exists() or not toml_file.is_file():
+        logger.info(
+            "TOML file '%s' does not exist or is not a file. Using default settings.",
+            toml_file,
+        )
+        return _default_settings()
+    with toml_file.open("rb") as f:
+        try:
+            toml_data = tomllib.load(f)
+            if not toml_data:
+                # If the TOML file is empty, log the information and return the default settings.
+                # This is not considered an error; the application can proceed with default settings.
+                logger.info(
+                    "TOML file '%s' is empty. Using default settings.", toml_file
+                )
+                return _default_settings()
+            logger.info("Settings loaded from TOML file are: %r", toml_data)
+        except Exception as e:
+            logger.error("Failed to read TOML file '%s': %s", toml_file, e)
+            raise e
+    try:
+        toml_settings = EveArgusTomlSettingsRoot.model_validate(toml_data).root
+    except Exception as e:
+        logger.error("Failed to load TOML settings from '%s': %s", toml_file, e)
+        # FIXME Use an argus specific exception instead of ValueError, include possible solutions.
+        raise ValueError(f"Failed to load TOML settings from '{toml_file}': {e}") from e
+    return toml_settings
 
 
 def get_settings(
@@ -111,4 +180,32 @@ def _initialize_settings(application_directory: Path) -> EveArgusSettings:
     # Ensure that the application directories exist.
     settings.application_directory.mkdir(parents=True, exist_ok=True)
     settings.logging_directory.mkdir(parents=True, exist_ok=True)
+    _ensure_toml_settings_file(application_directory)
+
+    # Apply TOML settings if available.
+    toml_settings = _load_toml_settings(application_directory / TOML_SETTINGS_FILE)
+    settings = _apply_toml_settings(settings, toml_settings)
+    return settings
+
+
+def _ensure_toml_settings_file(application_directory: Path):
+    """Ensure that the TOML settings file exists in the application directory.
+
+    If the file does not exist, it will be created with default settings.
+    """
+    if not (application_directory / TOML_SETTINGS_FILE).exists():
+        # load the toml-settings-example.toml file as a package resource
+        example_toml = load_package_resouce_text(
+            "pfmsoft.eve_argus", "toml-settings-example.toml"
+        )
+        (application_directory / TOML_SETTINGS_FILE).write_text(example_toml)
+
+
+def _apply_toml_settings(
+    settings: EveArgusSettings, toml_settings: EveArgusTomlSettings
+) -> EveArgusSettings:
+    """Apply TOML settings to the runtime settings."""
+    settings.eve_link_settings.max_rate = toml_settings.rate_limit.max_rate
+    settings.eve_link_settings.time_period = toml_settings.rate_limit.time_period
+
     return settings
