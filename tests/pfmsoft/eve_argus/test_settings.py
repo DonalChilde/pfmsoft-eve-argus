@@ -52,6 +52,21 @@ def test_toml_settings_rejects_extra_fields() -> None:
         EveArgusTomlSettings(rate_limit=RateLimitSettings(), retries=3)
 
 
+def test_toml_settings_defaults_missing_rate_limit_table() -> None:
+    """A missing rate-limit table should use its field defaults."""
+    settings = EveArgusTomlSettings.model_validate({})
+
+    assert settings.rate_limit == RateLimitSettings()
+
+
+def test_toml_settings_defaults_missing_rate_limit_field() -> None:
+    """A missing rate-limit field should use its field default."""
+    settings = EveArgusTomlSettings.model_validate({"rate_limit": {"max_rate": 7.5}})
+
+    assert settings.rate_limit.max_rate == 7.5
+    assert settings.rate_limit.time_period == 1.0
+
+
 def test_get_settings_rejects_toml_directory(tmp_path) -> None:
     """A directory at the TOML configuration path should raise an error."""
     (tmp_path / TOML_SETTINGS_FILE).mkdir()

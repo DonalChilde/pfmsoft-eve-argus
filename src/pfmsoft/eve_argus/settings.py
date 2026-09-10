@@ -92,7 +92,7 @@ class EveArgusTomlSettings(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    rate_limit: RateLimitSettings
+    rate_limit: RateLimitSettings = Field(default_factory=RateLimitSettings)
     """The rate limit settings for ESI requests."""
 
 
