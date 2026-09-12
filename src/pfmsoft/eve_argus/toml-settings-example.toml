@@ -1,0 +1,12 @@
+# User configurable settings for pfmsoft-eve-argus.
+
+# This file lives at the application directory with a file name of pfmsoft-eve-argus.toml,
+# and will be created if missing. If a particular setting is missing, or
+# commented out, the default value will be used.
+
+[rate_limit]
+# The maximum rate for ESI requests per time period.
+max_rate = 50.0
+
+# The time period over which the maximum rate is applied.
+time_period = 1.0
