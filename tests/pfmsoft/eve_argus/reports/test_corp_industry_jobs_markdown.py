@@ -133,6 +133,22 @@ def test_report_classifies_status_tables():
     assert cancelled_section.count("Test Blueprint") == 1
 
 
+def test_report_marks_completed_active_jobs_ready():
+    """Active jobs at or past their end date are reported as ready."""
+    report = render(
+        make_job(job_id=1, end_date="2026-09-03T14:00:01Z"),
+        make_job(job_id=2, end_date="2026-09-03T12:00:00Z"),
+        make_job(job_id=3, end_date="2026-09-03T11:59:59Z"),
+    )
+
+    ready_section = report.split("## Ready Jobs", 1)[1].split("## Active Jobs", 1)[0]
+    active_section = report.split("## Active Jobs", 1)[1].split("## Paused Jobs", 1)[0]
+
+    assert ready_section.count("Test Blueprint") == 2
+    assert active_section.count("Test Blueprint") == 1
+    assert "| Ada Lovelace | 3/1/2/0 |" in report
+
+
 def test_delivered_table_includes_delivery_time_and_recipient():
     """Delivered rows keep facility, delivery time, and recipient columns aligned."""
     report = render(
