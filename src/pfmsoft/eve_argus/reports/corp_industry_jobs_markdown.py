@@ -126,13 +126,22 @@ def _job_row(job: CorporationIndustryJobDetailedNamed, report_time: Instant) -> 
     )
 
 
+def _effective_status(
+    job: CorporationIndustryJobDetailedNamed, report_time: Instant
+) -> str:
+    if job.status == "active" and Instant.parse_iso(job.end_date) <= report_time:
+        return "ready"
+    return job.status
+
+
 def _classify_jobs(
     jobs: list[CorporationIndustryJobDetailedNamed], report_time: Instant
 ) -> dict[str, list[JobRow]]:
     classified: dict[str, list[JobRow]] = defaultdict(list)
     for job in jobs:
         row = _job_row(job, report_time)
-        group = job.status if job.status in _STATUS_TABLES else "other"
+        status = _effective_status(job, report_time)
+        group = status if status in _STATUS_TABLES else "other"
         classified[group].append(row)
 
     for rows in classified.values():
@@ -155,10 +164,11 @@ def _summarize_jobs(
             category = _ACTIVITY_CATEGORIES.get(job.activity_id)
             if category is None:
                 continue
+            status = _effective_status(job, report_time)
             previous = counts.get(category, JobCounts(0, 0, 0, 0))
-            active = previous.active + (job.status == "active")
-            ready = previous.ready + (job.status == "ready")
-            paused = previous.paused + (job.status == "paused")
+            active = previous.active + (status == "active")
+            ready = previous.ready + (status == "ready")
+            paused = previous.paused + (status == "paused")
             counts[category] = JobCounts(
                 total=active + ready + paused,
                 active=active,
