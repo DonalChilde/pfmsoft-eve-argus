@@ -9,6 +9,7 @@ They are meant to be consumed by Argus functions, and possibly persisted in the 
 # and validation in wrapper classes, and use dataclasses for the data models themselves.
 
 from dataclasses import dataclass, field
+from decimal import Decimal
 from typing import Any, Self
 
 from pydantic import BaseModel, RootModel
@@ -106,7 +107,7 @@ class MarketOrderDetail:
     location_id: int
     min_volume: int
     order_id: int
-    price: float
+    price: Decimal
     range: str
     system_id: int
     type_id: int
