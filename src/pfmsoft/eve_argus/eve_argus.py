@@ -1,11 +1,16 @@
 """Eve Argus public interface."""
 
+import sqlite3
 from types import TracebackType
 from typing import Self
 
 from pfmsoft.eve_link import EsiLink, EsiSchema, SimpleRequests
 from pfmsoft.eve_sd import EveSdDbQueryManager
+from pfmsoft.eve_snippets.sqlite3.connection_helpers import create_read_write_connection
 
+from pfmsoft.eve_argus.market.orders.db.query_helpers import (
+    load_table_definitions as load_order_table_definitions,
+)
 from pfmsoft.eve_argus.settings import EveArgusSettings
 
 
@@ -17,6 +22,7 @@ class EveArgusResources:
         self._esi_link: EsiLink | None = None
         self._sd_query_manager: EveSdDbQueryManager | None = None
         self._esi_schema: EsiSchema | None = None
+        self._order_db_connection: sqlite3.Connection | None = None
 
     async def __aenter__(self) -> Self:
         """Enter the async context manager."""
@@ -27,6 +33,9 @@ class EveArgusResources:
         await self._esi_link.__aenter__()
         self._sd_query_manager = EveSdDbQueryManager(self._settings.static_database)
         self._sd_query_manager.__enter__()
+        self._order_db_connection = create_read_write_connection(
+            self._settings.market_orders_database, load_order_table_definitions()
+        )
         return self
 
     async def __aexit__(
@@ -42,6 +51,9 @@ class EveArgusResources:
         if self._sd_query_manager is not None:
             self._sd_query_manager.__exit__(exc_type, exc_value, traceback)
             self._sd_query_manager = None
+        if self._order_db_connection is not None:
+            self._order_db_connection.close()
+            self._order_db_connection = None
         if self._esi_schema is not None:
             self._esi_schema = None
 
