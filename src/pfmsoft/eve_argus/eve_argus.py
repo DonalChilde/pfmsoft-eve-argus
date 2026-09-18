@@ -1,6 +1,8 @@
 """Eve Argus public interface."""
 
+import logging
 import sqlite3
+from time import perf_counter_ns
 from types import TracebackType
 from typing import Self
 
@@ -12,6 +14,8 @@ from pfmsoft.eve_argus.market.orders.db.query_helpers import (
     load_table_definitions as load_order_table_definitions,
 )
 from pfmsoft.eve_argus.settings import EveArgusSettings
+
+logger = logging.getLogger(__name__)
 
 
 class EveArgusResources:
@@ -26,6 +30,8 @@ class EveArgusResources:
 
     async def __aenter__(self) -> Self:
         """Enter the async context manager."""
+        logger.info("Acquiring EveArgus resources")
+        start = perf_counter_ns()
         self._esi_link = self._simple_requests.esi_link_factory()
         self._esi_schema = self._simple_requests.get_schema(
             compatibility_date=self._settings.compatibility_date
@@ -36,6 +42,9 @@ class EveArgusResources:
         self._order_db_connection = create_read_write_connection(
             self._settings.market_orders_database, load_order_table_definitions()
         )
+        end = perf_counter_ns()
+        seconds = f"{(end - start) / 1_000_000_000:.6f} s"
+        logger.info("Acquired EveArgus resources in %s", seconds)
         return self
 
     async def __aexit__(

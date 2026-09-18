@@ -41,8 +41,13 @@ def setup_logging(script_name: str) -> Path:
     Returns:
         The path to the log file.
     """
+    # FIXME add date to log records
     log_filepath = LOGGING_DIR / f"{script_name}.log"
-    basicConfig(filename=log_filepath, level="INFO")
+    basicConfig(
+        filename=log_filepath,
+        level="INFO",
+        format="%(asctime)s | %(levelname)-8s | %(funcName)s | %(message)s | [in %(pathname)s | %(lineno)d]",
+    )
     return log_filepath
 
 
