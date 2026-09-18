@@ -84,5 +84,14 @@ class EveArgusResources:
             )
         return self._esi_schema
 
+    @property
+    def order_db_connection(self) -> sqlite3.Connection:
+        """Get the order database connection."""
+        if self._order_db_connection is None:
+            raise RuntimeError(
+                "EveArgusResources is not initialized. Use 'async with' to initialize."
+            )
+        return self._order_db_connection
+
 
 __all__ = ["EveArgusResources"]
