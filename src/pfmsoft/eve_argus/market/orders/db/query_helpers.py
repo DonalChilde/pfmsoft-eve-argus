@@ -9,12 +9,12 @@ from pfmsoft.eve_argus.models.esi import argus_response_models as ARM
 from pfmsoft.eve_argus.models.esi import esi_response_models as ERM
 from pfmsoft.eve_argus.models.esi.argus_response_models import RegionMarketOrders
 
-_table_def_parent = "pfmsoft.eve_argus.market.history.db"
+_table_def_parent = "pfmsoft.eve_argus.market.orders.db"
 _table_def_file = "table_definitions.sql"
 
 
 def load_table_definitions() -> str:
-    """Load the SQL table definitions for the market history database."""
+    """Load the SQL table definitions for the market orders database."""
     return load_package_resouce_text(_table_def_parent, _table_def_file)
 
 

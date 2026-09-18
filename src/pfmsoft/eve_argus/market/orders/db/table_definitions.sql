@@ -15,7 +15,7 @@ CREATE TABLE IF NOT EXISTS market_orders (
     ID INTEGER PRIMARY KEY AUTOINCREMENT,
     order_response_id INTEGER NOT NULL REFERENCES order_response(ID),
     duration INTEGER NOT NULL,
-    is_buy_order BOOLEAN NOT NULL,
+    is_buy_order INTEGER NOT NULL,
     issued TEXT NOT NULL,
     location_id INTEGER NOT NULL,
     min_volume INTEGER NOT NULL,
