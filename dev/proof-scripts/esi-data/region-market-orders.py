@@ -4,12 +4,14 @@ Loads the current market orders for a region from ESI.
 """
 
 import asyncio
+import sqlite3
 from logging import getLogger
 from time import perf_counter_ns
 
 from _shared import PROOF_OUTPUT_DIR, create_resources, setup_logging
 
 from pfmsoft.eve_argus.data_loaders.esi_responses import EsiResponseLoader
+from pfmsoft.eve_argus.market.orders.db import query_helpers
 from pfmsoft.eve_argus.models.esi import esi_response_models
 
 logger = getLogger(__name__)
@@ -24,7 +26,11 @@ async def prove_region_market_orders() -> None:
         loader = EsiResponseLoader(
             esi_link=resources.esi_link, schema=resources.esi_schema
         )
-        _ = await region_market_orders(loader=loader, region_id=REGION_ID)
+        response = await region_market_orders(loader=loader, region_id=REGION_ID)
+        write_to_db(
+            connection=resources.order_db_connection,
+            region_market_orders_response=response,
+        )
 
 
 async def region_market_orders(
@@ -47,6 +53,21 @@ async def region_market_orders(
         f"Loaded {len(region_market_orders_response.response_data.orders)} market orders for region {region_id}."
     )
     return region_market_orders_response
+
+
+def write_to_db(
+    connection: sqlite3.Connection,
+    region_market_orders_response: esi_response_models.GetMarketsRegionIdOrdersResponse,
+) -> None:
+    """Write the regional market orders response to the database."""
+    start = perf_counter_ns()
+    query_helpers.write_market_orders(
+        connection, region_market_orders_response.response_data
+    )
+    end = perf_counter_ns()
+    print(
+        f"Time taken to write region market orders to the database: {(end - start) / 1_000_000_000:.6f} seconds"
+    )
 
 
 if __name__ == "__main__":
