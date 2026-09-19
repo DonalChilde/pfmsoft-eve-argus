@@ -92,29 +92,31 @@ def get_region_market_orders(
     """Retrieve the market orders associated with a given order response ID."""
     with connection:
         cursor = connection.execute(
-            "SELECT * FROM market_orders WHERE region_id = ?",
+            """
+            SELECT duration, is_buy_order, issued, location_id, min_volume,
+                order_id, price, range_, system_id, type_id, volume_remain,
+                volume_total
+            FROM market_orders
+            WHERE region_id = ?
+            """,
             (order_response["region_id"],),
         )
-        # orders = cursor.fetchall()
-        order_details = [
-            ARM.MarketOrderDetail(
-                duration=row["duration"],
-                is_buy_order=row["is_buy_order"],
-                issued=row["issued"],
-                location_id=row["location_id"],
-                min_volume=row["min_volume"],
-                order_id=row["order_id"],
-                price=Decimal(row["price"]) / 100,
-                range=row["range_"],
-                system_id=row["system_id"],
-                type_id=row["type_id"],
-                volume_remain=row["volume_remain"],
-                volume_total=row["volume_total"],
-            )
-            for row in cursor.fetchall()
-        ]
         orders_by_type: dict[int, ARM.DividedOrders] = {}
-        for order in order_details:
+        for row in cursor:
+            order = ARM.MarketOrderDetail(
+                duration=row[0],
+                is_buy_order=row[1],
+                issued=row[2],
+                location_id=row[3],
+                min_volume=row[4],
+                order_id=row[5],
+                price=Decimal(row[6]) / 100,
+                range=row[7],
+                system_id=row[8],
+                type_id=row[9],
+                volume_remain=row[10],
+                volume_total=row[11],
+            )
             type_orders = orders_by_type.setdefault(order.type_id, ARM.DividedOrders())
             if order.is_buy_order:
                 type_orders.buy_orders.append(order)
