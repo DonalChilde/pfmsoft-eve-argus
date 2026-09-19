@@ -27,3 +27,25 @@ CREATE TABLE IF NOT EXISTS market_orders (
     volume_total INTEGER NOT NULL
 ) STRICT;
 
+CREATE INDEX IF NOT EXISTS idx_market_orders_region_id ON market_orders(region_id);
+
+
+-- This table is used to store summarized market order data for a specific region, type, solar system, and location combination
+CREATE TABLE IF NOT EXISTS order_summaries (
+    region_id INTEGER NOT NULL REFERENCES order_response(region_id),
+    type_id INTEGER NOT NULL,
+    solar_system_id INTEGER,
+    location_id INTEGER,
+    is_buy_summary INTEGER NOT NULL,
+    five_price INTEGER NOT NULL,
+    five_orders INTEGER NOT NULL,
+    five_items INTEGER NOT NULL,
+    lowest INTEGER NOT NULL,
+    highest INTEGER NOT NULL,
+    average INTEGER NOT NULL,
+    total_items INTEGER NOT NULL,
+    total_orders INTEGER NOT NULL,
+    filtered_items INTEGER NOT NULL,
+    filtered_orders INTEGER NOT NULL,
+    PRIMARY KEY (region_id, type_id, solar_system_id, location_id)
+) STRICT;
