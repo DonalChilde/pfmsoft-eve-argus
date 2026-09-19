@@ -95,7 +95,7 @@ def get_region_market_orders(
             "SELECT * FROM market_orders WHERE region_id = ?",
             (order_response["region_id"],),
         )
-        orders = cursor.fetchall()
+        # orders = cursor.fetchall()
         order_details = [
             ARM.MarketOrderDetail(
                 duration=row["duration"],
@@ -105,13 +105,13 @@ def get_region_market_orders(
                 min_volume=row["min_volume"],
                 order_id=row["order_id"],
                 price=Decimal(row["price"]) / 100,
-                range=row["range"],
+                range=row["range_"],
                 system_id=row["system_id"],
                 type_id=row["type_id"],
                 volume_remain=row["volume_remain"],
                 volume_total=row["volume_total"],
             )
-            for row in orders
+            for row in cursor.fetchall()
         ]
         orders_by_type: dict[int, ARM.DividedOrders] = {}
         for order in order_details:
@@ -135,3 +135,16 @@ def get_order_responses(connection: sqlite3.Connection) -> list[OrderResponse]:
         cursor = connection.cursor()
         order_responses = cursor.execute("SELECT * FROM order_response").fetchall()
     return order_responses
+
+
+def get_order_response(connection: sqlite3.Connection, region_id: int) -> OrderResponse:
+    """Retrieve the order response for a specific region from the database."""
+    with connection:
+        cursor = connection.execute(
+            "SELECT * FROM order_response WHERE region_id = ?",
+            (region_id,),
+        )
+        order_response = cursor.fetchone()
+    if order_response is None:
+        raise ValueError(f"No order response found for region {region_id}")
+    return order_response
