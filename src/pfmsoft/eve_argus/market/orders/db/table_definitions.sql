@@ -4,8 +4,7 @@ PRAGMA foreign_keys = ON;
 
 -- This table is used to store region_id and response metadata for market orders
 CREATE TABLE IF NOT EXISTS order_response (
-    ID INTEGER PRIMARY KEY AUTOINCREMENT,
-    region_id INT,
+    region_id INT PRIMARY KEY,
     received_at TEXT NOT NULL,
     expires_at TEXT
 ) STRICT;
@@ -13,7 +12,7 @@ CREATE TABLE IF NOT EXISTS order_response (
 -- This table is used to store individual market orders linked to a response
 CREATE TABLE IF NOT EXISTS market_orders (
     ID INTEGER PRIMARY KEY AUTOINCREMENT,
-    order_response_id INTEGER NOT NULL REFERENCES order_response(ID),
+    region_id INTEGER NOT NULL REFERENCES order_response(region_id),
     duration INTEGER NOT NULL,
     is_buy_order INTEGER NOT NULL,
     issued TEXT NOT NULL,

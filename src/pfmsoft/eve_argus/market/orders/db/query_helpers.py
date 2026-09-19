@@ -19,7 +19,6 @@ def load_table_definitions() -> str:
 
 
 class OrderResponse(TypedDict):
-    id: int
     region_id: int
     received_at: str
     expires_at: str
@@ -30,8 +29,9 @@ def write_market_orders(
     market_orders: ERM.GetMarketsRegionIdOrders,
 ) -> None:
     """Write market orders to the database."""
+    delete_order_response(connection, market_orders.region_id)
     with connection:
-        cursor = connection.execute(
+        connection.execute(
             """
                 INSERT INTO order_response (region_id, received_at, expires_at)
                 VALUES (?, ?, ?)
@@ -42,14 +42,11 @@ def write_market_orders(
                 market_orders.expires_at,
             ),
         )
-        order_response_id = cursor.lastrowid
-        if order_response_id is None:
-            raise ValueError("Failed to insert order response into the database.")
         # Write the market orders to the database, associating them with the order response.
         connection.executemany(
             """
             INSERT INTO market_orders (
-                order_response_id, duration, is_buy_order, issued, location_id,
+                region_id, duration, is_buy_order, issued, location_id,
                 min_volume, order_id, price, range_, system_id, type_id,
                 volume_remain, volume_total
             )
@@ -57,7 +54,7 @@ def write_market_orders(
             """,
             (
                 (
-                    order_response_id,
+                    market_orders.region_id,
                     order.duration,
                     order.is_buy_order,
                     order.issued,
@@ -76,18 +73,16 @@ def write_market_orders(
         )
 
 
-def delete_order_response(
-    connection: sqlite3.Connection, order_response_id: int
-) -> None:
+def delete_order_response(connection: sqlite3.Connection, region_id: int) -> None:
     """Delete the order response and its associated market orders from the database, including both buy and sell orders."""
     with connection:
         connection.execute(
-            "DELETE FROM market_orders WHERE order_response_id = ?",
-            (order_response_id,),
+            "DELETE FROM market_orders WHERE region_id = ?",
+            (region_id,),
         )
         connection.execute(
-            "DELETE FROM order_response WHERE id = ?",
-            (order_response_id,),
+            "DELETE FROM order_response WHERE region_id = ?",
+            (region_id,),
         )
 
 
@@ -97,8 +92,8 @@ def get_region_market_orders(
     """Retrieve the market orders associated with a given order response ID."""
     with connection:
         cursor = connection.execute(
-            "SELECT * FROM market_orders WHERE order_response_id = ?",
-            (order_response["id"],),
+            "SELECT * FROM market_orders WHERE region_id = ?",
+            (order_response["region_id"],),
         )
         orders = cursor.fetchall()
         order_details = [
