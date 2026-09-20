@@ -1,8 +1,8 @@
 """Query helpers for the market orders database."""
 
 import sqlite3
+from dataclasses import dataclass
 from decimal import Decimal
-from typing import TypedDict
 
 from pfmsoft.eve_argus.helpers.package_resource import load_package_resouce_text
 from pfmsoft.eve_argus.models.esi import argus_response_models as ARM
@@ -18,10 +18,18 @@ def load_table_definitions() -> str:
     return load_package_resouce_text(_table_def_parent, _table_def_file)
 
 
-class OrderResponse(TypedDict):
+@dataclass(slots=True, kw_only=True)
+class OrderResponse:
     region_id: int
     received_at: str
     expires_at: str
+
+
+@dataclass(slots=True, kw_only=True)
+class OrderCountBySystem:
+    system_id: int
+    buy_orders: int
+    sell_orders: int
 
 
 def write_market_orders(
@@ -86,6 +94,84 @@ def delete_order_response(connection: sqlite3.Connection, region_id: int) -> Non
         )
 
 
+def get_region_orders(
+    connection: sqlite3.Connection,
+    region_id: int,
+    type_id: int | None = None,
+    is_buy_order: bool | None = None,
+    system_id: int | None = None,
+    location_id: int | None = None,
+) -> list[ARM.MarketOrderDetail]:
+    """Retrieve market orders for a specific region with optional filters."""
+    query = """
+        SELECT duration, is_buy_order, issued, location_id, min_volume,
+            order_id, price, range_, system_id, type_id,
+            volume_remain, volume_total
+        FROM market_orders
+        WHERE region_id = ?
+    """
+    params = [region_id]
+    if type_id is not None:
+        query += " AND type_id = ?"
+        params.append(type_id)
+    if is_buy_order is not None:
+        query += " AND is_buy_order = ?"
+        params.append(is_buy_order)
+    if system_id is not None:
+        query += " AND system_id = ?"
+        params.append(system_id)
+    if location_id is not None:
+        query += " AND location_id = ?"
+        params.append(location_id)
+
+    with connection:
+        cursor = connection.execute(query, tuple(params))
+        orders = [
+            ARM.MarketOrderDetail(
+                duration=row[0],
+                is_buy_order=row[1],
+                issued=row[2],
+                location_id=row[3],
+                min_volume=row[4],
+                order_id=row[5],
+                price=Decimal(row[6]) / 100,
+                range=row[7],
+                system_id=row[8],
+                type_id=row[9],
+                volume_remain=row[10],
+                volume_total=row[11],
+            )
+            for row in cursor
+        ]
+    return orders
+
+
+def get_order_count_by_system(
+    connection: sqlite3.Connection, region_id: int
+) -> tuple[int, list[OrderCountBySystem]]:
+    """Retrieve the count of market orders grouped by system for a specific region."""
+    query = """
+        SELECT system_id,
+            SUM(CASE WHEN is_buy_order = 1 THEN 1 ELSE 0 END) as buy_orders,
+            SUM(CASE WHEN is_buy_order = 0 THEN 1 ELSE 0 END) as sell_orders
+        FROM market_orders
+        WHERE region_id = ?
+        GROUP BY system_id
+    """
+    with connection:
+        cursor = connection.execute(query, (region_id,))
+        results = [
+            OrderCountBySystem(
+                system_id=row[0],
+                buy_orders=row[1],
+                sell_orders=row[2],
+            )
+            for row in cursor
+        ]
+    total_count = sum(item.buy_orders + item.sell_orders for item in results)
+    return total_count, results
+
+
 def get_region_market_orders(
     connection: sqlite3.Connection, order_response: OrderResponse
 ) -> RegionMarketOrders:
@@ -99,7 +185,7 @@ def get_region_market_orders(
             FROM market_orders
             WHERE region_id = ?
             """,
-            (order_response["region_id"],),
+            (order_response.region_id,),
         )
         orders_by_type: dict[int, ARM.DividedOrders] = {}
         for row in cursor:
@@ -124,9 +210,9 @@ def get_region_market_orders(
                 type_orders.sell_orders.append(order)
 
     return RegionMarketOrders(
-        region_id=order_response["region_id"],
-        received_at=order_response["received_at"],
-        expires_at=order_response["expires_at"],
+        region_id=order_response.region_id,
+        received_at=order_response.received_at,
+        expires_at=order_response.expires_at,
         orders=orders_by_type,
     )
 

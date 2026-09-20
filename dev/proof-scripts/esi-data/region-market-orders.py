@@ -32,7 +32,11 @@ async def prove_region_market_orders() -> None:
             connection=resources.order_db_connection,
             region_market_orders_response=response,
         )
-        orders = load_region_market_orders_from_db(
+        order_response, orders = load_region_market_orders_from_db(
+            connection=resources.order_db_connection,
+            region_id=REGION_ID,
+        )
+        total_count, order_count_by_system = load_order_count_by_system_from_db(
             connection=resources.order_db_connection,
             region_id=REGION_ID,
         )
@@ -77,7 +81,7 @@ def write_to_db(
 
 def load_region_market_orders_from_db(
     connection: sqlite3.Connection, region_id: int
-) -> ARM.RegionMarketOrders:
+) -> tuple[query_helpers.OrderResponse, list[ARM.MarketOrderDetail]]:
     """Load the regional market orders for a given region from the database."""
     start = perf_counter_ns()
     order_response = query_helpers.get_order_response(connection, region_id)
@@ -85,13 +89,30 @@ def load_region_market_orders_from_db(
         f"Loaded order response from db for region {region_id} in {(perf_counter_ns() - start) / 1_000_000_000:.6f} seconds"
     )
     start = perf_counter_ns()
-    region_market_orders = query_helpers.get_region_market_orders(
-        connection, order_response
+    region_market_orders = query_helpers.get_region_orders(connection, region_id)
+    print(
+        f"Loaded {len(region_market_orders)} region market orders from db for region {region_id} in {(perf_counter_ns() - start) / 1_000_000_000:.6f} seconds"
+    )
+    return order_response, region_market_orders
+
+
+def load_order_count_by_system_from_db(
+    connection: sqlite3.Connection, region_id: int
+) -> tuple[int, list[query_helpers.OrderCountBySystem]]:
+    """Load the order count by system for a given region from the database."""
+    start = perf_counter_ns()
+    total_count, results = query_helpers.get_order_count_by_system(
+        connection, region_id
     )
     print(
-        f"Loaded region market orders from db for region {region_id} in {(perf_counter_ns() - start) / 1_000_000_000:.6f} seconds"
+        f"Loaded order count by system from db for region {region_id} in {(perf_counter_ns() - start) / 1_000_000_000:.6f} seconds"
     )
-    return region_market_orders
+    print(f"Total order count for region {region_id}: {total_count}")
+    for item in results:
+        print(
+            f"System {item.system_id}: {item.buy_orders} buy orders, {item.sell_orders} sell orders"
+        )
+    return total_count, results
 
 
 if __name__ == "__main__":
