@@ -161,21 +161,21 @@ class OrderSummaryItem:
     """The item type ID represented by this summary."""
     is_buy_summary: bool
     """True when this summary describes buy orders; False for sell orders."""
-    five_price: float
+    five_price: Decimal
     """The price of the last order included in the 5% cumulative-volume threshold."""
     five_orders: int
     """The number of orders needed to reach the 5% cumulative-volume target."""
     five_items: int
     """The total volume available at or better than ``five_price`` in the threshold bucket."""
-    lowest: float
+    lowest: Decimal
     """The lowest valid order price after outlier filtering."""
-    highest: float
+    highest: Decimal
     """The highest valid order price after outlier filtering."""
     total_items: int
     """The total valid volume remaining after outlier filtering."""
     total_orders: int
     """The count of valid orders remaining after outlier filtering."""
-    avg_price: float
+    avg_price: Decimal
     """The volume-weighted average price of the valid orders."""
     filtered_items: int
     """The volume removed by the outlier filter."""
