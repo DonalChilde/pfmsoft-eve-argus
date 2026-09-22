@@ -34,7 +34,7 @@ CREATE INDEX IF NOT EXISTS idx_market_orders_region_id ON market_orders(region_i
 CREATE TABLE IF NOT EXISTS order_summaries (
     region_id INTEGER NOT NULL REFERENCES order_response(region_id),
     type_id INTEGER NOT NULL,
-    solar_system_id INTEGER,
+    system_id INTEGER,
     location_id INTEGER,
     is_buy_summary INTEGER NOT NULL,
     five_price INTEGER NOT NULL,
@@ -47,5 +47,5 @@ CREATE TABLE IF NOT EXISTS order_summaries (
     total_orders INTEGER NOT NULL,
     filtered_items INTEGER NOT NULL,
     filtered_orders INTEGER NOT NULL,
-    PRIMARY KEY (region_id, type_id, solar_system_id, location_id)
+    PRIMARY KEY (region_id, type_id, system_id, location_id)
 ) STRICT;

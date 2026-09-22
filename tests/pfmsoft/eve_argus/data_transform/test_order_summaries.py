@@ -271,7 +271,7 @@ def test_order_summary_report_serializes_currency_with_two_decimal_places() -> N
     assert buy_summary["five_price"] == "100.00"
     assert buy_summary["lowest"] == "90.00"
     assert buy_summary["highest"] == "100.00"
-    assert buy_summary["avg_price"] == "93.33"
+    assert buy_summary["average"] == "93.33"
 
 
 @pytest.mark.parametrize(
