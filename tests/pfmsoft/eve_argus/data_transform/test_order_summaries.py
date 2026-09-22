@@ -76,7 +76,7 @@ def test_calculate_order_summary_filters_outliers_and_computes_depth() -> None:
     assert result.buy_summary.total_orders == 2
     assert result.buy_summary.filtered_items == 30
     assert result.buy_summary.filtered_orders == 1
-    assert result.buy_summary.avg_price == pytest.approx(Decimal("93.3333333333"))
+    assert result.buy_summary.avg_price == Decimal("93.33")
     assert (
         result.buy_summary.five_price,
         result.buy_summary.five_orders,
@@ -88,7 +88,7 @@ def test_calculate_order_summary_filters_outliers_and_computes_depth() -> None:
     )
     assert result.sell_summary.total_items == 30
     assert result.sell_summary.filtered_items == 30
-    assert result.sell_summary.avg_price == pytest.approx(Decimal("116.6666666667"))
+    assert result.sell_summary.avg_price == Decimal("116.67")
     assert (
         result.sell_summary.five_price,
         result.sell_summary.five_orders,
@@ -249,6 +249,29 @@ def test_order_summary_report_round_trips_without_filter_factor() -> None:
     assert restored == result
     assert restored.summaries[34].buy_summary is not None
     assert restored.summaries[34].buy_summary.system_id == 30000142
+
+
+def test_order_summary_report_serializes_currency_with_two_decimal_places() -> None:
+    """Serialized monetary fields should use fixed two-decimal currency strings."""
+    region_orders = RegionMarketOrders(
+        received_at="2025-01-01T00:00:00Z",
+        expires_at=None,
+        region_id=10000002,
+        orders={34: divided_orders()},
+    )
+
+    serialized = json.loads(
+        calculate_summaries(
+            region_orders,
+            filter_factor=Decimal("10"),
+        ).serialize()
+    )
+    buy_summary = serialized["summaries"]["34"]["buy_summary"]
+
+    assert buy_summary["five_price"] == "100.00"
+    assert buy_summary["lowest"] == "90.00"
+    assert buy_summary["highest"] == "100.00"
+    assert buy_summary["avg_price"] == "93.33"
 
 
 @pytest.mark.parametrize(

@@ -197,7 +197,7 @@ def get_region_market_orders(
                 location_id=row[3],
                 min_volume=row[4],
                 order_id=row[5],
-                price=Decimal(row[6]) / 100,
+                price=from_cents(row[6]),
                 range=row[7],
                 system_id=row[8],
                 type_id=row[9],
@@ -236,4 +236,8 @@ def get_order_response(connection: sqlite3.Connection, region_id: int) -> OrderR
         order_response = cursor.fetchone()
     if order_response is None:
         raise ValueError(f"No order response found for region {region_id}")
-    return order_response
+    return OrderResponse(
+        region_id=order_response[0],
+        received_at=order_response[1],
+        expires_at=order_response[2],
+    )

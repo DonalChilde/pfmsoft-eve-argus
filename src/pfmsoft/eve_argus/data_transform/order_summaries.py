@@ -2,13 +2,20 @@
 
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
-from decimal import Decimal
+from decimal import ROUND_HALF_UP, Decimal
 from typing import Protocol, Self
 
 from pydantic import RootModel
 from whenever import Instant
 
 from pfmsoft.eve_argus.models.esi import argus_response_models as ARM
+
+_CURRENCY_QUANTUM = Decimal("0.01")
+
+
+def _as_currency(value: Decimal) -> Decimal:
+    """Round a monetary value to two decimal places."""
+    return value.quantize(_CURRENCY_QUANTUM, rounding=ROUND_HALF_UP)
 
 
 class Serializable(Protocol):
@@ -47,8 +54,9 @@ class OrderSummaryItem:
     """Represents one side of the market depth for a single item type.
 
     Scope is repeated on each item so a summary remains meaningful when separated from
-    its report. The depth metrics include every order at or better than `five_price`,
-    including all orders tied at that price.
+    its report. Monetary values are rounded to two decimal places. The depth metrics
+    include every order at or better than `five_price`, including all orders tied at that
+    price.
     """
 
     region_id: int
@@ -375,26 +383,27 @@ def _build_order_summary(
     five_percent_orders = [
         order for order in valid_orders if at_or_better(order.price, five_price)
     ]
+    avg_price = (
+        sum(
+            (order.volume_remain * order.price for order in valid_orders),
+            start=Decimal(),
+        )
+        / total_items
+    )
     return OrderSummaryItem(
         region_id=region_id,
         type_id=type_id,
         system_id=system_id,
         location_id=location_id,
         is_buy_summary=is_buy_summary,
-        five_price=five_price,
+        five_price=_as_currency(five_price),
         five_orders=len(five_percent_orders),
         five_items=sum(order.volume_remain for order in five_percent_orders),
-        lowest=min(order.price for order in valid_orders),
-        highest=max(order.price for order in valid_orders),
+        lowest=_as_currency(min(order.price for order in valid_orders)),
+        highest=_as_currency(max(order.price for order in valid_orders)),
         total_items=total_items,
         total_orders=len(valid_orders),
-        avg_price=(
-            sum(
-                (order.volume_remain * order.price for order in valid_orders),
-                start=Decimal(),
-            )
-            / total_items
-        ),
+        avg_price=_as_currency(avg_price),
         filtered_items=sum(order.volume_remain for order in excluded_orders),
         filtered_orders=len(excluded_orders),
     )
