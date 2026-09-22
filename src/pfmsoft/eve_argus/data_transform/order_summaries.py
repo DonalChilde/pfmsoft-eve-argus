@@ -1,17 +1,18 @@
 """Calculate summaries for market orders in a GetMarketsRegionIdOrders response."""
 
 from collections.abc import Sequence
+from decimal import Decimal
 from typing import Literal
 
-from pfmsoft.eve_argus.models.esi import argus_response_models
+from pfmsoft.eve_argus.models.esi import argus_response_models as ARM
 
 
 def calculate_summaries(
-    region_orders: argus_response_models.RegionMarketOrders,
+    region_orders: ARM.RegionMarketOrders,
     solar_system_id: int | None = None,
     location_id: int | None = None,
-    filter_factor: float = 100.0,
-) -> argus_response_models.OrderSummaries:
+    filter_factor: Decimal = Decimal("100.00"),
+) -> ARM.OrderSummaries:
     """Summarize buy and sell depth for one region, or for a system/location subset.
 
     Each item summary is built from the filtered valid orders for that side of the book.
@@ -48,7 +49,7 @@ def calculate_summaries(
         )
     if filter_factor <= 1.0:
         raise ValueError("filter_factor must be greater than 1.0.")
-    summaries = argus_response_models.OrderSummaries(
+    summaries = ARM.OrderSummaries(
         received_at=region_orders.received_at,
         expires_at=region_orders.expires_at,
         region_id=region_orders.region_id,
@@ -73,11 +74,11 @@ def calculate_summaries(
 def calculate_order_summary(
     region_id: int,
     type_id: int,
-    collected_orders: argus_response_models.DividedOrders,
+    collected_orders: ARM.DividedOrders,
     solar_system_id: int | None = None,
     location_id: int | None = None,
-    filter_factor: float = 100.0,
-) -> argus_response_models.OrderSummary:
+    filter_factor: Decimal = Decimal("100.00"),
+) -> ARM.OrderSummary:
     """Summarize the buy and sell depth for one item type.
 
     The function first narrows the order set to the requested scope: whole region,
@@ -139,7 +140,7 @@ def calculate_order_summary(
         is_buy_summary=False,
         filter_factor=filter_factor,
     )
-    return argus_response_models.OrderSummary(
+    return ARM.OrderSummary(
         region_id=region_id,
         solar_system_id=solar_system_id,
         location_id=location_id,
@@ -151,10 +152,10 @@ def calculate_order_summary(
 
 def calculate_order_summary_detail(
     type_id: int,
-    orders: Sequence[argus_response_models.MarketOrderDetail],
+    orders: Sequence[ARM.MarketOrderDetail],
     is_buy_summary: bool,
-    filter_factor: float = 100.0,
-) -> argus_response_models.OrderSummaryItem:
+    filter_factor: Decimal = Decimal("100.00"),
+) -> ARM.OrderSummaryItem:
     """Calculate a summary for one side of a market for a single item type.
 
     The summary is computed from a list of orders that are already known to be the same
@@ -197,7 +198,7 @@ def calculate_order_summary_detail(
         orders = sorted(orders, key=lambda o: o.price, reverse=True)
     else:
         orders = sorted(orders, key=lambda o: o.price)
-    five_price = lowest = highest = avg_price = 0.0
+    five_price = lowest = highest = avg_price = Decimal("0.00")
     total_items = total_orders = five_orders_count = 0
     five_items = filtered_items = filtered_orders = 0
 
@@ -213,28 +214,28 @@ def calculate_order_summary_detail(
     # Filter out extreme tail orders before calculating the depth threshold. This keeps
     # a small number of absurd outliers from distorting the price and volume metrics.
     if is_buy_summary:
-        price_cutoff = orders[0].price / filter_factor if orders else 0.0
+        price_cutoff = orders[0].price / filter_factor if orders else Decimal("0.00")
         valid_orders = [o for o in orders if o.price >= price_cutoff]
         excluded_orders = [o for o in orders if o.price < price_cutoff]
     else:
-        price_cutoff = orders[0].price * filter_factor if orders else 0.0
+        price_cutoff = orders[0].price * filter_factor if orders else Decimal("0.00")
         valid_orders = [o for o in orders if o.price <= price_cutoff]
         excluded_orders = [o for o in orders if o.price > price_cutoff]
-    highest = max(o.price for o in valid_orders) if valid_orders else 0.0
-    lowest = min(o.price for o in valid_orders) if valid_orders else 0.0
+    highest = max(o.price for o in valid_orders) if valid_orders else Decimal("0.00")
+    lowest = min(o.price for o in valid_orders) if valid_orders else Decimal("0.00")
     total_volume = sum(o.volume_remain for o in valid_orders)
     # Volume-weighted average price is the weighted mean of all valid orders.
     avg_price = (
         sum(o.volume_remain * o.price for o in valid_orders) / total_volume
         if valid_orders
-        else 0.0
+        else Decimal("0.00")
     )
     total_items = sum(o.volume_remain for o in valid_orders)
     total_orders = len(valid_orders)
     filtered_items = sum(o.volume_remain for o in excluded_orders)
     filtered_orders = len(excluded_orders)
-    five_percent_of_items = total_items * 0.05
-    five_percent_orders: list[argus_response_models.MarketOrderDetail] = []
+    five_percent_of_items = Decimal(total_items) * Decimal("0.05")
+    five_percent_orders: list[ARM.MarketOrderDetail] = []
     items = 0
     for order in valid_orders:
         # Include the order if the cumulative volume is still at or below the 5% target.
@@ -245,7 +246,7 @@ def calculate_order_summary_detail(
         else:
             break
 
-    five_price = five_percent_orders[-1].price if five_percent_orders else 0.0
+    five_price = five_percent_orders[-1].price if five_percent_orders else Decimal("0")
     five_orders_count = len(five_percent_orders)
     if is_buy_summary:
         # Buy threshold: the 5% bucket includes all valid orders at or above the threshold.
@@ -277,7 +278,7 @@ def calculate_order_summary_detail(
     #     filtered_orders=filtered_orders,
     # )
 
-    summary = argus_response_models.OrderSummaryItem(
+    summary = ARM.OrderSummaryItem(
         type_id=type_id,
         is_buy_summary=is_buy_summary,
         five_price=five_price,

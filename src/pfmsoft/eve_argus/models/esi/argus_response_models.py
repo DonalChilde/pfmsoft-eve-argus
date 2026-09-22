@@ -210,7 +210,7 @@ class OrderSummaries(EsiModelBase):
     region_id: int
     solar_system_id: int | None
     location_id: int | None
-    filter_factor: float
+    filter_factor: Decimal
     summaries: dict[int, OrderSummary]
 
     def serialize(self, indent: int | None = 2) -> str:

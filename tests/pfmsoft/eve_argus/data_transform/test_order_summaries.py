@@ -1,5 +1,7 @@
 """Tests for market order summary calculations."""
 
+from decimal import Decimal
+
 import pytest
 
 from pfmsoft.eve_argus.data_transform.order_summaries import (
@@ -17,7 +19,7 @@ from pfmsoft.eve_argus.models.esi.argus_response_models import (
 def order(
     order_id: int,
     *,
-    price: float,
+    price: Decimal | float | int,
     volume: int,
     is_buy_order: bool,
     system_id: int = 30000142,
@@ -32,7 +34,7 @@ def order(
         location_id=location_id,
         min_volume=1,
         order_id=order_id,
-        price=price,
+        price=Decimal(str(price)),
         range="station",
         system_id=system_id,
         type_id=type_id,
@@ -64,24 +66,25 @@ def test_calculate_order_summary_detail_filters_outliers_and_computes_depth() ->
     buy_result = calculate_order_summary_detail(34, orders.buy_orders, True, 10)
     sell_result = calculate_order_summary_detail(34, orders.sell_orders, False, 10)
 
+    assert isinstance(buy_result.five_price, Decimal)
     assert buy_result.total_items == 30
     assert buy_result.total_orders == 2
     assert buy_result.filtered_items == 30
     assert buy_result.filtered_orders == 1
-    assert buy_result.avg_price == pytest.approx(93.3333333333)
+    assert buy_result.avg_price == pytest.approx(Decimal("93.3333333333"))
     assert (buy_result.five_price, buy_result.five_orders, buy_result.five_items) == (
-        100,
+        Decimal("100"),
         1,
         10,
     )
     assert sell_result.total_items == 30
     assert sell_result.filtered_items == 30
-    assert sell_result.avg_price == pytest.approx(116.6666666667)
+    assert sell_result.avg_price == pytest.approx(Decimal("116.6666666667"))
     assert (
         sell_result.five_price,
         sell_result.five_orders,
         sell_result.five_items,
-    ) == (110, 1, 10)
+    ) == (Decimal("110"), 1, 10)
 
 
 def test_calculate_order_summary_applies_system_and_location_filters() -> None:
