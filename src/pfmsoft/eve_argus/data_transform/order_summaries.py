@@ -1,10 +1,11 @@
 """Calculate summaries for market orders in a GetMarketsRegionIdOrders response."""
 
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass
 from decimal import ROUND_HALF_UP, Decimal
 from typing import Protocol, Self
 
+from mkdocstrings_handlers.python import Order
 from pydantic import RootModel
 from whenever import Instant
 
@@ -115,6 +116,14 @@ class OrderSummaryReport(TimeStamped, Serializable):
     def deserialize(cls, data: str) -> OrderSummaryReport:
         """Deserialize a JSON string to an order summary report."""
         return OrderSummaryReportRoot.model_validate_json(data).root
+
+    def iter_summaries(self) -> Iterable[OrderSummaryItem]:
+        """Iterate over all buy and sell summaries in the report."""
+        for bs_summary in self.summaries.values():
+            if bs_summary.buy_summary is not None:
+                yield bs_summary.buy_summary
+            if bs_summary.sell_summary is not None:
+                yield bs_summary.sell_summary
 
 
 OrderSummaryReportRoot = RootModel[OrderSummaryReport]

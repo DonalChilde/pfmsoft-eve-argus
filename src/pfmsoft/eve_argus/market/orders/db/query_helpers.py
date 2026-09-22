@@ -1,9 +1,11 @@
 """Query helpers for the market orders database."""
 
 import sqlite3
+from collections.abc import Iterable
 from dataclasses import dataclass
 from decimal import Decimal
 
+from pfmsoft.eve_argus.data_transform.order_summaries import OrderSummaryItem
 from pfmsoft.eve_argus.helpers.currency import from_cents, to_cents
 from pfmsoft.eve_argus.helpers.package_resource import load_package_resouce_text
 from pfmsoft.eve_argus.models.esi import argus_response_models as ARM
@@ -87,6 +89,10 @@ def delete_order_response(connection: sqlite3.Connection, region_id: int) -> Non
     with connection:
         connection.execute(
             "DELETE FROM market_orders WHERE region_id = ?",
+            (region_id,),
+        )
+        connection.execute(
+            "DELETE FROM order_summaries WHERE region_id = ?",
             (region_id,),
         )
         connection.execute(
@@ -241,3 +247,39 @@ def get_order_response(connection: sqlite3.Connection, region_id: int) -> OrderR
         received_at=order_response[1],
         expires_at=order_response[2],
     )
+
+
+def write_order_summaries(
+    connection: sqlite3.Connection, order_summaries: Iterable[OrderSummaryItem]
+) -> None:
+    """Write a list of order summaries to the database."""
+    with connection as cursor:
+        cursor.executemany(
+            """
+                    INSERT OR REPLACE INTO order_summaries (
+                        region_id, type_id, system_id, location_id, is_buy_summary,
+                        five_price, five_orders, five_items, lowest, highest,
+                        total_items, total_orders, average, filtered_items, filtered_orders
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+            [
+                (
+                    summary.region_id,
+                    summary.type_id,
+                    summary.system_id,
+                    summary.location_id,
+                    summary.is_buy_summary,
+                    to_cents(summary.five_price),
+                    summary.five_orders,
+                    summary.five_items,
+                    to_cents(summary.lowest),
+                    to_cents(summary.highest),
+                    summary.total_items,
+                    summary.total_orders,
+                    to_cents(summary.average),
+                    summary.filtered_items,
+                    summary.filtered_orders,
+                )
+                for summary in order_summaries
+            ],
+        )

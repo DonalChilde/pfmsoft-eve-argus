@@ -52,6 +52,17 @@ async def prove_region_market_orders() -> None:
             order_response=order_response,
         )
         order_summary_report = calculate_order_summary_report(region_market_orders)
+        write_order_summary_report_to_db(
+            connection=resources.order_db_connection,
+            order_summary_report=order_summary_report,
+        )
+        jita_summary = calculate_order_summary_report(
+            region_market_orders, system_id=30000142
+        )
+        write_order_summary_report_to_db(
+            connection=resources.order_db_connection,
+            order_summary_report=jita_summary,
+        )
 
 
 async def fetch_region_market_orders(
@@ -91,20 +102,37 @@ def write_to_db(
     )
 
 
+def write_order_summary_report_to_db(
+    connection: sqlite3.Connection,
+    order_summary_report: OrderSummaryReport,
+) -> None:
+    """Write the order summary report to the database."""
+    start = perf_counter_ns()
+    query_helpers.write_order_summaries(
+        connection, order_summary_report.iter_summaries()
+    )
+    end = perf_counter_ns()
+    print(
+        f"Time taken to write order summary report to the database: {(end - start) / 1_000_000_000:.6f} seconds"
+    )
+
+
 def calculate_order_summary_report(
     region_market_orders: ARM.RegionMarketOrders,
+    system_id: int | None = None,
 ) -> OrderSummaryReport:
     """Calculate the order summary report for a given region market orders."""
     start = perf_counter_ns()
-    report = calculate_summaries(region_market_orders)
+    report = calculate_summaries(region_market_orders, system_id=system_id)
     end = perf_counter_ns()
     print(
-        f"Calculated order summary report for region {region_market_orders.region_id} in {(end - start) / 1_000_000_000:.6f} seconds"
+        f"Calculated order summary report for region {region_market_orders.region_id}, and system {system_id} in {(end - start) / 1_000_000_000:.6f} seconds"
     )
-    REGION_MARKET_ORDERS_SUMMARY_FILENAME.write_text(report.serialize(indent=2))
-    print(
-        f"Saved region market orders summary to {REGION_MARKET_ORDERS_SUMMARY_FILENAME}"
+    filename_with_system = REGION_MARKET_ORDERS_SUMMARY_FILENAME.with_name(
+        f"{REGION_MARKET_ORDERS_SUMMARY_FILENAME.stem}_system_{system_id}{REGION_MARKET_ORDERS_SUMMARY_FILENAME.suffix}"
     )
+    filename_with_system.write_text(report.serialize(indent=2))
+    print(f"Saved region market orders summary to {filename_with_system}")
     return report
 
 

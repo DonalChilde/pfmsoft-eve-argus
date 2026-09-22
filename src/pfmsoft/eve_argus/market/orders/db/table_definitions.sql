@@ -32,6 +32,7 @@ CREATE INDEX IF NOT EXISTS idx_market_orders_region_id ON market_orders(region_i
 
 -- This table is used to store summarized market order data for a specific region, type, solar system, and location combination
 CREATE TABLE IF NOT EXISTS order_summaries (
+    ID INTEGER PRIMARY KEY AUTOINCREMENT,
     region_id INTEGER NOT NULL REFERENCES order_response(region_id),
     type_id INTEGER NOT NULL,
     system_id INTEGER,
@@ -47,5 +48,5 @@ CREATE TABLE IF NOT EXISTS order_summaries (
     total_orders INTEGER NOT NULL,
     filtered_items INTEGER NOT NULL,
     filtered_orders INTEGER NOT NULL,
-    PRIMARY KEY (region_id, type_id, system_id, location_id)
+    UNIQUE (region_id, type_id, system_id, location_id)
 ) STRICT;
