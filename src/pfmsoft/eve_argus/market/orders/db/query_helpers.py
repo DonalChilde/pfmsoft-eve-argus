@@ -283,3 +283,43 @@ def write_order_summaries(
                 for summary in order_summaries
             ],
         )
+
+
+def get_order_summaries(
+    connection: sqlite3.Connection,
+    region_id: int,
+    system_id: int | None = None,
+    location_id: int | None = None,
+) -> list[OrderSummaryItem]:
+    """Retrieve order summaries for a specific region, optionally filtered by system and location."""
+    query = "SELECT * FROM order_summaries WHERE region_id = ?"
+    params: list[int] = [region_id]
+    if system_id is not None:
+        query += " AND system_id = ?"
+        params.append(system_id)
+    if location_id is not None:
+        query += " AND location_id = ?"
+        params.append(location_id)
+    with connection:
+        cursor = connection.execute(query, params)
+        rows = cursor.fetchall()
+    return [
+        OrderSummaryItem(
+            region_id=row[0],
+            type_id=row[1],
+            system_id=row[2],
+            location_id=row[3],
+            is_buy_summary=bool(row[4]),
+            five_price=from_cents(row[5]),
+            five_orders=row[6],
+            five_items=row[7],
+            lowest=from_cents(row[8]),
+            highest=from_cents(row[9]),
+            total_items=row[10],
+            total_orders=row[11],
+            average=from_cents(row[12]),
+            filtered_items=row[13],
+            filtered_orders=row[14],
+        )
+        for row in rows
+    ]
