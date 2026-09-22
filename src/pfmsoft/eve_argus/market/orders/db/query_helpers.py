@@ -4,6 +4,7 @@ import sqlite3
 from dataclasses import dataclass
 from decimal import Decimal
 
+from pfmsoft.eve_argus.helpers.currency import from_cents, to_cents
 from pfmsoft.eve_argus.helpers.package_resource import load_package_resouce_text
 from pfmsoft.eve_argus.models.esi import argus_response_models as ARM
 from pfmsoft.eve_argus.models.esi import esi_response_models as ERM
@@ -69,7 +70,7 @@ def write_market_orders(
                     order.location_id,
                     order.min_volume,
                     order.order_id,
-                    int(order.price * 100),
+                    to_cents(Decimal(order.price)),
                     order.range,
                     order.system_id,
                     order.type_id,
@@ -134,7 +135,7 @@ def get_region_orders(
                 location_id=row[3],
                 min_volume=row[4],
                 order_id=row[5],
-                price=Decimal(row[6]) / 100,
+                price=from_cents(row[6]),
                 range=row[7],
                 system_id=row[8],
                 type_id=row[9],
