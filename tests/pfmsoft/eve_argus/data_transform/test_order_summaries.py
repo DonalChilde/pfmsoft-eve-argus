@@ -1,12 +1,13 @@
 """Tests for market order summary calculations."""
 
+import json
 from decimal import Decimal
 
 import pytest
 
 from pfmsoft.eve_argus.data_transform.order_summaries import (
+    OrderSummaryReport,
     calculate_order_summary,
-    calculate_order_summary_detail,
     calculate_summaries,
 )
 from pfmsoft.eve_argus.models.esi.argus_response_models import (
@@ -59,31 +60,39 @@ def divided_orders() -> DividedOrders:
     )
 
 
-def test_calculate_order_summary_detail_filters_outliers_and_computes_depth() -> None:
+def test_calculate_order_summary_filters_outliers_and_computes_depth() -> None:
     """Buy and sell summaries should use valid volume and the best 5% bucket."""
-    orders = divided_orders()
+    result = calculate_order_summary(
+        region_id=10000002,
+        type_id=34,
+        collected_orders=divided_orders(),
+        filter_factor=Decimal("10"),
+    )
 
-    buy_result = calculate_order_summary_detail(34, orders.buy_orders, True, 10)
-    sell_result = calculate_order_summary_detail(34, orders.sell_orders, False, 10)
-
-    assert isinstance(buy_result.five_price, Decimal)
-    assert buy_result.total_items == 30
-    assert buy_result.total_orders == 2
-    assert buy_result.filtered_items == 30
-    assert buy_result.filtered_orders == 1
-    assert buy_result.avg_price == pytest.approx(Decimal("93.3333333333"))
-    assert (buy_result.five_price, buy_result.five_orders, buy_result.five_items) == (
+    assert result.buy_summary is not None
+    assert result.sell_summary is not None
+    assert isinstance(result.buy_summary.five_price, Decimal)
+    assert result.buy_summary.total_items == 30
+    assert result.buy_summary.total_orders == 2
+    assert result.buy_summary.filtered_items == 30
+    assert result.buy_summary.filtered_orders == 1
+    assert result.buy_summary.avg_price == pytest.approx(Decimal("93.3333333333"))
+    assert (
+        result.buy_summary.five_price,
+        result.buy_summary.five_orders,
+        result.buy_summary.five_items,
+    ) == (
         Decimal("100"),
         1,
         10,
     )
-    assert sell_result.total_items == 30
-    assert sell_result.filtered_items == 30
-    assert sell_result.avg_price == pytest.approx(Decimal("116.6666666667"))
+    assert result.sell_summary.total_items == 30
+    assert result.sell_summary.filtered_items == 30
+    assert result.sell_summary.avg_price == pytest.approx(Decimal("116.6666666667"))
     assert (
-        sell_result.five_price,
-        sell_result.five_orders,
-        sell_result.five_items,
+        result.sell_summary.five_price,
+        result.sell_summary.five_orders,
+        result.sell_summary.five_items,
     ) == (Decimal("110"), 1, 10)
 
 
@@ -94,15 +103,17 @@ def test_calculate_order_summary_applies_system_and_location_filters() -> None:
         order(7, price=80, volume=10, is_buy_order=True, location_id=60003761)
     )
     summary = calculate_order_summary(
-        10000002,
-        34,
-        orders,
+        region_id=10000002,
+        type_id=34,
+        collected_orders=orders,
         location_id=60003760,
-        filter_factor=10,
+        filter_factor=Decimal("10"),
     )
 
-    assert summary.location_id == 60003760
-    assert summary.solar_system_id is None
+    assert summary.buy_summary is not None
+    assert summary.buy_summary.region_id == 10000002
+    assert summary.buy_summary.system_id is None
+    assert summary.buy_summary.location_id == 60003760
     assert summary.buy_summary.total_items == 30
 
 
@@ -115,17 +126,135 @@ def test_calculate_summaries_builds_region_collection() -> None:
         orders={34: divided_orders()},
     )
 
-    result = calculate_summaries(region_orders, filter_factor=10)
+    result = calculate_summaries(region_orders, filter_factor=Decimal("10"))
 
     assert result.region_id == 10000002
-    assert result.filter_factor == 10
+    assert result.system_id is None
+    assert result.location_id is None
+    assert result.summaries[34].buy_summary is not None
     assert result.summaries[34].buy_summary.total_orders == 2
+
+
+def test_calculate_order_summary_is_independent_of_input_order() -> None:
+    """Depth calculations should always walk orders from the best price."""
+    orders = divided_orders()
+    orders.buy_orders.reverse()
+    orders.sell_orders.reverse()
+
+    result = calculate_order_summary(
+        region_id=10000002,
+        type_id=34,
+        collected_orders=orders,
+        filter_factor=Decimal("10"),
+    )
+
+    assert result.buy_5 == Decimal("100")
+    assert result.sell_5 == Decimal("110")
+
+
+def test_calculate_order_summary_includes_threshold_price_ties() -> None:
+    """Depth counts should include every order at the threshold price."""
+    orders = DividedOrders(
+        buy_orders=[
+            order(1, price=99, volume=100, is_buy_order=True),
+            order(2, price=100, volume=5, is_buy_order=True),
+            order(3, price=100, volume=5, is_buy_order=True),
+        ],
+        sell_orders=[
+            order(4, price=101, volume=100, is_buy_order=False),
+            order(5, price=100, volume=5, is_buy_order=False),
+            order(6, price=100, volume=5, is_buy_order=False),
+        ],
+    )
+
+    result = calculate_order_summary(
+        region_id=10000002,
+        type_id=34,
+        collected_orders=orders,
+    )
+
+    assert result.buy_summary is not None
+    assert result.sell_summary is not None
+    assert (
+        result.buy_summary.five_price,
+        result.buy_summary.five_orders,
+        result.buy_summary.five_items,
+    ) == (Decimal("100"), 2, 10)
+    assert (
+        result.sell_summary.five_price,
+        result.sell_summary.five_orders,
+        result.sell_summary.five_items,
+    ) == (Decimal("100"), 2, 10)
+
+
+def test_calculate_order_summary_stops_at_exact_five_percent() -> None:
+    """An order reaching exactly 5% should establish the depth threshold."""
+    orders = DividedOrders(
+        buy_orders=[
+            order(1, price=100, volume=5, is_buy_order=True),
+            order(2, price=90, volume=95, is_buy_order=True),
+        ],
+    )
+
+    result = calculate_order_summary(
+        region_id=10000002,
+        type_id=34,
+        collected_orders=orders,
+    )
+
+    assert result.buy_summary is not None
+    assert result.buy_summary.five_price == Decimal("100")
+    assert result.buy_summary.five_orders == 1
+    assert result.buy_summary.five_items == 5
+    assert result.sell_summary is None
+
+
+@pytest.mark.parametrize("volume", [0, -1])
+def test_calculate_order_summary_returns_none_for_nonpositive_total(
+    volume: int,
+) -> None:
+    """A side without positive total volume should not produce a summary."""
+    orders = DividedOrders(
+        buy_orders=[order(1, price=100, volume=volume, is_buy_order=True)]
+    )
+
+    result = calculate_order_summary(
+        region_id=10000002,
+        type_id=34,
+        collected_orders=orders,
+    )
+
+    assert result.buy_summary is None
+    assert result.sell_summary is None
+
+
+def test_order_summary_report_round_trips_without_filter_factor() -> None:
+    """The new report schema should round-trip without calculation settings."""
+    region_orders = RegionMarketOrders(
+        received_at="2025-01-01T00:00:00Z",
+        expires_at=None,
+        region_id=10000002,
+        orders={34: divided_orders()},
+    )
+    result = calculate_summaries(
+        region_orders,
+        system_id=30000142,
+        filter_factor=Decimal("10"),
+    )
+
+    serialized = result.serialize()
+    restored = OrderSummaryReport.deserialize(serialized)
+
+    assert "filter_factor" not in json.loads(serialized)
+    assert restored == result
+    assert restored.summaries[34].buy_summary is not None
+    assert restored.summaries[34].buy_summary.system_id == 30000142
 
 
 @pytest.mark.parametrize(
     "kwargs",
     [
-        {"solar_system_id": 30000142, "location_id": 60003760},
+        {"system_id": 30000142, "location_id": 60003760},
         {"filter_factor": 1},
     ],
 )
@@ -142,22 +271,38 @@ def test_calculate_summaries_rejects_conflicting_scope_or_filter(kwargs: dict) -
         calculate_summaries(region_orders, **kwargs)
 
 
+@pytest.mark.parametrize("filter_factor", [Decimal("1"), Decimal("0")])
+def test_calculate_order_summary_rejects_invalid_filter_factor(
+    filter_factor: Decimal,
+) -> None:
+    """The item-level public API should reject invalid filter factors."""
+    with pytest.raises(ValueError, match="greater than 1"):
+        calculate_order_summary(
+            region_id=10000002,
+            type_id=34,
+            collected_orders=divided_orders(),
+            filter_factor=filter_factor,
+        )
+
+
 @pytest.mark.parametrize(
-    ("orders", "is_buy_summary", "message"),
+    ("orders", "message"),
     [
-        ([order(1, price=100, volume=1, is_buy_order=False)], True, "does not match"),
+        ([order(1, price=100, volume=1, is_buy_order=False)], "does not match"),
         (
             [order(1, price=100, volume=1, is_buy_order=True, type_id=35)],
-            True,
             "same type_id",
         ),
     ],
 )
-def test_calculate_order_summary_detail_rejects_mismatched_orders(
+def test_calculate_order_summary_rejects_mismatched_orders(
     orders: list[MarketOrderDetail],
-    is_buy_summary: bool,
     message: str,
 ) -> None:
     """A side summary should contain only orders for its declared side and type."""
     with pytest.raises(ValueError, match=message):
-        calculate_order_summary_detail(34, orders, is_buy_summary)
+        calculate_order_summary(
+            region_id=10000002,
+            type_id=34,
+            collected_orders=DividedOrders(buy_orders=orders),
+        )
