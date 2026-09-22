@@ -76,7 +76,7 @@ def test_calculate_order_summary_filters_outliers_and_computes_depth() -> None:
     assert result.buy_summary.total_orders == 2
     assert result.buy_summary.filtered_items == 30
     assert result.buy_summary.filtered_orders == 1
-    assert result.buy_summary.avg_price == Decimal("93.33")
+    assert result.buy_summary.average == Decimal("93.33")
     assert (
         result.buy_summary.five_price,
         result.buy_summary.five_orders,
@@ -88,7 +88,7 @@ def test_calculate_order_summary_filters_outliers_and_computes_depth() -> None:
     )
     assert result.sell_summary.total_items == 30
     assert result.sell_summary.filtered_items == 30
-    assert result.sell_summary.avg_price == Decimal("116.67")
+    assert result.sell_summary.average == Decimal("116.67")
     assert (
         result.sell_summary.five_price,
         result.sell_summary.five_orders,

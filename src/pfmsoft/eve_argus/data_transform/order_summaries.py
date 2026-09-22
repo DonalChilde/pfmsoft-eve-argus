@@ -71,7 +71,7 @@ class OrderSummaryItem:
     highest: Decimal
     total_items: int
     total_orders: int
-    avg_price: Decimal
+    average: Decimal
     filtered_items: int
     filtered_orders: int
 
@@ -403,7 +403,7 @@ def _build_order_summary(
         highest=_as_currency(max(order.price for order in valid_orders)),
         total_items=total_items,
         total_orders=len(valid_orders),
-        avg_price=_as_currency(avg_price),
+        average=_as_currency(avg_price),
         filtered_items=sum(order.volume_remain for order in excluded_orders),
         filtered_orders=len(excluded_orders),
     )
