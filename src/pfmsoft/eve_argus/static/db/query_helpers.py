@@ -1,10 +1,13 @@
 import json
+import logging
 import sqlite3
 from dataclasses import asdict
 
 from pfmsoft.eve_argus.helpers.package_resource import load_package_resouce_text
 from pfmsoft.eve_argus.models.esd import esd_datasets as ESD
 from pfmsoft.eve_argus.models.types import LanguageEnum
+
+logger = logging.getLogger(__name__)
 
 _table_def_parent = "pfmsoft.eve_argus.static.db"
 _table_def_file = "table_definitions.sql"
@@ -230,39 +233,8 @@ def write_blueprints(
             activity_rows,
         )
 
-        connection.executemany(
-            """
-            INSERT INTO blueprint_activity_materials (
-                blueprint_type_id, activity, material_type_id, quantity
-            )
-            VALUES (?, ?, ?, ?)
-            """,
-            (
-                (blueprint_type_id, activity_name, material.typeID, material.quantity)
-                for blueprint_type_id, record in blueprints.dataset.items()
-                for activity_name in (
-                    "copying",
-                    "invention",
-                    "manufacturing",
-                    "reaction",
-                    "research_material",
-                    "research_time",
-                )
-                for activity in [getattr(record.activities, activity_name)]
-                if activity is not None
-                for material in activity.materials or []
-                if material.typeID in type_ids
-            ),
-        )
-
-        skill_rows = {
-            (blueprint_type_id, activity_name, skill.typeID): (
-                blueprint_type_id,
-                activity_name,
-                skill.typeID,
-                skill.level,
-            )
-            for blueprint_type_id, record in blueprints.dataset.items()
+        material_rows = []
+        for blueprint_type_id, record in blueprints.dataset.items():
             for activity_name in (
                 "copying",
                 "invention",
@@ -270,12 +242,107 @@ def write_blueprints(
                 "reaction",
                 "research_material",
                 "research_time",
+            ):
+                activity = getattr(record.activities, activity_name)
+                if activity is None:
+                    continue
+                for material in activity.materials or []:
+                    if material.typeID not in type_ids:
+                        logger.warning(
+                            "Skipping blueprint material with missing type: "
+                            "blueprint_type_id=%s activity=%s material_type_id=%s",
+                            blueprint_type_id,
+                            activity_name,
+                            material.typeID,
+                        )
+                        continue
+                    material_rows.append((
+                        blueprint_type_id,
+                        activity_name,
+                        material.typeID,
+                        material.quantity,
+                    ))
+
+        connection.executemany(
+            """
+            INSERT INTO blueprint_activity_materials (
+                blueprint_type_id, activity, material_type_id, quantity
             )
-            for activity in [getattr(record.activities, activity_name)]
-            if activity is not None
-            for skill in activity.skills or []
-            if skill.typeID in type_ids
-        }
+            VALUES (?, ?, ?, ?)
+            """,
+            material_rows,
+        )
+
+        skill_rows = {}
+        for blueprint_type_id, record in blueprints.dataset.items():
+            for activity_name in (
+                "copying",
+                "invention",
+                "manufacturing",
+                "reaction",
+                "research_material",
+                "research_time",
+            ):
+                activity = getattr(record.activities, activity_name)
+                if activity is None:
+                    continue
+                for skill in activity.skills or []:
+                    if skill.typeID not in type_ids:
+                        logger.warning(
+                            "Skipping blueprint skill with missing type: "
+                            "blueprint_type_id=%s activity=%s skill_type_id=%s",
+                            blueprint_type_id,
+                            activity_name,
+                            skill.typeID,
+                        )
+                        continue
+                    skill_key = (blueprint_type_id, activity_name, skill.typeID)
+                    if skill_key in skill_rows:
+                        logger.warning(
+                            "Replacing duplicate blueprint skill: "
+                            "blueprint_type_id=%s activity=%s skill_type_id=%s",
+                            blueprint_type_id,
+                            activity_name,
+                            skill.typeID,
+                        )
+                    skill_rows[skill_key] = (
+                        blueprint_type_id,
+                        activity_name,
+                        skill.typeID,
+                        skill.level,
+                    )
+
+        product_rows = []
+        for blueprint_type_id, record in blueprints.dataset.items():
+            for activity_name in (
+                "copying",
+                "invention",
+                "manufacturing",
+                "reaction",
+                "research_material",
+                "research_time",
+            ):
+                activity = getattr(record.activities, activity_name)
+                if activity is None:
+                    continue
+                for product in activity.products or []:
+                    if product.typeID not in type_ids:
+                        logger.warning(
+                            "Skipping blueprint product with missing type: "
+                            "blueprint_type_id=%s activity=%s product_type_id=%s",
+                            blueprint_type_id,
+                            activity_name,
+                            product.typeID,
+                        )
+                        continue
+                    product_rows.append((
+                        blueprint_type_id,
+                        activity_name,
+                        product.typeID,
+                        product.quantity,
+                        product.probability,
+                    ))
+
         connection.executemany(
             """
             INSERT INTO blueprint_activity_skills (
@@ -293,26 +360,5 @@ def write_blueprints(
             )
             VALUES (?, ?, ?, ?, ?)
             """,
-            (
-                (
-                    blueprint_type_id,
-                    activity_name,
-                    product.typeID,
-                    product.quantity,
-                    product.probability,
-                )
-                for blueprint_type_id, record in blueprints.dataset.items()
-                for activity_name in (
-                    "copying",
-                    "invention",
-                    "manufacturing",
-                    "reaction",
-                    "research_material",
-                    "research_time",
-                )
-                for activity in [getattr(record.activities, activity_name)]
-                if activity is not None
-                for product in activity.products or []
-                if product.typeID in type_ids
-            ),
+            product_rows,
         )

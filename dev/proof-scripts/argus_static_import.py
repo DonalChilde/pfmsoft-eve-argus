@@ -1,6 +1,7 @@
 """Proof script for importing ESD data into the Argus static database."""
 
 import sqlite3
+from logging import basicConfig
 from pathlib import Path
 
 from pfmsoft.eve_sd import EveSdDbQueryManager
@@ -11,6 +12,17 @@ from pfmsoft.eve_argus.static.db import query_helpers
 
 ESD_DATABASE_PATH = Path("dev/app-dir/static-db.sqlite")
 ARGUS_DATABASE_PATH = Path("dev/app-dir/argus-static-db.sqlite")
+LOG_FILE_PATH = Path("dev/proof-scripts/logging/argus_static_import.log")
+
+
+def setup_logging() -> None:
+    """Configure logging for the static data import proof script."""
+    LOG_FILE_PATH.parent.mkdir(parents=True, exist_ok=True)
+    basicConfig(
+        filename=LOG_FILE_PATH,
+        level="INFO",
+        format="%(asctime)s | %(levelname)-8s | %(funcName)s | %(message)s | [in %(pathname)s | %(lineno)d]",
+    )
 
 
 def import_static_data() -> None:
@@ -33,4 +45,5 @@ def import_static_data() -> None:
 
 
 if __name__ == "__main__":
+    setup_logging()
     import_static_data()
