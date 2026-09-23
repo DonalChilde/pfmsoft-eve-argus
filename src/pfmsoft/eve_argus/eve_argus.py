@@ -14,6 +14,9 @@ from pfmsoft.eve_argus.market.orders.db.query_helpers import (
     load_table_definitions as load_order_table_definitions,
 )
 from pfmsoft.eve_argus.settings import EveArgusSettings
+from pfmsoft.eve_argus.static.db.query_helpers import (
+    load_table_definitions as load_argus_static_table_definitions,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -27,6 +30,7 @@ class EveArgusResources:
         self._sd_query_manager: EveSdDbQueryManager | None = None
         self._esi_schema: EsiSchema | None = None
         self._order_db_connection: sqlite3.Connection | None = None
+        self._argus_static_db_connection: sqlite3.Connection | None = None
 
     async def __aenter__(self) -> Self:
         """Enter the async context manager."""
@@ -41,6 +45,9 @@ class EveArgusResources:
         self._sd_query_manager.__enter__()
         self._order_db_connection = create_read_write_connection(
             self._settings.market_orders_database, load_order_table_definitions()
+        )
+        self._argus_static_db_connection = create_read_write_connection(
+            self._settings.static_database, load_argus_static_table_definitions()
         )
         end = perf_counter_ns()
         seconds = f"{(end - start) / 1_000_000_000:.6f} s"
@@ -63,6 +70,9 @@ class EveArgusResources:
         if self._order_db_connection is not None:
             self._order_db_connection.close()
             self._order_db_connection = None
+        if self._argus_static_db_connection is not None:
+            self._argus_static_db_connection.close()
+            self._argus_static_db_connection = None
         if self._esi_schema is not None:
             self._esi_schema = None
 
