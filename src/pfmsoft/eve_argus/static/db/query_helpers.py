@@ -164,7 +164,29 @@ def write_groups(
 ) -> None:
     """Write the groups dataset to the database."""
     with connection:
-        ...
+        connection.executemany(
+            """
+            INSERT INTO groups (
+                group_id, anchorable, anchored, category_id,
+                fittable_non_singleton, icon_id, name, published, use_base_price
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                (
+                    group_id,
+                    record.anchorable,
+                    record.anchored,
+                    record.categoryID,
+                    record.fittableNonSingleton,
+                    record.iconID,
+                    record.name_localized(language),
+                    record.published,
+                    record.useBasePrice,
+                )
+                for group_id, record in groups.dataset.items()
+            ),
+        )
 
 
 def write_blueprints(
@@ -173,4 +195,124 @@ def write_blueprints(
 ) -> None:
     """Write the blueprints dataset to the database."""
     with connection:
-        ...
+        type_ids = {
+            type_id for (type_id,) in connection.execute("SELECT type_id FROM types")
+        }
+        connection.executemany(
+            """
+            INSERT INTO blueprints (blueprint_type_id, max_production_limit)
+            VALUES (?, ?)
+            """,
+            (
+                (blueprint_type_id, record.maxProductionLimit)
+                for blueprint_type_id, record in blueprints.dataset.items()
+            ),
+        )
+
+        activity_rows = [
+            (blueprint_type_id, activity_name, activity.time)
+            for blueprint_type_id, record in blueprints.dataset.items()
+            for activity_name in (
+                "copying",
+                "invention",
+                "manufacturing",
+                "reaction",
+                "research_material",
+                "research_time",
+            )
+            if (activity := getattr(record.activities, activity_name)) is not None
+        ]
+        connection.executemany(
+            """
+            INSERT INTO blueprint_activities (blueprint_type_id, activity, time)
+            VALUES (?, ?, ?)
+            """,
+            activity_rows,
+        )
+
+        connection.executemany(
+            """
+            INSERT INTO blueprint_activity_materials (
+                blueprint_type_id, activity, material_type_id, quantity
+            )
+            VALUES (?, ?, ?, ?)
+            """,
+            (
+                (blueprint_type_id, activity_name, material.typeID, material.quantity)
+                for blueprint_type_id, record in blueprints.dataset.items()
+                for activity_name in (
+                    "copying",
+                    "invention",
+                    "manufacturing",
+                    "reaction",
+                    "research_material",
+                    "research_time",
+                )
+                for activity in [getattr(record.activities, activity_name)]
+                if activity is not None
+                for material in activity.materials or []
+                if material.typeID in type_ids
+            ),
+        )
+
+        skill_rows = {
+            (blueprint_type_id, activity_name, skill.typeID): (
+                blueprint_type_id,
+                activity_name,
+                skill.typeID,
+                skill.level,
+            )
+            for blueprint_type_id, record in blueprints.dataset.items()
+            for activity_name in (
+                "copying",
+                "invention",
+                "manufacturing",
+                "reaction",
+                "research_material",
+                "research_time",
+            )
+            for activity in [getattr(record.activities, activity_name)]
+            if activity is not None
+            for skill in activity.skills or []
+            if skill.typeID in type_ids
+        }
+        connection.executemany(
+            """
+            INSERT INTO blueprint_activity_skills (
+                blueprint_type_id, activity, skill_type_id, level
+            )
+            VALUES (?, ?, ?, ?)
+            """,
+            skill_rows.values(),
+        )
+
+        connection.executemany(
+            """
+            INSERT INTO blueprint_activity_products (
+                blueprint_type_id, activity, product_type_id, quantity, probability
+            )
+            VALUES (?, ?, ?, ?, ?)
+            """,
+            (
+                (
+                    blueprint_type_id,
+                    activity_name,
+                    product.typeID,
+                    product.quantity,
+                    product.probability,
+                )
+                for blueprint_type_id, record in blueprints.dataset.items()
+                for activity_name in (
+                    "copying",
+                    "invention",
+                    "manufacturing",
+                    "reaction",
+                    "research_material",
+                    "research_time",
+                )
+                for activity in [getattr(record.activities, activity_name)]
+                if activity is not None
+                for product in activity.products or []
+                if product.typeID in type_ids
+            ),
+        )
