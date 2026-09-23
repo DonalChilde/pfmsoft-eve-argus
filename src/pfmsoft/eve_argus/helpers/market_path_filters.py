@@ -47,5 +47,4 @@ def filter_type_ids_by_market_path(
             if exclude.isdisjoint(market_group.path_int):
                 continue
             result.difference_update(market_group.types)
-
     return result

@@ -1,7 +1,7 @@
 """Tests for regional market order transformations."""
 
 from pfmsoft.eve_argus.data_transform.regional_market_orders import (
-    transform_region_market_orders,
+    transform_region_market_orders_esi,
 )
 from pfmsoft.eve_argus.models.esi.argus_response_models import MarketOrderDetail
 from pfmsoft.eve_argus.models.esi.esi_response_models import (
@@ -62,7 +62,7 @@ def test_transform_region_market_orders_groups_orders_by_type():
         orders=[buy_order, sell_order, other_buy_order],
     )
 
-    transformed = transform_region_market_orders(response)
+    transformed = transform_region_market_orders_esi(response)
 
     assert transformed.region_id == 10000002
     assert list(transformed.orders) == [34, 35]

@@ -47,6 +47,8 @@ class EveArgusSettings:
     """The directory where the application stores its log files."""
     static_database: Path
     """The path to the static database file used by the application."""
+    market_orders_database: Path
+    """The path to the market orders database file used by the application."""
     eve_link_settings: EsiLinkSettings
     """The settings for the pfmsoft-eve-link package used by the application."""
     eve_sd_settings: EveSDSettings
@@ -169,6 +171,7 @@ def _initialize_settings(application_directory: Path) -> EveArgusSettings:
         application_directory=application_directory,
         logging_directory=application_directory / "logs",
         static_database=application_directory / "static-db.sqlite",
+        market_orders_database=application_directory / "market-orders-db.sqlite",
         eve_link_settings=get_eve_link_settings(
             application_directory=application_directory / "eve_link"
         ),

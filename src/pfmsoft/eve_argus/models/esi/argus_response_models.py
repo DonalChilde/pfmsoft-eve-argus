@@ -9,6 +9,7 @@ They are meant to be consumed by Argus functions, and possibly persisted in the 
 # and validation in wrapper classes, and use dataclasses for the data models themselves.
 
 from dataclasses import dataclass, field
+from decimal import Decimal
 from typing import Any, Self
 
 from pydantic import BaseModel, RootModel
@@ -106,7 +107,7 @@ class MarketOrderDetail:
     location_id: int
     min_volume: int
     order_id: int
-    price: float
+    price: Decimal
     range: str
     system_id: int
     type_id: int
@@ -145,85 +146,6 @@ class RegionMarketOrders(EsiModelBase):
 
 RegionMarketOrdersRoot = RootModel[RegionMarketOrders]
 MarketGroupRoot = RootModel[MarketGroup]
-
-
-# --------Order Summary Models--------
-@dataclass(slots=True, kw_only=True)
-class OrderSummaryItem:
-    """Represents one side of the market depth for a single item type.
-
-    This summary is built from the valid orders after outlier filtering. The 5% depth
-    metrics describe the best-price threshold needed to reach 5% of the filtered volume.
-    """
-
-    type_id: int
-    """The item type ID represented by this summary."""
-    is_buy_summary: bool
-    """True when this summary describes buy orders; False for sell orders."""
-    five_price: float
-    """The price of the last order included in the 5% cumulative-volume threshold."""
-    five_orders: int
-    """The number of orders needed to reach the 5% cumulative-volume target."""
-    five_items: int
-    """The total volume available at or better than ``five_price`` in the threshold bucket."""
-    lowest: float
-    """The lowest valid order price after outlier filtering."""
-    highest: float
-    """The highest valid order price after outlier filtering."""
-    total_items: int
-    """The total valid volume remaining after outlier filtering."""
-    total_orders: int
-    """The count of valid orders remaining after outlier filtering."""
-    avg_price: float
-    """The volume-weighted average price of the valid orders."""
-    filtered_items: int
-    """The volume removed by the outlier filter."""
-    filtered_orders: int
-    """The number of orders removed by the outlier filter."""
-
-
-@dataclass(slots=True, kw_only=True)
-class OrderSummary:
-    """Represents the buy and sell summary for one item type in a region.
-
-    The summary may be scoped to a single solar system or location instead of the whole
-    region.
-    """
-
-    region_id: int
-    solar_system_id: int | None
-    location_id: int | None
-    type_id: int
-    buy_summary: OrderSummaryItem
-    sell_summary: OrderSummaryItem
-
-
-@dataclass(slots=True, kw_only=True)
-class OrderSummaries(EsiModelBase):
-    """Represents the collection of order summaries for a region.
-
-    The collection may be limited to a specific solar system or location and uses a shared
-    outlier filter factor for all item summaries.
-    """
-
-    region_id: int
-    solar_system_id: int | None
-    location_id: int | None
-    filter_factor: float
-    summaries: dict[int, OrderSummary]
-
-    def serialize(self, indent: int | None = 2) -> str:
-        """Serializes the OrderSummaries to a JSON string."""
-        return OrderSummariesRoot(root=self).model_dump_json(indent=indent)
-
-    @classmethod
-    def deserialize(cls, data: str) -> OrderSummaries:
-        """Deserializes a JSON string to an OrderSummaries model."""
-        result = OrderSummariesRoot.model_validate_json(data).root
-        return result
-
-
-OrderSummariesRoot = RootModel[OrderSummaries]
 
 
 # -----------Market History Summary Models-----------

@@ -78,7 +78,7 @@ def regional_market_orders_transform():
             REGION_MARKET_ORDERS_FILENAME.read_text()
         )
     )
-    result = regional_market_orders.transform_region_market_orders(
+    result = regional_market_orders.transform_region_market_orders_esi(
         region_market_orders=regional_market_orders_response.response_data
     )
     return result
