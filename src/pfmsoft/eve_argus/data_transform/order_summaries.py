@@ -2,21 +2,14 @@
 
 from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass
-from decimal import ROUND_HALF_UP, Decimal
+from decimal import Decimal
 from typing import Protocol, Self
 
-from mkdocstrings_handlers.python import Order
 from pydantic import RootModel
 from whenever import Instant
 
+from pfmsoft.eve_argus.helpers.currency import as_currency
 from pfmsoft.eve_argus.models.esi import argus_response_models as ARM
-
-_CURRENCY_QUANTUM = Decimal("0.01")
-
-
-def _as_currency(value: Decimal) -> Decimal:
-    """Round a monetary value to two decimal places."""
-    return value.quantize(_CURRENCY_QUANTUM, rounding=ROUND_HALF_UP)
 
 
 class Serializable(Protocol):
@@ -405,14 +398,14 @@ def _build_order_summary(
         system_id=system_id,
         location_id=location_id,
         is_buy_summary=is_buy_summary,
-        five_price=_as_currency(five_price),
+        five_price=as_currency(five_price),
         five_orders=len(five_percent_orders),
         five_items=sum(order.volume_remain for order in five_percent_orders),
-        lowest=_as_currency(min(order.price for order in valid_orders)),
-        highest=_as_currency(max(order.price for order in valid_orders)),
+        lowest=as_currency(min(order.price for order in valid_orders)),
+        highest=as_currency(max(order.price for order in valid_orders)),
         total_items=total_items,
         total_orders=len(valid_orders),
-        average=_as_currency(avg_price),
+        average=as_currency(avg_price),
         filtered_items=sum(order.volume_remain for order in excluded_orders),
         filtered_orders=len(excluded_orders),
     )

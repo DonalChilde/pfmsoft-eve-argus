@@ -1,6 +1,17 @@
 """Helper functions for currency conversion between Decimal and integer cents."""
 
-from decimal import Decimal
+from decimal import ROUND_HALF_UP, Decimal
+
+_CURRENCY_QUANTUM = Decimal("0.01")
+
+
+def as_currency(value: Decimal) -> Decimal:
+    """Round a monetary value to two decimal places.
+
+    This is used as a final step after performing arithmetic operations to ensure that
+    monetary values are consistently rounded to two decimal places.
+    """
+    return value.quantize(_CURRENCY_QUANTUM, rounding=ROUND_HALF_UP)
 
 
 def to_cents(amount: Decimal | float | str) -> int:
