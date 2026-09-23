@@ -1,3 +1,5 @@
+"""Query helpers for interacting with the EVE Argus static database."""
+
 import json
 import logging
 import sqlite3
@@ -192,14 +194,79 @@ def write_groups(
         )
 
 
+def _get_valid_blueprint_ids(
+    connection: sqlite3.Connection,
+    blueprints: ESD.BlueprintsDataset,
+) -> set[int]:
+    """Return blueprint IDs whose records satisfy the database constraints."""
+    type_publication = {
+        type_id: published
+        for type_id, published in connection.execute(
+            "SELECT type_id, published FROM types"
+        )
+    }
+    valid_blueprint_ids: set[int] = set()
+    activity_names = (
+        "copying",
+        "invention",
+        "manufacturing",
+        "reaction",
+        "research_material",
+        "research_time",
+    )
+
+    for blueprint_type_id, record in blueprints.dataset.items():
+        failure_reasons: set[str] = set()
+        if blueprint_type_id not in type_publication:
+            failure_reasons.add("missing blueprint type")
+        is_published = type_publication.get(blueprint_type_id, False)
+
+        type_ids = type_publication.keys()
+
+        for activity_name in activity_names:
+            activity = getattr(record.activities, activity_name)
+            if activity is None:
+                continue
+            if any(
+                material.typeID not in type_ids for material in activity.materials or []
+            ):
+                failure_reasons.add("missing material type")
+            if any(skill.typeID not in type_ids for skill in activity.skills or []):
+                failure_reasons.add("missing skill type")
+            if any(
+                product.typeID not in type_ids for product in activity.products or []
+            ):
+                failure_reasons.add("missing product type")
+
+        if failure_reasons and not is_published:
+            failure_reasons.add("unpublished blueprint type")
+        if failure_reasons:
+            logger.warning(
+                "Skipping invalid blueprint record: blueprint_type_id=%s "
+                "reasons=%s record=%r",
+                blueprint_type_id,
+                ", ".join(sorted(failure_reasons)),
+                asdict(record),
+            )
+            continue
+        if not is_published:
+            continue
+        valid_blueprint_ids.add(blueprint_type_id)
+
+    return valid_blueprint_ids
+
+
 def write_blueprints(
     connection: sqlite3.Connection,
     blueprints: ESD.BlueprintsDataset,
 ) -> None:
     """Write the blueprints dataset to the database."""
     with connection:
-        type_ids = {
-            type_id for (type_id,) in connection.execute("SELECT type_id FROM types")
+        valid_blueprint_ids = _get_valid_blueprint_ids(connection, blueprints)
+        valid_blueprints = {
+            blueprint_type_id: record
+            for blueprint_type_id, record in blueprints.dataset.items()
+            if blueprint_type_id in valid_blueprint_ids
         }
         connection.executemany(
             """
@@ -208,13 +275,13 @@ def write_blueprints(
             """,
             (
                 (blueprint_type_id, record.maxProductionLimit)
-                for blueprint_type_id, record in blueprints.dataset.items()
+                for blueprint_type_id, record in valid_blueprints.items()
             ),
         )
 
         activity_rows = [
             (blueprint_type_id, activity_name, activity.time)
-            for blueprint_type_id, record in blueprints.dataset.items()
+            for blueprint_type_id, record in valid_blueprints.items()
             for activity_name in (
                 "copying",
                 "invention",
@@ -234,7 +301,7 @@ def write_blueprints(
         )
 
         material_rows = []
-        for blueprint_type_id, record in blueprints.dataset.items():
+        for blueprint_type_id, record in valid_blueprints.items():
             for activity_name in (
                 "copying",
                 "invention",
@@ -247,15 +314,6 @@ def write_blueprints(
                 if activity is None:
                     continue
                 for material in activity.materials or []:
-                    if material.typeID not in type_ids:
-                        logger.warning(
-                            "Skipping blueprint material with missing type: "
-                            "blueprint_type_id=%s activity=%s material_type_id=%s",
-                            blueprint_type_id,
-                            activity_name,
-                            material.typeID,
-                        )
-                        continue
                     material_rows.append((
                         blueprint_type_id,
                         activity_name,
@@ -274,7 +332,7 @@ def write_blueprints(
         )
 
         skill_rows = {}
-        for blueprint_type_id, record in blueprints.dataset.items():
+        for blueprint_type_id, record in valid_blueprints.items():
             for activity_name in (
                 "copying",
                 "invention",
@@ -287,24 +345,7 @@ def write_blueprints(
                 if activity is None:
                     continue
                 for skill in activity.skills or []:
-                    if skill.typeID not in type_ids:
-                        logger.warning(
-                            "Skipping blueprint skill with missing type: "
-                            "blueprint_type_id=%s activity=%s skill_type_id=%s",
-                            blueprint_type_id,
-                            activity_name,
-                            skill.typeID,
-                        )
-                        continue
                     skill_key = (blueprint_type_id, activity_name, skill.typeID)
-                    if skill_key in skill_rows:
-                        logger.warning(
-                            "Replacing duplicate blueprint skill: "
-                            "blueprint_type_id=%s activity=%s skill_type_id=%s",
-                            blueprint_type_id,
-                            activity_name,
-                            skill.typeID,
-                        )
                     skill_rows[skill_key] = (
                         blueprint_type_id,
                         activity_name,
@@ -313,7 +354,7 @@ def write_blueprints(
                     )
 
         product_rows = []
-        for blueprint_type_id, record in blueprints.dataset.items():
+        for blueprint_type_id, record in valid_blueprints.items():
             for activity_name in (
                 "copying",
                 "invention",
@@ -326,15 +367,6 @@ def write_blueprints(
                 if activity is None:
                     continue
                 for product in activity.products or []:
-                    if product.typeID not in type_ids:
-                        logger.warning(
-                            "Skipping blueprint product with missing type: "
-                            "blueprint_type_id=%s activity=%s product_type_id=%s",
-                            blueprint_type_id,
-                            activity_name,
-                            product.typeID,
-                        )
-                        continue
                     product_rows.append((
                         blueprint_type_id,
                         activity_name,
