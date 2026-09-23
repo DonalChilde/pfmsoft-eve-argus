@@ -198,7 +198,11 @@ def _get_valid_blueprint_ids(
     connection: sqlite3.Connection,
     blueprints: ESD.BlueprintsDataset,
 ) -> set[int]:
-    """Return blueprint IDs whose records satisfy the database constraints."""
+    """Return blueprint IDs whose records satisfy the database constraints.
+
+    Only blueprint records that are published and have all required types present
+    in the database are considered valid.
+    """
     type_publication = {
         type_id: published
         for type_id, published in connection.execute(
