@@ -98,7 +98,39 @@ def write_type_materials(
 ) -> None:
     """Write the type materials dataset to the database."""
     with connection:
-        ...
+        connection.executemany(
+            "INSERT INTO type_materials (type_id) VALUES (?)",
+            ((type_id,) for type_id in type_materials.dataset),
+        )
+        connection.executemany(
+            """
+            INSERT INTO type_material_components (type_id, material_type_id, quantity)
+            VALUES (?, ?, ?)
+            """,
+            (
+                (type_id, material.materialTypeID, material.quantity)
+                for type_id, record in type_materials.dataset.items()
+                for material in record.materials or []
+            ),
+        )
+        connection.executemany(
+            """
+            INSERT INTO type_material_randomized_components (
+                type_id, material_type_id, quantity_min, quantity_max
+            )
+            VALUES (?, ?, ?, ?)
+            """,
+            (
+                (
+                    type_id,
+                    material.materialTypeID,
+                    material.quantityMin,
+                    material.quantityMax,
+                )
+                for type_id, record in type_materials.dataset.items()
+                for material in record.randomized_materials or []
+            ),
+        )
 
 
 def write_categories(
@@ -108,7 +140,21 @@ def write_categories(
 ) -> None:
     """Write the categories dataset to the database."""
     with connection:
-        ...
+        connection.executemany(
+            """
+            INSERT INTO categories (category_id, icon_id, name, published)
+            VALUES (?, ?, ?, ?)
+            """,
+            (
+                (
+                    category_id,
+                    record.iconID,
+                    record.name_localized(language),
+                    record.published,
+                )
+                for category_id, record in categories.dataset.items()
+            ),
+        )
 
 
 def write_groups(
