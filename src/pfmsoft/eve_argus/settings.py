@@ -35,6 +35,7 @@ APP_NAMESPACE = uuid5(NAMESPACE_DNS, __app_name__)
 ENV_PREFIX = __app_name__.replace(".", "_").replace("-", "_").upper() + "_"
 SETTINGS_KEY = ENV_PREFIX + "SETTINGS"
 TOML_SETTINGS_FILE = f"{__app_name__}.toml"
+ESD_MIN_BUILD = "FOO"
 
 
 @dataclass(slots=True)
@@ -47,6 +48,8 @@ class EveArgusSettings:
     """The directory where the application stores its log files."""
     static_database: Path
     """The path to the static database file used by the application."""
+    argus_static_database: Path
+    """The path to the Argus static database file used by the application."""
     market_orders_database: Path
     """The path to the market orders database file used by the application."""
     eve_link_settings: EsiLinkSettings
@@ -56,6 +59,8 @@ class EveArgusSettings:
     compatibility_date: str | None = None
     """The date used for ESI compatibility checks, in YYYY-MM-DD format. If None, the 
     most recent valid date is used."""
+    esd_min_build: str = ESD_MIN_BUILD
+    """The minimum build of the Eve Static Data package required by the application."""
 
 
 class EveArgusSettingsPydantic(BaseSettings):
@@ -171,6 +176,7 @@ def _initialize_settings(application_directory: Path) -> EveArgusSettings:
         application_directory=application_directory,
         logging_directory=application_directory / "logs",
         static_database=application_directory / "static-db.sqlite",
+        argus_static_database=application_directory / "argus-static-db.sqlite",
         market_orders_database=application_directory / "market-orders-db.sqlite",
         eve_link_settings=get_eve_link_settings(
             application_directory=application_directory / "eve_link"
