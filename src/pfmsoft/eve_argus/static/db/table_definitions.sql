@@ -174,3 +174,87 @@ CREATE TABLE IF NOT EXISTS map_regions_constellations (
     PRIMARY KEY (region_id, constellation_id),
     FOREIGN KEY (region_id) REFERENCES map_regions(region_id) ON DELETE CASCADE
 ) STRICT;
+
+-- Map Constellations
+CREATE TABLE IF NOT EXISTS map_constellations (
+    constellation_id INTEGER PRIMARY KEY,
+    faction_id INTEGER,
+    name TEXT NOT NULL,
+    position_x REAL NOT NULL,
+    position_y REAL NOT NULL,
+    position_z REAL NOT NULL,
+    region_id INTEGER NOT NULL,
+    wormhole_class_id INTEGER,
+    FOREIGN KEY (region_id) REFERENCES map_regions(region_id)
+) STRICT;
+
+CREATE TABLE IF NOT EXISTS map_constellations_solar_systems (
+    constellation_id INTEGER NOT NULL,
+    solar_system_id INTEGER NOT NULL,
+    PRIMARY KEY (constellation_id, solar_system_id),
+    FOREIGN KEY (constellation_id)
+        REFERENCES map_constellations(constellation_id) ON DELETE CASCADE
+) STRICT;
+
+-- Map Solar Systems
+CREATE TABLE IF NOT EXISTS map_solar_systems (
+    solar_system_id INTEGER PRIMARY KEY,
+    border INTEGER, --boolean represented as integer (0 or 1)
+    constellation_id INTEGER NOT NULL,
+    corridor INTEGER, --boolean represented as integer (0 or 1)
+    faction_id INTEGER,
+    fringe INTEGER, --boolean represented as integer (0 or 1)
+    hub INTEGER, --boolean represented as integer (0 or 1)
+    international INTEGER, --boolean represented as integer (0 or 1)
+    luminosity REAL,
+    name TEXT NOT NULL,
+    position_x REAL NOT NULL,
+    position_y REAL NOT NULL,
+    position_z REAL NOT NULL,
+    position2d_x REAL,
+    position2d_y REAL,
+    radius REAL NOT NULL,
+    region_id INTEGER NOT NULL,
+    regional INTEGER, --boolean represented as integer (0 or 1)
+    security_class TEXT,
+    security_status REAL NOT NULL,
+    star_id INTEGER,
+    visual_effect TEXT,
+    wormhole_class_id INTEGER,
+    FOREIGN KEY (constellation_id) REFERENCES map_constellations(constellation_id),
+    FOREIGN KEY (region_id) REFERENCES map_regions(region_id)
+) STRICT;
+
+CREATE TABLE IF NOT EXISTS map_solar_systems_disallowed_anchor_categories (
+    solar_system_id INTEGER NOT NULL,
+    category_id INTEGER NOT NULL,
+    PRIMARY KEY (solar_system_id, category_id),
+    FOREIGN KEY (solar_system_id)
+        REFERENCES map_solar_systems(solar_system_id) ON DELETE CASCADE,
+    FOREIGN KEY (category_id) REFERENCES categories(category_id)
+) STRICT;
+
+CREATE TABLE IF NOT EXISTS map_solar_systems_disallowed_anchor_groups (
+    solar_system_id INTEGER NOT NULL,
+    group_id INTEGER NOT NULL,
+    PRIMARY KEY (solar_system_id, group_id),
+    FOREIGN KEY (solar_system_id)
+        REFERENCES map_solar_systems(solar_system_id) ON DELETE CASCADE,
+    FOREIGN KEY (group_id) REFERENCES groups(group_id)
+) STRICT;
+
+CREATE TABLE IF NOT EXISTS map_solar_systems_planets (
+    solar_system_id INTEGER NOT NULL,
+    planet_id INTEGER NOT NULL,
+    PRIMARY KEY (solar_system_id, planet_id),
+    FOREIGN KEY (solar_system_id)
+        REFERENCES map_solar_systems(solar_system_id) ON DELETE CASCADE
+) STRICT;
+
+CREATE TABLE IF NOT EXISTS map_solar_systems_stargates (
+    solar_system_id INTEGER NOT NULL,
+    stargate_id INTEGER NOT NULL,
+    PRIMARY KEY (solar_system_id, stargate_id),
+    FOREIGN KEY (solar_system_id)
+        REFERENCES map_solar_systems(solar_system_id) ON DELETE CASCADE
+) STRICT;
