@@ -59,11 +59,14 @@ def import_static_data() -> None:
             )
 
 
-def access_argus_static_db() -> None:
+def access_argus_static_data() -> None:
     """Access the Argus static database datasets."""
-    ...
+    with sqlite3.connect(ARGUS_DATABASE_PATH) as connection:
+        market_groups = query_helpers.get_market_groups(connection)
+        assert market_groups, "Market groups should not be empty"
 
 
 if __name__ == "__main__":
     setup_logging()
     import_static_data()
+    access_argus_static_data()

@@ -7,6 +7,7 @@ from dataclasses import asdict
 from typing import cast
 
 from pfmsoft.eve_argus.helpers.package_resource import load_package_resouce_text
+from pfmsoft.eve_argus.helpers.timing import log_timing
 from pfmsoft.eve_argus.models.argus import static as ASM
 from pfmsoft.eve_argus.models.esd import esd_datasets as ESD
 from pfmsoft.eve_argus.models.types import LanguageEnum
@@ -15,6 +16,7 @@ logger = logging.getLogger(__name__)
 
 _table_def_parent = "pfmsoft.eve_argus.static.db"
 _table_def_file = "table_definitions.sql"
+_timing_log_level = logging.INFO
 
 
 def load_table_definitions() -> str:
@@ -25,6 +27,7 @@ def load_table_definitions() -> str:
 ####### WRITE db queries #######
 
 
+@log_timing(logger=logger, level=_timing_log_level)
 def write_types(
     connection: sqlite3.Connection,
     types: ESD.TypesDataset,
@@ -72,8 +75,10 @@ def write_types(
                 for type_id, record in types.dataset.items()
             ),
         )
+    logger.info("wrote %d types records to the database", len(types.dataset))
 
 
+@log_timing(logger=logger, level=_timing_log_level)
 def write_meta_groups(
     connection: sqlite3.Connection,
     meta_groups: ESD.MetaGroupsDataset,
@@ -100,8 +105,12 @@ def write_meta_groups(
                 for meta_group_id, record in meta_groups.dataset.items()
             ),
         )
+    logger.info(
+        "wrote %d meta groups records to the database", len(meta_groups.dataset)
+    )
 
 
+@log_timing(logger=logger, level=_timing_log_level)
 def write_type_materials(
     connection: sqlite3.Connection,
     type_materials: ESD.TypeMaterialsDataset,
@@ -141,8 +150,12 @@ def write_type_materials(
                 for material in record.randomized_materials or []
             ),
         )
+    logger.info(
+        "wrote %d type materials records to the database", len(type_materials.dataset)
+    )
 
 
+@log_timing(logger=logger, level=_timing_log_level)
 def write_categories(
     connection: sqlite3.Connection,
     categories: ESD.CategoriesDataset,
@@ -165,8 +178,10 @@ def write_categories(
                 for category_id, record in categories.dataset.items()
             ),
         )
+    logger.info("wrote %d categories records to the database", len(categories.dataset))
 
 
+@log_timing(logger=logger, level=_timing_log_level)
 def write_groups(
     connection: sqlite3.Connection,
     groups: ESD.GroupsDataset,
@@ -197,8 +212,10 @@ def write_groups(
                 for group_id, record in groups.dataset.items()
             ),
         )
+    logger.info("wrote %d groups records to the database", len(groups.dataset))
 
 
+@log_timing(logger=logger, level=_timing_log_level)
 def write_market_groups(
     connection: sqlite3.Connection,
     market_groups: ESD.MarketGroupsDataset,
@@ -250,6 +267,9 @@ def write_market_groups(
                 if (record := market_groups.dataset[market_group_id])
             ),
         )
+    logger.info(
+        "wrote %d market groups records to the database", len(market_groups.dataset)
+    )
 
 
 def _get_published_type_ids_by_market_group_id(
@@ -370,6 +390,7 @@ def _get_valid_blueprint_ids(
     return valid_blueprint_ids
 
 
+@log_timing(logger=logger, level=_timing_log_level)
 def write_blueprints(
     connection: sqlite3.Connection,
     blueprints: ESD.BlueprintsDataset,
@@ -511,8 +532,10 @@ def write_blueprints(
             """,
             product_rows,
         )
+    logger.info("wrote %d valid blueprints to the database", len(valid_blueprints))
 
 
+@log_timing(logger=logger, level=_timing_log_level)
 def write_map_regions(
     connection: sqlite3.Connection,
     map_regions: ESD.MapRegionsDataset,
@@ -554,8 +577,10 @@ def write_map_regions(
                 for constellation_id in record.constellationIDs
             ),
         )
+    logger.info("wrote %d map regions to the database", len(map_regions.dataset))
 
 
+@log_timing(logger=logger, level=_timing_log_level)
 def write_map_constellations(
     connection: sqlite3.Connection,
     map_constellations: ESD.MapConstellationsDataset,
@@ -598,8 +623,12 @@ def write_map_constellations(
                 for solar_system_id in record.solarSystemIDs
             ),
         )
+    logger.info(
+        "wrote %d map constellations to the database", len(map_constellations.dataset)
+    )
 
 
+@log_timing(logger=logger, level=_timing_log_level)
 def write_map_solar_systems(
     connection: sqlite3.Connection,
     map_solar_systems: ESD.MapSolarSystemsDataset,
@@ -695,8 +724,12 @@ def write_map_solar_systems(
                 for stargate_id in record.stargateIDs or []
             ),
         )
+    logger.info(
+        "wrote %d map solar systems to the database", len(map_solar_systems.dataset)
+    )
 
 
+@log_timing(logger=logger, level=_timing_log_level)
 def write_industry_activities(
     connection: sqlite3.Connection,
     industrial_activities: ESD.IndustryActivitiesDataset,
@@ -717,11 +750,16 @@ def write_industry_activities(
                 for activity_id, record in industrial_activities.dataset.items()
             ),
         )
+    logger.info(
+        "wrote %d industry activities to the database",
+        len(industrial_activities.dataset),
+    )
 
 
 ######### GET db queries #########
 
 
+@log_timing(logger=logger, level=_timing_log_level)
 def get_market_groups(connection: sqlite3.Connection) -> ASM.MarketGroupDataset:
     """Retrieve all market groups from the database."""
     rows = connection.execute(
@@ -740,7 +778,7 @@ def get_market_groups(connection: sqlite3.Connection) -> ASM.MarketGroupDataset:
         ORDER BY market_group_id
         """
     ).fetchall()
-    return {
+    result = {
         market_group_id: ASM.MarketGroupRecord(
             market_group_id=market_group_id,
             name=name,
@@ -764,3 +802,5 @@ def get_market_groups(connection: sqlite3.Connection) -> ASM.MarketGroupDataset:
             types,
         ) in rows
     }
+    logger.info("Retrieved %d market groups", len(result))
+    return result
