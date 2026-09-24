@@ -1,8 +1,7 @@
 """Tests for static database query helpers."""
 
+import json
 import sqlite3
-
-import pytest
 
 from pfmsoft.eve_argus.models.esd import esd_datasets as ESD
 from pfmsoft.eve_argus.models.types import LanguageEnum
@@ -75,85 +74,56 @@ def test_write_market_groups_writes_localized_fields_and_parent() -> None:
     market_groups = connection.execute(
         """
         SELECT market_group_id, description, has_types, icon_id, name,
-            parent_group_id
+            parent_group_id, int_path, str_path
         FROM market_groups
         ORDER BY market_group_id
         """
     ).fetchall()
 
-    assert market_groups == [
-        (100, "NOT_DEFINED", 0, None, "Schiffe", None),
-        (101, "Fregatten", 1, 42, "Fregatten", 100),
-        (102, "Sturmfregatten", 1, None, "Sturmfregatten", 101),
+    assert [
+        (
+            market_group_id,
+            description,
+            has_types,
+            icon_id,
+            name,
+            parent_group_id,
+            json.loads(int_path),
+            json.loads(str_path),
+        )
+        for (
+            market_group_id,
+            description,
+            has_types,
+            icon_id,
+            name,
+            parent_group_id,
+            int_path,
+            str_path,
+        ) in market_groups
+    ] == [
+        (100, "NOT_DEFINED", 0, None, "Schiffe", None, [100], ["Schiffe"]),
+        (
+            101,
+            "Fregatten",
+            1,
+            42,
+            "Fregatten",
+            100,
+            [100, 101],
+            ["Schiffe", "Fregatten"],
+        ),
+        (
+            102,
+            "Sturmfregatten",
+            1,
+            None,
+            "Sturmfregatten",
+            101,
+            [100, 101, 102],
+            ["Schiffe", "Fregatten", "Sturmfregatten"],
+        ),
     ]
-
-
-def _write_market_group_path_fixture(connection: sqlite3.Connection) -> None:
-    dataset = ESD.MarketGroupsDataset(
-        dataset={
-            102: ESD.MarketGroupsRecord(
-                description=ESD.LocalizedString(en="Assault Frigates"),
-                hasTypes=True,
-                iconID=None,
-                name=ESD.LocalizedString(en="Assault Frigates"),
-                parentGroupID=101,
-            ),
-            100: ESD.MarketGroupsRecord(
-                description=None,
-                hasTypes=False,
-                iconID=None,
-                name=ESD.LocalizedString(en="Ships"),
-                parentGroupID=None,
-            ),
-            101: ESD.MarketGroupsRecord(
-                description=ESD.LocalizedString(en="Frigates"),
-                hasTypes=True,
-                iconID=42,
-                name=ESD.LocalizedString(en="Frigates"),
-                parentGroupID=100,
-            ),
-        }
-    )
-    query_helpers.write_market_groups(connection, dataset)
-
-
-def test_get_market_group_id_path_returns_root_to_child_ids() -> None:
-    """Market group ID paths include all ancestors from root to target."""
-    connection = _make_connection()
-    _write_market_group_path_fixture(connection)
-
-    path = query_helpers.get_market_group_id_path(connection, 102)
-
-    assert path == (100, 101, 102)
-
-
-def test_get_market_group_id_path_returns_single_root_id() -> None:
-    """Root market group ID paths contain only the root group."""
-    connection = _make_connection()
-    _write_market_group_path_fixture(connection)
-
-    path = query_helpers.get_market_group_id_path(connection, 100)
-
-    assert path == (100,)
-
-
-def test_get_market_group_name_path_returns_root_to_child_names() -> None:
-    """Market group name paths include all ancestors from root to target."""
-    connection = _make_connection()
-    _write_market_group_path_fixture(connection)
-
-    path = query_helpers.get_market_group_name_path(connection, 102)
-
-    assert path == ("Ships", "Frigates", "Assault Frigates")
-
-
-def test_get_market_group_id_path_missing_group_raises_value_error() -> None:
-    """Missing market group IDs raise ValueError."""
-    connection = _make_connection()
-    _write_market_group_path_fixture(connection)
-
-    with pytest.raises(ValueError, match="Market group ID 999 was not found"):
-        query_helpers.get_market_group_id_path(connection, 999)
 
 
 def test_write_map_regions_writes_flattened_position_and_constellations() -> None:

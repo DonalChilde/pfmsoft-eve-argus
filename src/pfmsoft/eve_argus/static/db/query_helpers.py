@@ -216,14 +216,16 @@ def write_market_groups(
     for market_group_id in market_groups.dataset:
         visit(market_group_id)
 
+    path_rows = _get_market_path_rows(market_groups, sorted_group_ids, language)
+
     with connection:
         connection.executemany(
             """
             INSERT INTO market_groups (
                 market_group_id, description, has_types, icon_id, name,
-                parent_group_id
+                parent_group_id, int_path, str_path
             )
-            VALUES (?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 (
@@ -233,74 +235,44 @@ def write_market_groups(
                     record.iconID,
                     record.name_localized(language),
                     record.parentGroupID,
+                    int_path,
+                    str_path,
                 )
-                for market_group_id in sorted_group_ids
+                for market_group_id, int_path, str_path in path_rows
                 if (record := market_groups.dataset[market_group_id])
             ),
         )
 
 
-def _get_market_group_path_rows(
-    connection: sqlite3.Connection,
-    market_group_id: int,
-) -> list[tuple[int, str]]:
-    rows = connection.execute(
-        """
-        WITH RECURSIVE market_path AS (
-            SELECT
-                market_group_id,
-                parent_group_id,
-                name,
-                0 AS depth
-            FROM market_groups
-            WHERE market_group_id = ?
+def _get_market_path_rows(
+    market_groups: ESD.MarketGroupsDataset,
+    sorted_group_ids: list[int],
+    language: LanguageEnum,
+) -> list[tuple[int, str, str]]:
+    int_paths: dict[int, tuple[int, ...]] = {}
+    str_paths: dict[int, tuple[str, ...]] = {}
 
-            UNION ALL
-
-            SELECT
-                parent.market_group_id,
-                parent.parent_group_id,
-                parent.name,
-                market_path.depth + 1 AS depth
-            FROM market_groups AS parent
-            JOIN market_path
-                ON parent.market_group_id = market_path.parent_group_id
+    for market_group_id in sorted_group_ids:
+        record = market_groups.dataset[market_group_id]
+        parent_int_path: tuple[int, ...] = ()
+        parent_str_path: tuple[str, ...] = ()
+        if record.parentGroupID is not None:
+            parent_int_path = int_paths.get(record.parentGroupID, ())
+            parent_str_path = str_paths.get(record.parentGroupID, ())
+        int_paths[market_group_id] = (*parent_int_path, market_group_id)
+        str_paths[market_group_id] = (
+            *parent_str_path,
+            record.name_localized(language),
         )
-        SELECT market_group_id, name
-        FROM market_path
-        ORDER BY depth DESC
-        """,
-        (market_group_id,),
-    ).fetchall()
-    if not rows:
-        raise ValueError(f"Market group ID {market_group_id} was not found")
-    return [(market_group_id, name) for market_group_id, name in rows]
 
-
-def get_market_group_id_path(
-    connection: sqlite3.Connection,
-    market_group_id: int,
-) -> tuple[int, ...]:
-    """Return the market group ID path from root to market_group_id."""
-    return tuple(
-        path_market_group_id
-        for path_market_group_id, _name in _get_market_group_path_rows(
-            connection, market_group_id
+    return [
+        (
+            market_group_id,
+            json.dumps(int_paths[market_group_id]),
+            json.dumps(str_paths[market_group_id]),
         )
-    )
-
-
-def get_market_group_name_path(
-    connection: sqlite3.Connection,
-    market_group_id: int,
-) -> tuple[str, ...]:
-    """Return the market group name path from root to market_group_id."""
-    return tuple(
-        name
-        for _path_market_group_id, name in _get_market_group_path_rows(
-            connection, market_group_id
-        )
-    )
+        for market_group_id in sorted_group_ids
+    ]
 
 
 def _get_valid_blueprint_ids(

@@ -156,6 +156,8 @@ CREATE TABLE IF NOT EXISTS market_groups (
     icon_id INTEGER,
     name TEXT NOT NULL,
     parent_group_id INTEGER,
+    int_path TEXT NOT NULL, -- a string representing the path of ancestor market group IDs as a JSON array
+    str_path TEXT NOT NULL, -- a string representing the path of ancestor market group names as a JSON array
     FOREIGN KEY (parent_group_id) REFERENCES market_groups(market_group_id)
 ) STRICT;
 
