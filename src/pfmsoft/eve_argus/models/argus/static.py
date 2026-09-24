@@ -77,15 +77,15 @@ class MapSolarSystemsRecord:
     """Represents a solar system in the EVE Online universe."""
 
     solar_system_id: int
-    border: bool
+    border: bool | None
     constellation_id: int
-    corridor: bool
+    corridor: bool | None
     disallowed_anchor_categories: tuple[int, ...]
     disallowed_anchor_groups: tuple[int, ...]
     faction_id: int | None
-    fringe: bool
-    hub: bool
-    international: bool
+    fringe: bool | None
+    hub: bool | None
+    international: bool | None
     luminosity: float
     name: str
     planet_ids: tuple[int, ...]
@@ -96,7 +96,7 @@ class MapSolarSystemsRecord:
     position2d_y: float | None
     radius: float
     region_id: int
-    regional: bool
+    regional: bool | None
     security_class: str | None
     security_status: float
     star_id: int | None
@@ -122,7 +122,7 @@ class GroupsRecord:
         fittable_non_singleton INTEGER NOT NULL, --boolean represented as integer (0 or 1)
         icon_id INTEGER,
         name TEXT,
-        published INTEGER, --boolean represented as integer (0 or 1)
+        published INTEGER NOT NULL, --boolean represented as integer (0 or 1)
         use_base_price INTEGER NOT NULL, --boolean represented as integer (0 or 1)
         FOREIGN KEY (category_id) REFERENCES categories(category_id)
     ) STRICT;
@@ -135,7 +135,7 @@ class GroupsRecord:
     fittable_non_singleton: bool
     icon_id: int | None
     name: str | None
-    published: bool | None
+    published: bool
     use_base_price: bool
 
 
@@ -289,3 +289,5 @@ class TypesRecord:
 
 TypesDataset = dict[int, TypesRecord]
 TypesDatasetRoot = RootModel[TypesDataset]
+
+# TODO Blueprints

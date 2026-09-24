@@ -806,6 +806,7 @@ def get_market_groups(connection: sqlite3.Connection) -> ASM.MarketGroupsDataset
     return result
 
 
+@log_timing(logger=logger, level=_timing_log_level)
 def get_industry_activities(
     connection: sqlite3.Connection,
 ) -> ASM.IndustryActivityDataset:
@@ -830,3 +831,339 @@ def get_industry_activities(
     }
     logger.info("Retrieved %d industry activities", len(result))
     return result
+
+
+@log_timing(logger=logger, level=_timing_log_level)
+def get_map_regions(
+    connection: sqlite3.Connection,
+) -> ASM.MapRegionsDataset:
+    """Retrieve all map regions from the database."""
+    rows = connection.execute(
+        """
+        SELECT
+            region_id,
+            description,
+            faction_id,
+            name,
+            nebula_id,
+            position_x,
+            position_y,
+            position_z,
+            wormhole_class_id
+        FROM map_regions
+        ORDER BY region_id
+        """
+    ).fetchall()
+    constellation_ids_by_region_id: dict[int, list[int]] = {}
+    for region_id, constellation_id in connection.execute(
+        """
+        SELECT region_id, constellation_id
+        FROM map_regions_constellations
+        ORDER BY region_id, constellation_id
+        """
+    ):
+        constellation_ids_by_region_id.setdefault(region_id, []).append(
+            constellation_id
+        )
+
+    result = {
+        region_id: ASM.MapRegionsRecord(
+            region_id=region_id,
+            constellation_ids=tuple(constellation_ids_by_region_id.get(region_id, ())),
+            description=description,
+            faction_id=faction_id,
+            name=name,
+            nebula_id=nebula_id,
+            position_x=position_x,
+            position_y=position_y,
+            position_z=position_z,
+            wormhole_class_id=wormhole_class_id,
+        )
+        for (
+            region_id,
+            description,
+            faction_id,
+            name,
+            nebula_id,
+            position_x,
+            position_y,
+            position_z,
+            wormhole_class_id,
+        ) in rows
+    }
+    logger.info("Retrieved %d map regions", len(result))
+    return result
+
+
+@log_timing(logger=logger, level=_timing_log_level)
+def get_map_constellations(
+    connection: sqlite3.Connection,
+) -> ASM.MapConstellationsDataset:
+    """Retrieve all map constellations from the database."""
+    rows = connection.execute(
+        """
+        SELECT
+            constellation_id,
+            faction_id,
+            name,
+            position_x,
+            position_y,
+            position_z,
+            region_id,
+            wormhole_class_id
+        FROM map_constellations
+        ORDER BY constellation_id
+        """
+    ).fetchall()
+    solar_system_ids_by_constellation_id: dict[int, list[int]] = {}
+    for constellation_id, solar_system_id in connection.execute(
+        """
+        SELECT constellation_id, solar_system_id
+        FROM map_constellations_solar_systems
+        ORDER BY constellation_id, solar_system_id
+        """
+    ):
+        solar_system_ids_by_constellation_id.setdefault(constellation_id, []).append(
+            solar_system_id
+        )
+
+    result = {
+        constellation_id: ASM.MapConstellationsRecord(
+            constellation_id=constellation_id,
+            faction_id=faction_id,
+            name=name,
+            position_x=position_x,
+            position_y=position_y,
+            position_z=position_z,
+            region_id=region_id,
+            solar_system_ids=tuple(
+                solar_system_ids_by_constellation_id.get(constellation_id, ())
+            ),
+            wormhole_class_id=wormhole_class_id,
+        )
+        for (
+            constellation_id,
+            faction_id,
+            name,
+            position_x,
+            position_y,
+            position_z,
+            region_id,
+            wormhole_class_id,
+        ) in rows
+    }
+    logger.info("Retrieved %d map constellations", len(result))
+    return result
+
+
+@log_timing(logger=logger, level=_timing_log_level)
+def get_map_solar_systems(
+    connection: sqlite3.Connection,
+) -> ASM.MapSolarSystemsDataset:
+    """Retrieve all map systems from the database."""
+    rows = connection.execute(
+        """
+        SELECT
+            solar_system_id,
+            border,
+            constellation_id,
+            corridor,
+            faction_id,
+            fringe,
+            hub,
+            international,
+            luminosity,
+            name,
+            position_x,
+            position_y,
+            position_z,
+            position2d_x,
+            position2d_y,
+            radius,
+            region_id,
+            regional,
+            security_class,
+            security_status,
+            star_id,
+            visual_effect,
+            wormhole_class_id
+        FROM map_solar_systems
+        ORDER BY solar_system_id
+        """
+    ).fetchall()
+
+    def get_ids_by_system_id(
+        table_name: str, column_name: str
+    ) -> dict[int, tuple[int, ...]]:
+        ids_by_system_id: dict[int, list[int]] = {}
+        for solar_system_id, child_id in connection.execute(
+            f"""
+            SELECT solar_system_id, {column_name}
+            FROM {table_name}
+            ORDER BY solar_system_id, {column_name}
+            """
+        ):
+            ids_by_system_id.setdefault(solar_system_id, []).append(child_id)
+        return {
+            solar_system_id: tuple(child_ids)
+            for solar_system_id, child_ids in ids_by_system_id.items()
+        }
+
+    disallowed_categories = get_ids_by_system_id(
+        "map_solar_systems_disallowed_anchor_categories", "category_id"
+    )
+    disallowed_groups = get_ids_by_system_id(
+        "map_solar_systems_disallowed_anchor_groups", "group_id"
+    )
+    planet_ids = get_ids_by_system_id("map_solar_systems_planets", "planet_id")
+    stargate_ids = get_ids_by_system_id("map_solar_systems_stargates", "stargate_id")
+
+    result = {
+        solar_system_id: ASM.MapSolarSystemsRecord(
+            solar_system_id=solar_system_id,
+            border=border,
+            constellation_id=constellation_id,
+            corridor=corridor,
+            disallowed_anchor_categories=disallowed_categories.get(solar_system_id, ()),
+            disallowed_anchor_groups=disallowed_groups.get(solar_system_id, ()),
+            faction_id=faction_id,
+            fringe=fringe,
+            hub=hub,
+            international=international,
+            luminosity=luminosity,
+            name=name,
+            planet_ids=planet_ids.get(solar_system_id, ()),
+            position_x=position_x,
+            position_y=position_y,
+            position_z=position_z,
+            position2d_x=position2d_x,
+            position2d_y=position2d_y,
+            radius=radius,
+            region_id=region_id,
+            regional=regional,
+            security_class=security_class,
+            security_status=security_status,
+            star_id=star_id,
+            stargate_ids=stargate_ids.get(solar_system_id, ()),
+            visual_effect=visual_effect,
+            wormhole_class_id=wormhole_class_id,
+        )
+        for (
+            solar_system_id,
+            border,
+            constellation_id,
+            corridor,
+            faction_id,
+            fringe,
+            hub,
+            international,
+            luminosity,
+            name,
+            position_x,
+            position_y,
+            position_z,
+            position2d_x,
+            position2d_y,
+            radius,
+            region_id,
+            regional,
+            security_class,
+            security_status,
+            star_id,
+            visual_effect,
+            wormhole_class_id,
+        ) in rows
+    }
+    logger.info("Retrieved %d map solar systems", len(result))
+    return result
+
+
+@log_timing(logger=logger, level=_timing_log_level)
+def get_groups(
+    connection: sqlite3.Connection, only_published: bool = True
+) -> ASM.GroupsDataset:
+    """Retrieve all groups from the database."""
+    where_clause = "WHERE published = 1" if only_published else ""
+    rows = connection.execute(
+        f"""
+        SELECT
+            group_id,
+            anchorable,
+            anchored,
+            category_id,
+            fittable_non_singleton,
+            icon_id,
+            name,
+            published,
+            use_base_price
+        FROM groups
+        {where_clause}
+        ORDER BY group_id
+        """
+    ).fetchall()
+    result = {
+        group_id: ASM.GroupsRecord(
+            group_id=group_id,
+            anchorable=bool(anchorable),
+            anchored=bool(anchored),
+            category_id=category_id,
+            fittable_non_singleton=bool(fittable_non_singleton),
+            icon_id=icon_id,
+            name=name,
+            published=bool(published),
+            use_base_price=bool(use_base_price),
+        )
+        for (
+            group_id,
+            anchorable,
+            anchored,
+            category_id,
+            fittable_non_singleton,
+            icon_id,
+            name,
+            published,
+            use_base_price,
+        ) in rows
+    }
+    logger.info("Retrieved %d groups", len(result))
+    return result
+
+
+@log_timing(logger=logger, level=_timing_log_level)
+def get_categories(
+    connection: sqlite3.Connection, only_published: bool = True
+) -> ASM.CategoriesDataset:
+    """Retrieve all categories from the database."""
+    ...
+
+
+@log_timing(logger=logger, level=_timing_log_level)
+def get_type_materials(
+    connection: sqlite3.Connection,
+) -> ASM.TypeMaterialsDataset:
+    """Retrieve all type materials from the database."""
+    ...
+
+
+@log_timing(logger=logger, level=_timing_log_level)
+def get_type_materials_randomized(
+    connection: sqlite3.Connection,
+) -> ASM.TypeMaterialsRandomizedDataset:
+    """Retrieve all type materials from the database in randomized order."""
+    ...
+
+
+@log_timing(logger=logger, level=_timing_log_level)
+def get_meta_groups(
+    connection: sqlite3.Connection,
+) -> ASM.MetaGroupsDataset:
+    """Retrieve all meta groups from the database."""
+    ...
+
+
+@log_timing(logger=logger, level=_timing_log_level)
+def get_types(
+    connection: sqlite3.Connection, only_published: bool = True
+) -> ASM.TypesDataset:
+    """Retrieve all types from the database."""
+    ...

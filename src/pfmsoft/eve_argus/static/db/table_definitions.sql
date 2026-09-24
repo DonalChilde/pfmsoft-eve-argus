@@ -143,7 +143,7 @@ CREATE TABLE IF NOT EXISTS groups (
     fittable_non_singleton INTEGER NOT NULL, --boolean represented as integer (0 or 1)
     icon_id INTEGER,
     name TEXT,
-    published INTEGER, --boolean represented as integer (0 or 1)
+    published INTEGER NOT NULL, --boolean represented as integer (0 or 1)
     use_base_price INTEGER NOT NULL, --boolean represented as integer (0 or 1)
     FOREIGN KEY (category_id) REFERENCES categories(category_id)
 ) STRICT;

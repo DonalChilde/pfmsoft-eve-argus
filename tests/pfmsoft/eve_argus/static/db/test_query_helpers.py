@@ -442,3 +442,67 @@ def test_write_map_solar_systems_writes_flattened_positions_and_lists() -> None:
     assert anchor_groups == [(30000142, 1404)]
     assert planets == [(30000142, 40009091), (30000142, 40009092)]
     assert stargates == [(30000142, 50000342)]
+
+
+def test_get_map_solar_systems_preserves_null_booleans() -> None:
+    """Nullable solar-system booleans remain None when read from the database."""
+    connection = _make_connection()
+    connection.execute(
+        """
+        INSERT INTO map_regions (
+            region_id, name, nebula_id, position_x, position_y, position_z
+        )
+        VALUES (?, ?, ?, ?, ?, ?)
+        """,
+        (10000002, "The Forge", 123, 0, 0, 0),
+    )
+    connection.execute(
+        """
+        INSERT INTO map_constellations (
+            constellation_id, name, position_x, position_y, position_z, region_id
+        )
+        VALUES (?, ?, ?, ?, ?, ?)
+        """,
+        (20000020, "Kimotoro", 0, 0, 0, 10000002),
+    )
+    connection.execute(
+        """
+        INSERT INTO map_solar_systems (
+            solar_system_id, border, constellation_id, corridor, fringe, hub,
+            international, luminosity, name, position_x, position_y, position_z,
+            radius, region_id, regional, security_status
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            30000142,
+            None,
+            20000020,
+            None,
+            None,
+            None,
+            None,
+            None,
+            "Jita",
+            1,
+            2,
+            3,
+            4,
+            10000002,
+            None,
+            0.9,
+        ),
+    )
+
+    record = query_helpers.get_map_solar_systems(connection)[30000142]
+
+    assert record.border is None
+    assert record.corridor is None
+    assert record.fringe is None
+    assert record.hub is None
+    assert record.international is None
+    assert record.regional is None
+    assert record.disallowed_anchor_categories == ()
+    assert record.disallowed_anchor_groups == ()
+    assert record.planet_ids == ()
+    assert record.stargate_ids == ()
