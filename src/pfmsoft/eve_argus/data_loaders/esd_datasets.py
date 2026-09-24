@@ -102,3 +102,47 @@ class EsdDatasetsLoader(EsdDatasetsLoaderProtocol):
         }
         groups = esd_datasets.GroupsDataset(dataset=raw_dataset)
         return groups
+
+    def industrial_activities(self) -> esd_datasets.IndustrialActivitiesDataset:
+        """Returns the industrial activities dataset loaded from ESD."""
+        raw_dataset: dict[int, Any] = {
+            key: value
+            for key, value in self.query_manager.query.get_int_records(
+                "industrialActivities"
+            )
+        }
+        industrial_activities = esd_datasets.IndustrialActivitiesDataset(
+            dataset=raw_dataset
+        )
+        return industrial_activities
+
+    def map_constellations(self) -> esd_datasets.MapConstellationsDataset:
+        """Returns the map constellations dataset loaded from ESD."""
+        raw_dataset: dict[int, Any] = {
+            key: value
+            for key, value in self.query_manager.query.get_int_records(
+                "mapConstellations"
+            )
+        }
+        map_constellations = esd_datasets.MapConstellationsDataset(dataset=raw_dataset)
+        return map_constellations
+
+    def map_regions(self) -> esd_datasets.MapRegionsDataset:
+        """Returns the map regions dataset loaded from ESD."""
+        raw_dataset: dict[int, Any] = {
+            key: value
+            for key, value in self.query_manager.query.get_int_records("mapRegions")
+        }
+        map_regions = esd_datasets.MapRegionsDataset(dataset=raw_dataset)
+        return map_regions
+
+    def map_solar_systems(self) -> esd_datasets.MapSolarSystemsDataset:
+        """Returns the map solar systems dataset loaded from ESD."""
+        raw_dataset: dict[int, Any] = {
+            key: value
+            for key, value in self.query_manager.query.get_int_records(
+                "mapSolarSystems"
+            )
+        }
+        map_solar_systems = esd_datasets.MapSolarSystemsDataset(dataset=raw_dataset)
+        return map_solar_systems
