@@ -8,6 +8,65 @@ from pfmsoft.eve_argus.models.types import LanguageEnum
 from pfmsoft.eve_argus.static.db import query_helpers
 
 
+def _write_market_group_test_data(connection: sqlite3.Connection) -> None:
+    types = ESD.TypesDataset(
+        dataset={
+            1001: ESD.TypesRecord(
+                groupID=25,
+                marketGroupID=101,
+                name=ESD.LocalizedString(en="Rifter"),
+                portionSize=1,
+                published=True,
+            ),
+            1002: ESD.TypesRecord(
+                groupID=25,
+                marketGroupID=101,
+                name=ESD.LocalizedString(en="Hidden Rifter"),
+                portionSize=1,
+                published=False,
+            ),
+            1003: ESD.TypesRecord(
+                groupID=25,
+                marketGroupID=102,
+                name=ESD.LocalizedString(en="Wolf"),
+                portionSize=1,
+                published=True,
+            ),
+        }
+    )
+    market_groups = ESD.MarketGroupsDataset(
+        dataset={
+            102: ESD.MarketGroupsRecord(
+                description=ESD.LocalizedString(
+                    en="Assault Frigates", de="Sturmfregatten"
+                ),
+                hasTypes=True,
+                iconID=None,
+                name=ESD.LocalizedString(en="Assault Frigates", de="Sturmfregatten"),
+                parentGroupID=101,
+            ),
+            100: ESD.MarketGroupsRecord(
+                description=None,
+                hasTypes=False,
+                iconID=None,
+                name=ESD.LocalizedString(en="Ships", de="Schiffe"),
+                parentGroupID=None,
+            ),
+            101: ESD.MarketGroupsRecord(
+                description=ESD.LocalizedString(en="Frigates", de="Fregatten"),
+                hasTypes=True,
+                iconID=42,
+                name=ESD.LocalizedString(en="Frigates", de="Fregatten"),
+                parentGroupID=100,
+            ),
+        }
+    )
+    query_helpers.write_types(connection, types)
+    query_helpers.write_market_groups(
+        connection, market_groups, language=LanguageEnum.DE
+    )
+
+
 def _make_connection() -> sqlite3.Connection:
     connection = sqlite3.connect(":memory:")
     connection.executescript(query_helpers.load_table_definitions())
@@ -41,61 +100,7 @@ def test_write_industry_activities_writes_string_fields() -> None:
 def test_write_market_groups_writes_localized_fields_and_parent() -> None:
     """Market group records are written to the static database."""
     connection = _make_connection()
-    types = ESD.TypesDataset(
-        dataset={
-            1001: ESD.TypesRecord(
-                groupID=25,
-                marketGroupID=101,
-                name=ESD.LocalizedString(en="Rifter"),
-                portionSize=1,
-                published=True,
-            ),
-            1002: ESD.TypesRecord(
-                groupID=25,
-                marketGroupID=101,
-                name=ESD.LocalizedString(en="Hidden Rifter"),
-                portionSize=1,
-                published=False,
-            ),
-            1003: ESD.TypesRecord(
-                groupID=25,
-                marketGroupID=102,
-                name=ESD.LocalizedString(en="Wolf"),
-                portionSize=1,
-                published=True,
-            ),
-        }
-    )
-    dataset = ESD.MarketGroupsDataset(
-        dataset={
-            102: ESD.MarketGroupsRecord(
-                description=ESD.LocalizedString(
-                    en="Assault Frigates", de="Sturmfregatten"
-                ),
-                hasTypes=True,
-                iconID=None,
-                name=ESD.LocalizedString(en="Assault Frigates", de="Sturmfregatten"),
-                parentGroupID=101,
-            ),
-            100: ESD.MarketGroupsRecord(
-                description=None,
-                hasTypes=False,
-                iconID=None,
-                name=ESD.LocalizedString(en="Ships", de="Schiffe"),
-                parentGroupID=None,
-            ),
-            101: ESD.MarketGroupsRecord(
-                description=ESD.LocalizedString(en="Frigates", de="Fregatten"),
-                hasTypes=True,
-                iconID=42,
-                name=ESD.LocalizedString(en="Frigates", de="Fregatten"),
-                parentGroupID=100,
-            ),
-        }
-    )
-
-    query_helpers.write_types(connection, types)
-    query_helpers.write_market_groups(connection, dataset, language=LanguageEnum.DE)
+    _write_market_group_test_data(connection)
 
     market_groups = connection.execute(
         """
@@ -154,6 +159,34 @@ def test_write_market_groups_writes_localized_fields_and_parent() -> None:
             [1003],
         ),
     ]
+
+
+def test_get_market_groups_returns_argus_static_records() -> None:
+    """Market group rows are loaded into Argus static market group records."""
+    connection = _make_connection()
+    _write_market_group_test_data(connection)
+
+    market_groups = query_helpers.get_market_groups(connection)
+
+    assert market_groups[100].market_group_id == 100
+    assert market_groups[100].description == "NOT_DEFINED"
+    assert market_groups[100].has_types is False
+    assert market_groups[100].icon_id is None
+    assert market_groups[100].name == "Schiffe"
+    assert market_groups[100].parent_group_id is None
+    assert market_groups[100].int_path == (100,)
+    assert market_groups[100].str_path == ("Schiffe",)
+    assert market_groups[100].types == ()
+
+    assert market_groups[101].market_group_id == 101
+    assert market_groups[101].description == "Fregatten"
+    assert market_groups[101].has_types is True
+    assert market_groups[101].icon_id == 42
+    assert market_groups[101].name == "Fregatten"
+    assert market_groups[101].parent_group_id == 100
+    assert market_groups[101].int_path == (100, 101)
+    assert market_groups[101].str_path == ("Schiffe", "Fregatten")
+    assert market_groups[101].types == (1001,)
 
 
 def test_write_map_regions_writes_flattened_position_and_constellations() -> None:

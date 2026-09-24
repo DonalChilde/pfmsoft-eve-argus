@@ -59,6 +59,11 @@ def import_static_data() -> None:
             )
 
 
+def access_argus_static_db() -> None:
+    """Access the Argus static database datasets."""
+    ...
+
+
 if __name__ == "__main__":
     setup_logging()
     import_static_data()

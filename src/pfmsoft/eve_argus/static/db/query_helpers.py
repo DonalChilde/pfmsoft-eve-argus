@@ -724,4 +724,43 @@ def write_industry_activities(
 
 def get_market_groups(connection: sqlite3.Connection) -> ASM.MarketGroupDataset:
     """Retrieve all market groups from the database."""
-    ...
+    rows = connection.execute(
+        """
+        SELECT
+            market_group_id,
+            name,
+            description,
+            parent_group_id,
+            has_types,
+            icon_id,
+            int_path,
+            str_path,
+            types
+        FROM market_groups
+        ORDER BY market_group_id
+        """
+    ).fetchall()
+    return {
+        market_group_id: ASM.MarketGroupRecord(
+            market_group_id=market_group_id,
+            name=name,
+            description=description,
+            parent_group_id=parent_group_id,
+            has_types=bool(has_types),
+            icon_id=icon_id,
+            int_path=tuple(json.loads(int_path)),
+            str_path=tuple(json.loads(str_path)),
+            types=tuple(json.loads(types)) if types is not None else (),
+        )
+        for (
+            market_group_id,
+            name,
+            description,
+            parent_group_id,
+            has_types,
+            icon_id,
+            int_path,
+            str_path,
+            types,
+        ) in rows
+    }
