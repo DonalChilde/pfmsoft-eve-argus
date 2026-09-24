@@ -7,6 +7,7 @@ from dataclasses import asdict
 from typing import cast
 
 from pfmsoft.eve_argus.helpers.package_resource import load_package_resouce_text
+from pfmsoft.eve_argus.models.argus import static as ASM
 from pfmsoft.eve_argus.models.esd import esd_datasets as ESD
 from pfmsoft.eve_argus.models.types import LanguageEnum
 
@@ -19,6 +20,9 @@ _table_def_file = "table_definitions.sql"
 def load_table_definitions() -> str:
     """Load the SQL table definitions for the market orders database."""
     return load_package_resouce_text(_table_def_parent, _table_def_file)
+
+
+####### WRITE db queries #######
 
 
 def write_types(
@@ -217,15 +221,16 @@ def write_market_groups(
         visit(market_group_id)
 
     path_rows = _get_market_path_rows(market_groups, sorted_group_ids, language)
+    type_ids_by_market_group_id = _get_published_type_ids_by_market_group_id(connection)
 
     with connection:
         connection.executemany(
             """
             INSERT INTO market_groups (
                 market_group_id, description, has_types, icon_id, name,
-                parent_group_id, int_path, str_path
+                parent_group_id, int_path, str_path, types
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 (
@@ -237,11 +242,34 @@ def write_market_groups(
                     record.parentGroupID,
                     int_path,
                     str_path,
+                    json.dumps(type_ids)
+                    if (type_ids := type_ids_by_market_group_id.get(market_group_id))
+                    else None,
                 )
                 for market_group_id, int_path, str_path in path_rows
                 if (record := market_groups.dataset[market_group_id])
             ),
         )
+
+
+def _get_published_type_ids_by_market_group_id(
+    connection: sqlite3.Connection,
+) -> dict[int, tuple[int, ...]]:
+    rows = connection.execute(
+        """
+        SELECT market_group_id, type_id
+        FROM types
+        WHERE published = 1 AND market_group_id IS NOT NULL
+        ORDER BY market_group_id, type_id
+        """
+    ).fetchall()
+    type_ids_by_market_group_id: dict[int, list[int]] = {}
+    for market_group_id, type_id in rows:
+        type_ids_by_market_group_id.setdefault(market_group_id, []).append(type_id)
+    return {
+        market_group_id: tuple(type_ids)
+        for market_group_id, type_ids in type_ids_by_market_group_id.items()
+    }
 
 
 def _get_market_path_rows(
@@ -689,3 +717,11 @@ def write_industry_activities(
                 for activity_id, record in industrial_activities.dataset.items()
             ),
         )
+
+
+######### GET db queries #########
+
+
+def get_market_groups(connection: sqlite3.Connection) -> ASM.MarketGroupDataset:
+    """Retrieve all market groups from the database."""
+    ...

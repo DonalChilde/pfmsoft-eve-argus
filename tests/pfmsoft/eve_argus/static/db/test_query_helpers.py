@@ -41,6 +41,31 @@ def test_write_industry_activities_writes_string_fields() -> None:
 def test_write_market_groups_writes_localized_fields_and_parent() -> None:
     """Market group records are written to the static database."""
     connection = _make_connection()
+    types = ESD.TypesDataset(
+        dataset={
+            1001: ESD.TypesRecord(
+                groupID=25,
+                marketGroupID=101,
+                name=ESD.LocalizedString(en="Rifter"),
+                portionSize=1,
+                published=True,
+            ),
+            1002: ESD.TypesRecord(
+                groupID=25,
+                marketGroupID=101,
+                name=ESD.LocalizedString(en="Hidden Rifter"),
+                portionSize=1,
+                published=False,
+            ),
+            1003: ESD.TypesRecord(
+                groupID=25,
+                marketGroupID=102,
+                name=ESD.LocalizedString(en="Wolf"),
+                portionSize=1,
+                published=True,
+            ),
+        }
+    )
     dataset = ESD.MarketGroupsDataset(
         dataset={
             102: ESD.MarketGroupsRecord(
@@ -69,12 +94,13 @@ def test_write_market_groups_writes_localized_fields_and_parent() -> None:
         }
     )
 
+    query_helpers.write_types(connection, types)
     query_helpers.write_market_groups(connection, dataset, language=LanguageEnum.DE)
 
     market_groups = connection.execute(
         """
         SELECT market_group_id, description, has_types, icon_id, name,
-            parent_group_id, int_path, str_path
+            parent_group_id, int_path, str_path, types
         FROM market_groups
         ORDER BY market_group_id
         """
@@ -90,6 +116,7 @@ def test_write_market_groups_writes_localized_fields_and_parent() -> None:
             parent_group_id,
             json.loads(int_path),
             json.loads(str_path),
+            json.loads(type_ids) if type_ids is not None else None,
         )
         for (
             market_group_id,
@@ -100,9 +127,10 @@ def test_write_market_groups_writes_localized_fields_and_parent() -> None:
             parent_group_id,
             int_path,
             str_path,
+            type_ids,
         ) in market_groups
     ] == [
-        (100, "NOT_DEFINED", 0, None, "Schiffe", None, [100], ["Schiffe"]),
+        (100, "NOT_DEFINED", 0, None, "Schiffe", None, [100], ["Schiffe"], None),
         (
             101,
             "Fregatten",
@@ -112,6 +140,7 @@ def test_write_market_groups_writes_localized_fields_and_parent() -> None:
             100,
             [100, 101],
             ["Schiffe", "Fregatten"],
+            [1001],
         ),
         (
             102,
@@ -122,6 +151,7 @@ def test_write_market_groups_writes_localized_fields_and_parent() -> None:
             101,
             [100, 101, 102],
             ["Schiffe", "Fregatten", "Sturmfregatten"],
+            [1003],
         ),
     ]
 
