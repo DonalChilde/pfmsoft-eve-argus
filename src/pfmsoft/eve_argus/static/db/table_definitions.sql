@@ -148,8 +148,8 @@ CREATE TABLE IF NOT EXISTS groups (
     FOREIGN KEY (category_id) REFERENCES categories(category_id)
 ) STRICT;
 
--- Industrial Activities
-CREATE TABLE IF NOT EXISTS industrial_activities (
+-- Industry Activities
+CREATE TABLE IF NOT EXISTS industry_activities (
     activity_id INTEGER PRIMARY KEY,
     name TEXT NOT NULL,
     description TEXT NOT NULL

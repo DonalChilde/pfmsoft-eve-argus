@@ -40,6 +40,18 @@ def import_static_data() -> None:
                 connection, loader.categories(), LanguageEnum.EN
             )
             query_helpers.write_groups(connection, loader.groups(), LanguageEnum.EN)
+            query_helpers.write_industry_activities(
+                connection, loader.industrial_activities(), LanguageEnum.EN
+            )
+            query_helpers.write_map_regions(
+                connection, loader.map_regions(), LanguageEnum.EN
+            )
+            query_helpers.write_map_constellations(
+                connection, loader.map_constellations(), LanguageEnum.EN
+            )
+            query_helpers.write_map_solar_systems(
+                connection, loader.map_solar_systems(), LanguageEnum.EN
+            )
             query_helpers.write_type_materials(connection, loader.type_materials())
             query_helpers.write_blueprints(connection, loader.blueprints())
 

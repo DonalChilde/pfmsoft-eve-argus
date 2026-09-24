@@ -380,7 +380,7 @@ class GroupsDataset(SdeDataset):
 
 
 @dataclass(slots=True, kw_only=True)
-class IndustrialActivitiesRecord:
+class IndustryActivitiesRecord:
     """Record for a specific industrial activity.
 
     - source: dev/tmp/sde-yaml/3464040
@@ -419,8 +419,8 @@ class IndustrialActivitiesRecord:
         return getattr(self.description, language, self.description.en)
 
 
-class IndustrialActivitiesDataset(SdeDataset):
-    dataset: dict[int, IndustrialActivitiesRecord]
+class IndustryActivitiesDataset(SdeDataset):
+    dataset: dict[int, IndustryActivitiesRecord]
 
 
 @dataclass(slots=True, kw_only=True)
@@ -452,12 +452,12 @@ class MapRegionsRecord:
     """
 
     constellationIDs: list[int]
-    description: LocalizedString | None
-    factionID: int | None
+    description: LocalizedString | None = None
+    factionID: int | None = None
     name: LocalizedString
     nebulaID: int
     position: Position
-    wormholeClassID: int | None
+    wormholeClassID: int | None = None
 
     def name_localized(self, language: LanguageEnum = LanguageEnum.EN) -> str:
         """Get the localized name for the specified language.
@@ -506,12 +506,12 @@ class MapConstellationsRecord:
     | wormholeClassID | no       | int       | 1127/1184 |
     """
 
-    factionID: int | None
+    factionID: int | None = None
     name: LocalizedString
     position: Position
     regionID: int
     solarSystemIDs: list[int]
-    wormholeClassID: int | None
+    wormholeClassID: int | None = None
 
     def name_localized(self, language: LanguageEnum = LanguageEnum.EN) -> str:
         """Get the localized name for the specified language.
@@ -570,29 +570,29 @@ class MapSolarSystemsRecord:
     | wormholeClassID            | no       | int        | 692/8490  |
     """
 
-    border: bool | None
+    border: bool | None = None
     constellationID: int
-    corridor: bool | None
-    disallowedAnchorCategories: list[int] | None
-    disallowedAnchorGroups: list[int] | None
-    factionID: int | None
-    fringe: bool | None
-    hub: bool | None
-    international: bool | None
-    luminosity: float | None
+    corridor: bool | None = None
+    disallowedAnchorCategories: list[int] | None = None
+    disallowedAnchorGroups: list[int] | None = None
+    factionID: int | None = None
+    fringe: bool | None = None
+    hub: bool | None = None
+    international: bool | None = None
+    luminosity: float | None = None
     name: LocalizedString
-    planetIDs: list[int] | None
+    planetIDs: list[int] | None = None
     position: Position
-    position2D: Position2D | None
+    position2D: Position2D | None = None
     radius: float
     regionID: int
-    regional: bool | None
-    securityClass: str | None
+    regional: bool | None = None
+    securityClass: str | None = None
     securityStatus: float
-    starID: int | None
-    stargateIDs: list[int] | None
-    visualEffect: str | None
-    wormholeClassID: int | None
+    starID: int | None = None
+    stargateIDs: list[int] | None = None
+    visualEffect: str | None = None
+    wormholeClassID: int | None = None
 
 
 class MapSolarSystemsDataset(SdeDataset):

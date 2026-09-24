@@ -103,15 +103,15 @@ class EsdDatasetsLoader(EsdDatasetsLoaderProtocol):
         groups = esd_datasets.GroupsDataset(dataset=raw_dataset)
         return groups
 
-    def industrial_activities(self) -> esd_datasets.IndustrialActivitiesDataset:
+    def industrial_activities(self) -> esd_datasets.IndustryActivitiesDataset:
         """Returns the industrial activities dataset loaded from ESD."""
         raw_dataset: dict[int, Any] = {
             key: value
             for key, value in self.query_manager.query.get_int_records(
-                "industrialActivities"
+                "industryActivities"
             )
         }
-        industrial_activities = esd_datasets.IndustrialActivitiesDataset(
+        industrial_activities = esd_datasets.IndustryActivitiesDataset(
             dataset=raw_dataset
         )
         return industrial_activities

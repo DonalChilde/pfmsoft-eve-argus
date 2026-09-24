@@ -4,6 +4,7 @@ import json
 import logging
 import sqlite3
 from dataclasses import asdict
+from typing import cast
 
 from pfmsoft.eve_argus.helpers.package_resource import load_package_resouce_text
 from pfmsoft.eve_argus.models.esd import esd_datasets as ESD
@@ -231,6 +232,7 @@ def _get_valid_blueprint_ids(
             activity = getattr(record.activities, activity_name)
             if activity is None:
                 continue
+            activity = cast(ESD.Blueprint_Activity, activity)
             if any(
                 material.typeID not in type_ids for material in activity.materials or []
             ):
@@ -304,7 +306,7 @@ def write_blueprints(
             activity_rows,
         )
 
-        material_rows = []
+        material_rows: list[tuple[int, str, int, int]] = []
         for blueprint_type_id, record in valid_blueprints.items():
             for activity_name in (
                 "copying",
@@ -317,6 +319,7 @@ def write_blueprints(
                 activity = getattr(record.activities, activity_name)
                 if activity is None:
                     continue
+                activity = cast(ESD.Blueprint_Activity, activity)
                 for material in activity.materials or []:
                     material_rows.append((
                         blueprint_type_id,
@@ -335,7 +338,7 @@ def write_blueprints(
             material_rows,
         )
 
-        skill_rows = {}
+        skill_rows: dict[tuple[int, str, int], tuple[int, str, int, int]] = {}
         for blueprint_type_id, record in valid_blueprints.items():
             for activity_name in (
                 "copying",
@@ -348,6 +351,7 @@ def write_blueprints(
                 activity = getattr(record.activities, activity_name)
                 if activity is None:
                     continue
+                activity = cast(ESD.Blueprint_Activity, activity)
                 for skill in activity.skills or []:
                     skill_key = (blueprint_type_id, activity_name, skill.typeID)
                     skill_rows[skill_key] = (
@@ -357,7 +361,7 @@ def write_blueprints(
                         skill.level,
                     )
 
-        product_rows = []
+        product_rows: list[tuple[int, str, int, int, float | None]] = []
         for blueprint_type_id, record in valid_blueprints.items():
             for activity_name in (
                 "copying",
@@ -370,6 +374,7 @@ def write_blueprints(
                 activity = getattr(record.activities, activity_name)
                 if activity is None:
                     continue
+                activity = cast(ESD.Blueprint_Activity, activity)
                 for product in activity.products or []:
                     product_rows.append((
                         blueprint_type_id,
@@ -397,4 +402,211 @@ def write_blueprints(
             VALUES (?, ?, ?, ?, ?)
             """,
             product_rows,
+        )
+
+
+def write_map_regions(
+    connection: sqlite3.Connection,
+    map_regions: ESD.MapRegionsDataset,
+    language: LanguageEnum = LanguageEnum.EN,
+) -> None:
+    """Write the map regions dataset to the database."""
+    with connection:
+        connection.executemany(
+            """
+            INSERT INTO map_regions (
+                region_id, description, faction_id, name, nebula_id,
+                position_x, position_y, position_z, wormhole_class_id
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                (
+                    region_id,
+                    record.description_localized(language),
+                    record.factionID,
+                    record.name_localized(language),
+                    record.nebulaID,
+                    record.position.x,
+                    record.position.y,
+                    record.position.z,
+                    record.wormholeClassID,
+                )
+                for region_id, record in map_regions.dataset.items()
+            ),
+        )
+        connection.executemany(
+            """
+            INSERT INTO map_regions_constellations (region_id, constellation_id)
+            VALUES (?, ?)
+            """,
+            (
+                (region_id, constellation_id)
+                for region_id, record in map_regions.dataset.items()
+                for constellation_id in record.constellationIDs
+            ),
+        )
+
+
+def write_map_constellations(
+    connection: sqlite3.Connection,
+    map_constellations: ESD.MapConstellationsDataset,
+    language: LanguageEnum = LanguageEnum.EN,
+) -> None:
+    """Write the map constellations dataset to the database."""
+    with connection:
+        connection.executemany(
+            """
+            INSERT INTO map_constellations (
+                constellation_id, faction_id, name, position_x, position_y,
+                position_z, region_id, wormhole_class_id
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                (
+                    constellation_id,
+                    record.factionID,
+                    record.name_localized(language),
+                    record.position.x,
+                    record.position.y,
+                    record.position.z,
+                    record.regionID,
+                    record.wormholeClassID,
+                )
+                for constellation_id, record in map_constellations.dataset.items()
+            ),
+        )
+        connection.executemany(
+            """
+            INSERT INTO map_constellations_solar_systems (
+                constellation_id, solar_system_id
+            )
+            VALUES (?, ?)
+            """,
+            (
+                (constellation_id, solar_system_id)
+                for constellation_id, record in map_constellations.dataset.items()
+                for solar_system_id in record.solarSystemIDs
+            ),
+        )
+
+
+def write_map_solar_systems(
+    connection: sqlite3.Connection,
+    map_solar_systems: ESD.MapSolarSystemsDataset,
+    language: LanguageEnum = LanguageEnum.EN,
+) -> None:
+    """Write the map solar systems dataset to the database."""
+    with connection:
+        connection.executemany(
+            """
+            INSERT INTO map_solar_systems (
+                solar_system_id, border, constellation_id, corridor, faction_id,
+                fringe, hub, international, luminosity, name, position_x,
+                position_y, position_z, position2d_x, position2d_y, radius,
+                region_id, regional, security_class, security_status, star_id,
+                visual_effect, wormhole_class_id
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                (
+                    solar_system_id,
+                    record.border,
+                    record.constellationID,
+                    record.corridor,
+                    record.factionID,
+                    record.fringe,
+                    record.hub,
+                    record.international,
+                    record.luminosity,
+                    getattr(record.name, language, record.name.en),
+                    record.position.x,
+                    record.position.y,
+                    record.position.z,
+                    record.position2D.x if record.position2D else None,
+                    record.position2D.y if record.position2D else None,
+                    record.radius,
+                    record.regionID,
+                    record.regional,
+                    record.securityClass,
+                    record.securityStatus,
+                    record.starID,
+                    record.visualEffect,
+                    record.wormholeClassID,
+                )
+                for solar_system_id, record in map_solar_systems.dataset.items()
+            ),
+        )
+        connection.executemany(
+            """
+            INSERT INTO map_solar_systems_disallowed_anchor_categories (
+                solar_system_id, category_id
+            )
+            VALUES (?, ?)
+            """,
+            (
+                (solar_system_id, category_id)
+                for solar_system_id, record in map_solar_systems.dataset.items()
+                for category_id in record.disallowedAnchorCategories or []
+            ),
+        )
+        connection.executemany(
+            """
+            INSERT INTO map_solar_systems_disallowed_anchor_groups (
+                solar_system_id, group_id
+            )
+            VALUES (?, ?)
+            """,
+            (
+                (solar_system_id, group_id)
+                for solar_system_id, record in map_solar_systems.dataset.items()
+                for group_id in record.disallowedAnchorGroups or []
+            ),
+        )
+        connection.executemany(
+            """
+            INSERT INTO map_solar_systems_planets (solar_system_id, planet_id)
+            VALUES (?, ?)
+            """,
+            (
+                (solar_system_id, planet_id)
+                for solar_system_id, record in map_solar_systems.dataset.items()
+                for planet_id in record.planetIDs or []
+            ),
+        )
+        connection.executemany(
+            """
+            INSERT INTO map_solar_systems_stargates (solar_system_id, stargate_id)
+            VALUES (?, ?)
+            """,
+            (
+                (solar_system_id, stargate_id)
+                for solar_system_id, record in map_solar_systems.dataset.items()
+                for stargate_id in record.stargateIDs or []
+            ),
+        )
+
+
+def write_industry_activities(
+    connection: sqlite3.Connection,
+    industrial_activities: ESD.IndustryActivitiesDataset,
+    language: LanguageEnum = LanguageEnum.EN,
+) -> None:
+    """Write the industrial activities dataset to the database."""
+    with connection:
+        connection.executemany(
+            """
+            INSERT INTO industry_activities (activity_id, name, description)
+            VALUES (?, ?, ?)
+            """,
+            (
+                (
+                    activity_id,
+                    record.name_localized(language),
+                    record.description_localized(language),
+                )
+                for activity_id, record in industrial_activities.dataset.items()
+            ),
         )
