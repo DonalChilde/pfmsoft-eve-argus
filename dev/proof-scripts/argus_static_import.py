@@ -78,7 +78,8 @@ def access_argus_static_data() -> None:
         assert categories, "Categories should not be empty"
         type_materials = query_helpers.get_type_materials(connection)
         assert type_materials, "Type materials should not be empty"
-        query_helpers.get_type_materials_randomized(connection)
+        randomized_materials = query_helpers.get_type_materials_randomized(connection)
+        assert randomized_materials, "Randomized type materials should not be empty"
         meta_groups = query_helpers.get_meta_groups(connection)
         assert meta_groups, "Meta groups should not be empty"
         types = query_helpers.get_types(connection)

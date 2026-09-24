@@ -119,7 +119,19 @@ def write_type_materials(
     with connection:
         connection.executemany(
             "INSERT INTO type_materials (type_id) VALUES (?)",
-            ((type_id,) for type_id in type_materials.dataset),
+            (
+                (type_id,)
+                for type_id, record in type_materials.dataset.items()
+                if record.materials
+            ),
+        )
+        connection.executemany(
+            "INSERT INTO type_materials_randomized (type_id) VALUES (?)",
+            (
+                (type_id,)
+                for type_id, record in type_materials.dataset.items()
+                if record.randomizedMaterials
+            ),
         )
         connection.executemany(
             """
@@ -134,7 +146,7 @@ def write_type_materials(
         )
         connection.executemany(
             """
-            INSERT INTO type_material_randomized_components (
+            INSERT INTO type_materials_randomized_components (
                 type_id, material_type_id, quantity_min, quantity_max
             )
             VALUES (?, ?, ?, ?)
@@ -1199,7 +1211,7 @@ def get_type_materials_randomized(
     type_ids = connection.execute(
         """
         SELECT type_id
-        FROM type_material_randomized_components
+        FROM type_materials_randomized
         ORDER BY type_id
         """
     ).fetchall()
@@ -1207,7 +1219,7 @@ def get_type_materials_randomized(
     for type_id, material_type_id, quantity_min, quantity_max in connection.execute(
         """
         SELECT type_id, material_type_id, quantity_min, quantity_max
-        FROM type_material_randomized_components
+        FROM type_materials_randomized_components
         ORDER BY type_id, material_type_id
         """
     ):
