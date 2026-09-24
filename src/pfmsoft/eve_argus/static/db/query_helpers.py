@@ -240,6 +240,69 @@ def write_market_groups(
         )
 
 
+def _get_market_group_path_rows(
+    connection: sqlite3.Connection,
+    market_group_id: int,
+) -> list[tuple[int, str]]:
+    rows = connection.execute(
+        """
+        WITH RECURSIVE market_path AS (
+            SELECT
+                market_group_id,
+                parent_group_id,
+                name,
+                0 AS depth
+            FROM market_groups
+            WHERE market_group_id = ?
+
+            UNION ALL
+
+            SELECT
+                parent.market_group_id,
+                parent.parent_group_id,
+                parent.name,
+                market_path.depth + 1 AS depth
+            FROM market_groups AS parent
+            JOIN market_path
+                ON parent.market_group_id = market_path.parent_group_id
+        )
+        SELECT market_group_id, name
+        FROM market_path
+        ORDER BY depth DESC
+        """,
+        (market_group_id,),
+    ).fetchall()
+    if not rows:
+        raise ValueError(f"Market group ID {market_group_id} was not found")
+    return [(market_group_id, name) for market_group_id, name in rows]
+
+
+def get_market_group_id_path(
+    connection: sqlite3.Connection,
+    market_group_id: int,
+) -> tuple[int, ...]:
+    """Return the market group ID path from root to market_group_id."""
+    return tuple(
+        path_market_group_id
+        for path_market_group_id, _name in _get_market_group_path_rows(
+            connection, market_group_id
+        )
+    )
+
+
+def get_market_group_name_path(
+    connection: sqlite3.Connection,
+    market_group_id: int,
+) -> tuple[str, ...]:
+    """Return the market group name path from root to market_group_id."""
+    return tuple(
+        name
+        for _path_market_group_id, name in _get_market_group_path_rows(
+            connection, market_group_id
+        )
+    )
+
+
 def _get_valid_blueprint_ids(
     connection: sqlite3.Connection,
     blueprints: ESD.BlueprintsDataset,
