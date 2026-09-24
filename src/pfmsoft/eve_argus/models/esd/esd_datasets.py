@@ -51,6 +51,20 @@ class Blueprint_Activity:
     )
     time: int
 
+    def __post_init__(self) -> None:
+        """Check for duplicate skill entries in the activity."""
+        # If the list of skill requirements contains duplicates, only keep the one with
+        # the highest level.
+        if self.skills:
+            unique_skills: dict[int, Blueprint_Skill] = {}
+            for skill in self.skills:
+                if (
+                    skill.typeID not in unique_skills
+                    or skill.level > unique_skills[skill.typeID].level
+                ):
+                    unique_skills[skill.typeID] = skill
+            self.skills = list(unique_skills.values())
+
 
 @dataclass(slots=True, kw_only=True)
 class BlueprintActivities:
