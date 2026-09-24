@@ -158,6 +158,7 @@ CREATE TABLE IF NOT EXISTS market_groups (
     parent_group_id INTEGER,
     int_path TEXT NOT NULL, -- a string representing the path of ancestor market group IDs as a JSON array
     str_path TEXT NOT NULL, -- a string representing the path of ancestor market group names as a JSON array
+    types TEXT, -- a string representing the IDs of types in this market group as a JSON array, NULL if none
     FOREIGN KEY (parent_group_id) REFERENCES market_groups(market_group_id)
 ) STRICT;
 
