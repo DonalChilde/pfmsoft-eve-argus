@@ -131,7 +131,7 @@ CREATE TABLE IF NOT EXISTS categories (
     category_id INTEGER PRIMARY KEY,
     icon_id INTEGER,
     name TEXT,
-    published INTEGER --boolean represented as integer (0 or 1)
+    published INTEGER NOT NULL --boolean represented as integer (0 or 1)
 ) STRICT;
 
 -- Groups

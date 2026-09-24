@@ -760,7 +760,7 @@ def write_industry_activities(
 
 
 @log_timing(logger=logger, level=_timing_log_level)
-def get_market_groups(connection: sqlite3.Connection) -> ASM.MarketGroupDataset:
+def get_market_groups(connection: sqlite3.Connection) -> ASM.MarketGroupsDataset:
     """Retrieve all market groups from the database."""
     rows = connection.execute(
         """
@@ -779,7 +779,7 @@ def get_market_groups(connection: sqlite3.Connection) -> ASM.MarketGroupDataset:
         """
     ).fetchall()
     result = {
-        market_group_id: ASM.MarketGroupRecord(
+        market_group_id: ASM.MarketGroupsRecord(
             market_group_id=market_group_id,
             name=name,
             description=description,
@@ -803,4 +803,30 @@ def get_market_groups(connection: sqlite3.Connection) -> ASM.MarketGroupDataset:
         ) in rows
     }
     logger.info("Retrieved %d market groups", len(result))
+    return result
+
+
+def get_industry_activities(
+    connection: sqlite3.Connection,
+) -> ASM.IndustryActivityDataset:
+    """Retrieve all industry activities from the database."""
+    rows = connection.execute(
+        """
+        SELECT
+            activity_id,
+            name,
+            description
+        FROM industry_activities
+        ORDER BY activity_id
+        """
+    ).fetchall()
+    result = {
+        activity_id: ASM.IndustryActivityRecord(
+            activity_id=activity_id,
+            name=name,
+            description=description,
+        )
+        for activity_id, name, description in rows
+    }
+    logger.info("Retrieved %d industry activities", len(result))
     return result
