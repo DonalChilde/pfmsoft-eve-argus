@@ -54,6 +54,9 @@ def import_static_data() -> None:
             )
             query_helpers.write_type_materials(connection, loader.type_materials())
             query_helpers.write_blueprints(connection, loader.blueprints())
+            query_helpers.write_market_groups(
+                connection, loader.market_groups(), LanguageEnum.EN
+            )
 
 
 if __name__ == "__main__":

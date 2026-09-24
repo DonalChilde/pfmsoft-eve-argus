@@ -148,6 +148,17 @@ CREATE TABLE IF NOT EXISTS groups (
     FOREIGN KEY (category_id) REFERENCES categories(category_id)
 ) STRICT;
 
+-- Market Groups
+CREATE TABLE IF NOT EXISTS market_groups (
+    market_group_id INTEGER PRIMARY KEY,
+    description TEXT,
+    has_types INTEGER NOT NULL, --boolean represented as integer (0 or 1)
+    icon_id INTEGER,
+    name TEXT NOT NULL,
+    parent_group_id INTEGER,
+    FOREIGN KEY (parent_group_id) REFERENCES market_groups(market_group_id)
+) STRICT;
+
 -- Industry Activities
 CREATE TABLE IF NOT EXISTS industry_activities (
     activity_id INTEGER PRIMARY KEY,

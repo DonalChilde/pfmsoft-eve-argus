@@ -146,3 +146,12 @@ class EsdDatasetsLoader(EsdDatasetsLoaderProtocol):
         }
         map_solar_systems = esd_datasets.MapSolarSystemsDataset(dataset=raw_dataset)
         return map_solar_systems
+
+    def market_groups(self) -> esd_datasets.MarketGroupsDataset:
+        """Returns the market groups dataset loaded from ESD."""
+        raw_dataset: dict[int, Any] = {
+            key: value
+            for key, value in self.query_manager.query.get_int_records("marketGroups")
+        }
+        market_groups = esd_datasets.MarketGroupsDataset(dataset=raw_dataset)
+        return market_groups

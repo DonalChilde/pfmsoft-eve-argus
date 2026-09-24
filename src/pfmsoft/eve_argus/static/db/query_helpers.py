@@ -195,6 +195,51 @@ def write_groups(
         )
 
 
+def write_market_groups(
+    connection: sqlite3.Connection,
+    market_groups: ESD.MarketGroupsDataset,
+    language: LanguageEnum = LanguageEnum.EN,
+) -> None:
+    """Write the market groups dataset to the database."""
+    sorted_group_ids: list[int] = []
+    visited_group_ids: set[int] = set()
+
+    def visit(market_group_id: int) -> None:
+        if market_group_id in visited_group_ids:
+            return
+        record = market_groups.dataset[market_group_id]
+        if record.parentGroupID in market_groups.dataset:
+            visit(record.parentGroupID)
+        visited_group_ids.add(market_group_id)
+        sorted_group_ids.append(market_group_id)
+
+    for market_group_id in market_groups.dataset:
+        visit(market_group_id)
+
+    with connection:
+        connection.executemany(
+            """
+            INSERT INTO market_groups (
+                market_group_id, description, has_types, icon_id, name,
+                parent_group_id
+            )
+            VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            (
+                (
+                    market_group_id,
+                    record.description_localized(language),
+                    record.hasTypes,
+                    record.iconID,
+                    record.name_localized(language),
+                    record.parentGroupID,
+                )
+                for market_group_id in sorted_group_ids
+                if (record := market_groups.dataset[market_group_id])
+            ),
+        )
+
+
 def _get_valid_blueprint_ids(
     connection: sqlite3.Connection,
     blueprints: ESD.BlueprintsDataset,

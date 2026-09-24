@@ -575,3 +575,55 @@ class MapSolarSystemsRecord:
 
 class MapSolarSystemsDataset(SdeDataset):
     dataset: dict[int, MapSolarSystemsRecord]
+
+
+@dataclass(slots=True, kw_only=True)
+class MarketGroupsRecord:
+    """Record for market groups.
+
+    - source: dev/tmp/sde-yaml/3464040
+    - records: 2106 (key: int)
+    - valid: 2106, skipped: 0
+
+    | Field         | Required | Type        | Presence  |
+    | ------------- | -------- | ----------- | --------- |
+    | description   | no       | Description | 1582/2106 |
+    | hasTypes      | yes      | bool        | 2106/2106 |
+    | iconID        | no       | int         | 2076/2106 |
+    | name          | yes      | Name        | 2106/2106 |
+    | parentGroupID | no       | int         | 2087/2106 |
+    """
+
+    description: LocalizedString | None = None
+    hasTypes: bool
+    iconID: int | None = None
+    name: LocalizedString
+    parentGroupID: int | None = None
+
+    def name_localized(self, language: LanguageEnum = LanguageEnum.EN) -> str:
+        """Get the localized name for the specified language.
+
+        Args:
+            language (LanguageEnum): The language code (default: LanguageEnum.EN).
+
+        Returns:
+            str: The localized name.
+        """
+        return getattr(self.name, language, self.name.en)
+
+    def description_localized(self, language: LanguageEnum = LanguageEnum.EN) -> str:
+        """Get the localized description for the specified language.
+
+        Args:
+            language (LanguageEnum): The language code (default: LanguageEnum.EN).
+
+        Returns:
+            str: The localized description.
+        """
+        if self.description is None:
+            return "NOT_DEFINED"
+        return getattr(self.description, language, self.description.en)
+
+
+class MarketGroupsDataset(SdeDataset):
+    dataset: dict[int, MarketGroupsRecord]

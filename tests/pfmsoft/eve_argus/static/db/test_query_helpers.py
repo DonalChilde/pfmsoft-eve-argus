@@ -37,6 +37,55 @@ def test_write_industry_activities_writes_string_fields() -> None:
     assert activity == (1, "Manufacturing", "Manufacturing of things")
 
 
+def test_write_market_groups_writes_localized_fields_and_parent() -> None:
+    """Market group records are written to the static database."""
+    connection = _make_connection()
+    dataset = ESD.MarketGroupsDataset(
+        dataset={
+            102: ESD.MarketGroupsRecord(
+                description=ESD.LocalizedString(
+                    en="Assault Frigates", de="Sturmfregatten"
+                ),
+                hasTypes=True,
+                iconID=None,
+                name=ESD.LocalizedString(en="Assault Frigates", de="Sturmfregatten"),
+                parentGroupID=101,
+            ),
+            100: ESD.MarketGroupsRecord(
+                description=None,
+                hasTypes=False,
+                iconID=None,
+                name=ESD.LocalizedString(en="Ships", de="Schiffe"),
+                parentGroupID=None,
+            ),
+            101: ESD.MarketGroupsRecord(
+                description=ESD.LocalizedString(en="Frigates", de="Fregatten"),
+                hasTypes=True,
+                iconID=42,
+                name=ESD.LocalizedString(en="Frigates", de="Fregatten"),
+                parentGroupID=100,
+            ),
+        }
+    )
+
+    query_helpers.write_market_groups(connection, dataset, language=LanguageEnum.DE)
+
+    market_groups = connection.execute(
+        """
+        SELECT market_group_id, description, has_types, icon_id, name,
+            parent_group_id
+        FROM market_groups
+        ORDER BY market_group_id
+        """
+    ).fetchall()
+
+    assert market_groups == [
+        (100, "NOT_DEFINED", 0, None, "Schiffe", None),
+        (101, "Fregatten", 1, 42, "Fregatten", 100),
+        (102, "Sturmfregatten", 1, None, "Sturmfregatten", 101),
+    ]
+
+
 def test_write_map_regions_writes_flattened_position_and_constellations() -> None:
     """Map region records are written to parent and child tables."""
     connection = _make_connection()
