@@ -592,7 +592,6 @@ def write_map_solar_systems(
 def write_industry_activities(
     connection: sqlite3.Connection,
     industrial_activities: ESD.IndustryActivitiesDataset,
-    language: LanguageEnum = LanguageEnum.EN,
 ) -> None:
     """Write the industrial activities dataset to the database."""
     with connection:
@@ -604,8 +603,8 @@ def write_industry_activities(
             (
                 (
                     activity_id,
-                    record.name_localized(language),
-                    record.description_localized(language),
+                    record.name,
+                    record.description,
                 )
                 for activity_id, record in industrial_activities.dataset.items()
             ),

@@ -25,9 +25,7 @@ def test_write_industry_activities_writes_string_fields() -> None:
         }
     )
 
-    query_helpers.write_industry_activities(
-        connection, dataset, language=LanguageEnum.DE
-    )
+    query_helpers.write_industry_activities(connection, dataset)
 
     activity = connection.execute(
         """

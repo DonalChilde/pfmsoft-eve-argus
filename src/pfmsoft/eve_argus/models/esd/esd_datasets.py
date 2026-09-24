@@ -393,30 +393,8 @@ class IndustryActivitiesRecord:
     | name        | yes      | str  | 6/6      |
     """
 
-    description: LocalizedString
-    name: LocalizedString
-
-    def name_localized(self, language: LanguageEnum = LanguageEnum.EN) -> str:
-        """Get the localized name for the specified language.
-
-        Args:
-            language (LanguageEnum): The language code (default: LanguageEnum.EN).
-
-        Returns:
-            str: The localized name.
-        """
-        return getattr(self.name, language, self.name.en)
-
-    def description_localized(self, language: LanguageEnum = LanguageEnum.EN) -> str:
-        """Get the localized description for the specified language.
-
-        Args:
-            language (LanguageEnum): The language code (default: LanguageEnum.EN).
-
-        Returns:
-            str: The localized description.
-        """
-        return getattr(self.description, language, self.description.en)
+    description: str
+    name: str
 
 
 class IndustryActivitiesDataset(SdeDataset):
