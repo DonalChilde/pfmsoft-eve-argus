@@ -45,6 +45,11 @@ CREATE TABLE IF NOT EXISTS type_materials (
     FOREIGN KEY (type_id) REFERENCES types(type_id)
 ) STRICT;
 
+CREATE TABLE IF NOT EXISTS type_materials_randomized (
+    type_id INTEGER PRIMARY KEY,
+    FOREIGN KEY (type_id) REFERENCES types(type_id)
+) STRICT;
+
 CREATE TABLE IF NOT EXISTS type_material_components (
     type_id INTEGER NOT NULL,
     material_type_id INTEGER NOT NULL,
@@ -54,13 +59,13 @@ CREATE TABLE IF NOT EXISTS type_material_components (
     FOREIGN KEY (material_type_id) REFERENCES types(type_id)
 ) STRICT;
 
-CREATE TABLE IF NOT EXISTS type_material_randomized_components (
+CREATE TABLE IF NOT EXISTS type_materials_randomized_components (
     type_id INTEGER NOT NULL,
     material_type_id INTEGER NOT NULL,
     quantity_min INTEGER NOT NULL CHECK (quantity_min >= 0),
     quantity_max INTEGER NOT NULL CHECK (quantity_max >= quantity_min),
     PRIMARY KEY (type_id, material_type_id),
-    FOREIGN KEY (type_id) REFERENCES type_materials(type_id) ON DELETE CASCADE,
+    FOREIGN KEY (type_id) REFERENCES type_materials_randomized(type_id) ON DELETE CASCADE,
     FOREIGN KEY (material_type_id) REFERENCES types(type_id)
 ) STRICT;
 

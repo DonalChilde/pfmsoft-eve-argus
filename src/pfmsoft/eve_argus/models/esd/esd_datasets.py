@@ -3,7 +3,7 @@
 from dataclasses import dataclass, field
 from typing import Any, Self
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 from pfmsoft.eve_argus.models.types import LanguageEnum
 
@@ -19,6 +19,8 @@ class SdeDataset(BaseModel):
     def deserialize(cls, data: str) -> Self:
         """Deserialize the dataset from a JSON string."""
         return cls.model_validate_json(data)
+
+    model_config = ConfigDict(extra="forbid")
 
 
 @dataclass(slots=True, kw_only=True)
@@ -130,7 +132,7 @@ class TypeMaterialsRecord:
     materials: list[TypeMaterials_Material] | None = field(
         default_factory=list[TypeMaterials_Material]
     )
-    randomized_materials: list[TypeMaterials_RandomizedMaterial] | None = field(
+    randomizedMaterials: list[TypeMaterials_RandomizedMaterial] | None = field(
         default_factory=list[TypeMaterials_RandomizedMaterial]
     )
 

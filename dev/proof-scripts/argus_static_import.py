@@ -64,6 +64,25 @@ def access_argus_static_data() -> None:
     with sqlite3.connect(ARGUS_DATABASE_PATH) as connection:
         market_groups = query_helpers.get_market_groups(connection)
         assert market_groups, "Market groups should not be empty"
+        industry_activities = query_helpers.get_industry_activities(connection)
+        assert industry_activities, "Industry activities should not be empty"
+        map_regions = query_helpers.get_map_regions(connection)
+        assert map_regions, "Map regions should not be empty"
+        map_constellations = query_helpers.get_map_constellations(connection)
+        assert map_constellations, "Map constellations should not be empty"
+        map_solar_systems = query_helpers.get_map_solar_systems(connection)
+        assert map_solar_systems, "Map solar systems should not be empty"
+        groups = query_helpers.get_groups(connection)
+        assert groups, "Groups should not be empty"
+        categories = query_helpers.get_categories(connection)
+        assert categories, "Categories should not be empty"
+        type_materials = query_helpers.get_type_materials(connection)
+        assert type_materials, "Type materials should not be empty"
+        query_helpers.get_type_materials_randomized(connection)
+        meta_groups = query_helpers.get_meta_groups(connection)
+        assert meta_groups, "Meta groups should not be empty"
+        types = query_helpers.get_types(connection)
+        assert types, "Types should not be empty"
 
 
 if __name__ == "__main__":

@@ -147,7 +147,7 @@ def write_type_materials(
                     material.quantityMax,
                 )
                 for type_id, record in type_materials.dataset.items()
-                for material in record.randomized_materials or []
+                for material in record.randomizedMaterials or []
             ),
         )
     logger.info(
@@ -1196,25 +1196,35 @@ def get_type_materials_randomized(
     connection: sqlite3.Connection,
 ) -> ASM.TypeMaterialsRandomizedDataset:
     """Retrieve all type materials from the database in randomized order."""
-    rows = connection.execute(
+    type_ids = connection.execute(
+        """
+        SELECT type_id
+        FROM type_material_randomized_components
+        ORDER BY type_id
+        """
+    ).fetchall()
+    materials_by_type_id: dict[int, list[ASM.RandomizedMaterials]] = {}
+    for type_id, material_type_id, quantity_min, quantity_max in connection.execute(
         """
         SELECT type_id, material_type_id, quantity_min, quantity_max
         FROM type_material_randomized_components
         ORDER BY type_id, material_type_id
         """
-    ).fetchall()
-    result = {
-        (type_id, material_type_id): ASM.TypeMaterialsRandomizedRecord(
-            type_id=type_id,
-            materials=(
-                ASM.RandomizedMaterials(
-                    material_type_id=material_type_id,
-                    quantity_min=quantity_min,
-                    quantity_max=quantity_max,
-                ),
-            ),
+    ):
+        materials_by_type_id.setdefault(type_id, []).append(
+            ASM.RandomizedMaterials(
+                material_type_id=material_type_id,
+                quantity_min=quantity_min,
+                quantity_max=quantity_max,
+            )
         )
-        for type_id, material_type_id, quantity_min, quantity_max in rows
+
+    result = {
+        type_id: ASM.TypeMaterialsRandomizedRecord(
+            type_id=type_id,
+            materials=tuple(materials_by_type_id.get(type_id, ())),
+        )
+        for (type_id,) in type_ids
     }
     logger.info("Retrieved %d randomized type material records", len(result))
     return result
@@ -1232,10 +1242,17 @@ def get_meta_groups(
         ORDER BY meta_group_id
         """
     ).fetchall()
+
+    def deserialize_color(value: str | None) -> ASM.Color | None:
+        if value is None:
+            return None
+        color = json.loads(value)
+        return ASM.Color(red=color["r"], green=color["g"], blue=color["b"])
+
     result = {
         meta_group_id: ASM.MetaGroupsRecord(
             meta_group_id=meta_group_id,
-            color=ASM.Color(**json.loads(color)) if color is not None else None,
+            color=deserialize_color(color),
             description=description,
             icon_id=icon_id,
             icon_suffix=icon_suffix,

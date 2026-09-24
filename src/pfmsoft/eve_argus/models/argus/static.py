@@ -172,7 +172,7 @@ class TypeMaterialsRandomizedRecord:
     materials: tuple[RandomizedMaterials, ...]
 
 
-TypeMaterialsRandomizedDataset = dict[tuple[int, int], TypeMaterialsRandomizedRecord]
+TypeMaterialsRandomizedDataset = dict[int, TypeMaterialsRandomizedRecord]
 TypeMaterialsRandomizedDatasetRoot = RootModel[TypeMaterialsRandomizedDataset]
 
 
