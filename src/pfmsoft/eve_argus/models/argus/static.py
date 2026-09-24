@@ -150,7 +150,7 @@ class CategoriesRecord:
     category_id: int
     icon_id: int | None
     name: str | None
-    published: bool | None
+    published: bool
 
 
 CategoriesDataset = dict[int, CategoriesRecord]

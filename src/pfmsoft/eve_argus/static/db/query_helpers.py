@@ -1134,7 +1134,26 @@ def get_categories(
     connection: sqlite3.Connection, only_published: bool = True
 ) -> ASM.CategoriesDataset:
     """Retrieve all categories from the database."""
-    ...
+    where_clause = "WHERE published = 1" if only_published else ""
+    rows = connection.execute(
+        f"""
+        SELECT category_id, icon_id, name, published
+        FROM categories
+        {where_clause}
+        ORDER BY category_id
+        """
+    ).fetchall()
+    result = {
+        category_id: ASM.CategoriesRecord(
+            category_id=category_id,
+            icon_id=icon_id,
+            name=name,
+            published=bool(published),
+        )
+        for category_id, icon_id, name, published in rows
+    }
+    logger.info("Retrieved %d categories", len(result))
+    return result
 
 
 @log_timing(logger=logger, level=_timing_log_level)
@@ -1142,7 +1161,34 @@ def get_type_materials(
     connection: sqlite3.Connection,
 ) -> ASM.TypeMaterialsDataset:
     """Retrieve all type materials from the database."""
-    ...
+    type_ids = connection.execute(
+        """
+        SELECT type_id
+        FROM type_materials
+        ORDER BY type_id
+        """
+    ).fetchall()
+    materials_by_type_id: dict[int, list[ASM.Materials]] = {}
+    for type_id, material_type_id, quantity in connection.execute(
+        """
+        SELECT type_id, material_type_id, quantity
+        FROM type_material_components
+        ORDER BY type_id, material_type_id
+        """
+    ):
+        materials_by_type_id.setdefault(type_id, []).append(
+            ASM.Materials(material_type_id=material_type_id, quantity=quantity)
+        )
+
+    result = {
+        type_id: ASM.TypeMaterialsRecord(
+            type_id=type_id,
+            materials=tuple(materials_by_type_id.get(type_id, ())),
+        )
+        for (type_id,) in type_ids
+    }
+    logger.info("Retrieved %d type materials", len(result))
+    return result
 
 
 @log_timing(logger=logger, level=_timing_log_level)
@@ -1150,7 +1196,28 @@ def get_type_materials_randomized(
     connection: sqlite3.Connection,
 ) -> ASM.TypeMaterialsRandomizedDataset:
     """Retrieve all type materials from the database in randomized order."""
-    ...
+    rows = connection.execute(
+        """
+        SELECT type_id, material_type_id, quantity_min, quantity_max
+        FROM type_material_randomized_components
+        ORDER BY type_id, material_type_id
+        """
+    ).fetchall()
+    result = {
+        (type_id, material_type_id): ASM.TypeMaterialsRandomizedRecord(
+            type_id=type_id,
+            materials=(
+                ASM.RandomizedMaterials(
+                    material_type_id=material_type_id,
+                    quantity_min=quantity_min,
+                    quantity_max=quantity_max,
+                ),
+            ),
+        )
+        for type_id, material_type_id, quantity_min, quantity_max in rows
+    }
+    logger.info("Retrieved %d randomized type material records", len(result))
+    return result
 
 
 @log_timing(logger=logger, level=_timing_log_level)
@@ -1158,7 +1225,26 @@ def get_meta_groups(
     connection: sqlite3.Connection,
 ) -> ASM.MetaGroupsDataset:
     """Retrieve all meta groups from the database."""
-    ...
+    rows = connection.execute(
+        """
+        SELECT meta_group_id, color, description, icon_id, icon_suffix, name
+        FROM meta_groups
+        ORDER BY meta_group_id
+        """
+    ).fetchall()
+    result = {
+        meta_group_id: ASM.MetaGroupsRecord(
+            meta_group_id=meta_group_id,
+            color=ASM.Color(**json.loads(color)) if color is not None else None,
+            description=description,
+            icon_id=icon_id,
+            icon_suffix=icon_suffix,
+            name=name,
+        )
+        for meta_group_id, color, description, icon_id, icon_suffix, name in rows
+    }
+    logger.info("Retrieved %d meta groups", len(result))
+    return result
 
 
 @log_timing(logger=logger, level=_timing_log_level)
@@ -1166,4 +1252,89 @@ def get_types(
     connection: sqlite3.Connection, only_published: bool = True
 ) -> ASM.TypesDataset:
     """Retrieve all types from the database."""
-    ...
+    where_clause = "WHERE published = 1" if only_published else ""
+    rows = connection.execute(
+        f"""
+        SELECT
+            type_id,
+            base_price,
+            capacity,
+            description,
+            faction_id,
+            graphic_id,
+            group_id,
+            icon_id,
+            market_group_id,
+            mass,
+            meta_group_id,
+            meta_level,
+            name,
+            packaged_volume,
+            portion_size,
+            published,
+            race_id,
+            radius,
+            ship_tree_group_id,
+            sound_id,
+            tech_level,
+            variation_parent_type_id,
+            volume
+        FROM types
+        {where_clause}
+        ORDER BY type_id
+        """
+    ).fetchall()
+    result = {
+        type_id: ASM.TypesRecord(
+            type_id=type_id,
+            base_price=base_price,
+            capacity=capacity,
+            description=description,
+            faction_id=faction_id,
+            graphic_id=graphic_id,
+            group_id=group_id,
+            icon_id=icon_id,
+            market_group_id=market_group_id,
+            mass=mass,
+            meta_group_id=meta_group_id,
+            meta_level=meta_level,
+            name=name,
+            packaged_volume=packaged_volume,
+            portion_size=portion_size,
+            published=bool(published),
+            race_id=race_id,
+            radius=radius,
+            ship_tree_group_id=ship_tree_group_id,
+            sound_id=sound_id,
+            tech_level=tech_level,
+            variation_parent_type_id=variation_parent_type_id,
+            volume=volume,
+        )
+        for (
+            type_id,
+            base_price,
+            capacity,
+            description,
+            faction_id,
+            graphic_id,
+            group_id,
+            icon_id,
+            market_group_id,
+            mass,
+            meta_group_id,
+            meta_level,
+            name,
+            packaged_volume,
+            portion_size,
+            published,
+            race_id,
+            radius,
+            ship_tree_group_id,
+            sound_id,
+            tech_level,
+            variation_parent_type_id,
+            volume,
+        ) in rows
+    }
+    logger.info("Retrieved %d types", len(result))
+    return result
