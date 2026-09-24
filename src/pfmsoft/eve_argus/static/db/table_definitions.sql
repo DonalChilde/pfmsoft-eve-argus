@@ -147,3 +147,30 @@ CREATE TABLE IF NOT EXISTS groups (
     use_base_price INTEGER NOT NULL, --boolean represented as integer (0 or 1)
     FOREIGN KEY (category_id) REFERENCES categories(category_id)
 ) STRICT;
+
+-- Industrial Activities
+CREATE TABLE IF NOT EXISTS industrial_activities (
+    activity_id INTEGER PRIMARY KEY,
+    name TEXT NOT NULL,
+    description TEXT NOT NULL
+) STRICT;
+
+-- Map Regions
+CREATE TABLE IF NOT EXISTS map_regions (
+    region_id INTEGER PRIMARY KEY,
+    description TEXT,
+    faction_id INTEGER,
+    name TEXT NOT NULL,
+    nebula_id INTEGER NOT NULL,
+    position_x REAL NOT NULL,
+    position_y REAL NOT NULL,
+    position_z REAL NOT NULL,
+    wormhole_class_id INTEGER
+) STRICT;
+
+CREATE TABLE IF NOT EXISTS map_regions_constellations (
+    region_id INTEGER NOT NULL,
+    constellation_id INTEGER NOT NULL,
+    PRIMARY KEY (region_id, constellation_id),
+    FOREIGN KEY (region_id) REFERENCES map_regions(region_id) ON DELETE CASCADE
+) STRICT;
