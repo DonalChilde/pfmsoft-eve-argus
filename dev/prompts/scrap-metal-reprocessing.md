@@ -27,3 +27,208 @@ Document types and tools available:
 - markdown
 - html
 - spreadsheets that can import csv for further processing.
+
+## Working plan
+
+This document is the controlling plan for the reprocessing prototype. Keep the
+prototype entirely in `dev/proof-scripts/reprocessing/`. Generated reports and
+intermediate output belong in `dev/proof-scripts/proof-output/reprocessing/`.
+
+Do not modify `src/` or `tests/` during the prototype without explicit approval.
+Production integration and comprehensive automated tests will be added later,
+when the proven approach is migrated into eve-argus proper.
+
+### Initial scope
+
+- Include input items whose types are published and have a `market_group_id`.
+- Include recovered materials only when their types are also published and have
+  a `market_group_id`.
+- if an item is published, and has a `market_group_id`, but one or more recovered items are not published, or dont have a `market_group_id` log this. This should be an unusual situation, as a published parent item is usually the success gate.
+- Analyze all five configured market hubs: Jita, Amarr, Dodixie, Hek, and Rens.
+- Use existing 5% market-depth buy and sell summaries where available. It is possible that there is no pricing for an item, as it depends on player orders.
+- Retain all eligible rows in the output and rank positive opportunities.
+- Use a configurable minimum margin, initially `0%`.
+- Produce both Markdown and CSV reports.
+
+### Calculation rules
+
+- Use a configurable assumed reprocessing yield, defaulting to `55%`.
+- Apply the yield to the materials returned from one input portion and round
+  material quantities down according to the in-game rules.
+- Treat `portion_size` as the number of input items required for one
+  reprocessing portion, pending in-game verification.
+- Calculate both deal directions at each hub:
+  - sell the input item and buy the recovered materials;
+  - buy the input item and sell the recovered materials.
+- Show the input quantity, recovered quantities, prices, gross values, margins,
+  and missing-market data for every report row.
+- Missing or thin market data must remain missing; it must not be treated as a
+  zero price or zero value.
+
+### Cross-hub comparisons
+
+Compare the five hubs to identify improved sourcing and output prices. During
+the prototype, report these as gross price differences only. Do not subtract
+hauling, route, broker, station-tax, or travel costs until a transport-cost
+model has been designed and approved.
+
+### Planned reports
+
+1. **Reprocessing value report**
+
+   A Markdown report grouped by market path and hub. For each eligible input,
+   show its portion size, assumed yield, recovered materials, material
+   quantities, input market prices, recovered-material market prices, and gross
+   reprocessed values.
+
+2. **Reprocessing deals report**
+
+   A Markdown report highlighting positive gross-margin opportunities while
+   retaining the complete comparison data. Include both deal directions and
+   identify whether an opportunity is local to one hub or improved by sourcing
+   and selling across different hubs.
+
+3. **Spreadsheet data export**
+
+   A CSV suitable for further analysis. Prefer one row per input, hub, and deal
+   direction, or document the normalized equivalent if the report requires a
+   different shape.
+
+### Report mockups
+
+The following examples are illustrative only. The names, quantities, prices,
+and margins are placeholders that show the intended report shape; they are not
+market data or expected results.
+
+#### Mockup: reprocessing value report
+
+```markdown
+# Reprocessing Value Report
+
+Generated: 2026-09-24 | Assumed yield: 55% | Order depth: 5%
+Status: PROVISIONAL - portion-size semantics require in-game verification
+
+## Market path: Ships > Frigates
+
+### Tristan
+
+Input type ID: 587 | Portion size: 1
+
+#### Reference prices by hub
+
+This table is the primary reference view. It includes the input item and each
+recovered material, with the available buy and sell prices at every hub.
+
+| Role     | Item      | Quantity per portion |  Jita Buy |  Jita Sell | Amarr Buy | Amarr Sell | Dodixie Buy | Dodixie Sell |   Hek Buy |   Hek Sell |  Rens Buy |  Rens Sell | Market status |
+| -------- | --------- | -------------------: | --------: | ---------: | --------: | ---------: | ----------: | -----------: | --------: | ---------: | --------: | ---------: | ------------- |
+| Input    | Tristan   |                    1 | 95,000.00 | 101,000.00 | 97,500.00 | 103,000.00 |   96,000.00 |   102,000.00 | 98,000.00 | 104,000.00 | 98,500.00 | 105,000.00 | complete      |
+| material | Tritanium |               12,100 |      4.25 |       4.31 |      4.20 |       4.29 |        4.18 |         4.27 |      4.16 |       4.25 |      4.19 |       4.28 | complete      |
+| material | Pyerite   |                3,600 |      8.10 |       8.35 |      8.05 |       8.30 |        8.00 |         8.25 |      7.95 |       8.20 |      8.00 |       8.24 | complete      |
+| material | Mexallon  |                1,100 |     52.00 |      53.20 |     51.50 |      52.90 |       51.00 |        52.70 |     50.80 |      52.40 |     51.20 |      52.80 | complete      |
+
+#### Reprocessed value by hub
+
+This table explains the value of the recovered materials using the prices from
+the reference table. Buy value uses hub buy prices; sell value uses hub sell
+prices.
+
+| Input item | Hub     | Portion size | Input buy price | Input sell price | Reprocessed buy value | Reprocessed sell value | Missing data |
+| ---------- | ------- | -----------: | --------------: | ---------------: | --------------------: | ---------------------: | ------------ |
+| Tristan    | Jita    |            1 |       95,000.00 |       101,000.00 |            137,785.00 |             140,731.00 | none         |
+| Tristan    | Amarr   |            1 |       97,500.00 |       103,000.00 |            136,000.00 |             139,900.00 | none         |
+| Tristan    | Dodixie |            1 |       96,000.00 |       102,000.00 |            135,100.00 |             138,700.00 | none         |
+| Tristan    | Hek     |            1 |       98,000.00 |       104,000.00 |            133,900.00 |             137,600.00 | none         |
+| Tristan    | Rens    |            1 |       98,500.00 |       105,000.00 |            135,500.00 |             139,200.00 | none         |
+```
+
+The value report should repeat this two-table structure for each input item and
+market path. The reference table should preserve empty cells for unavailable
+prices and record a status or note for missing, thin, unpublished, or ungrouped
+recovered materials rather than silently dropping them.
+
+#### Mockup: reprocessing deals report
+
+```markdown
+# Reprocessing Deals Report
+
+Generated: 2026-09-24 | Minimum gross margin: 0%
+Status: PROVISIONAL - excludes hauling, taxes, broker fees, and route costs
+
+## Ranked opportunities
+
+| Rank | Input item     | Source hub | Output hub | Deal direction             | Input cost | Output value | Gross profit | Margin | Data quality |
+| ---: | -------------- | ---------- | ---------- | -------------------------- | ---------: | -----------: | -----------: | -----: | ------------ |
+|    1 | Tristan        | Jita       | Jita       | buy input / sell materials |  95,000.00 |   140,731.00 |    45,731.00 | 48.14% | complete     |
+|    2 | Example Module | Amarr      | Jita       | buy input / sell materials | 210,000.00 |   244,000.00 |    34,000.00 | 16.19% | complete     |
+
+## Deal detail: Tristan
+
+| Field                         | Value                                            |
+| ----------------------------- | ------------------------------------------------ |
+| Source hub                    | Jita                                             |
+| Output hub                    | Jita                                             |
+| Input quantity                | 1 portion (1 item)                               |
+| Input buy price               | 95,000.00 ISK                                    |
+| Recovered-material sell value | 140,731.00 ISK                                   |
+| Gross profit                  | 45,731.00 ISK                                    |
+| Gross margin                  | 48.14%                                           |
+| Transport cost                | not modeled                                      |
+| Caveats                       | assumed 55% yield; portion size not yet verified |
+```
+
+The deals report should include both `sell input / buy materials` and
+`buy input / sell materials` rows. A cross-hub row should identify the source
+and output hubs separately and describe its result as a gross opportunity until
+transport costs exist.
+
+#### Mockup: spreadsheet CSV export
+
+The CSV should be machine-readable without requiring Markdown parsing. Numeric
+fields should remain numeric, and missing prices should be empty rather than
+zero.
+
+```csv
+input_type_id,input_name,market_path,portion_size,yield_percent,source_hub,output_hub,deal_direction,input_price,input_price_side,recovered_value,recovered_value_side,gross_profit,margin_percent,market_status,assumption_status
+587,Tristan,Ships > Frigates,1,55,Jita,Jita,buy_input_sell_materials,95000.00,buy,140731.00,sell,45731.00,48.1389,complete,provisional_portion_size
+587,Tristan,Ships > Frigates,1,55,Jita,Jita,sell_input_buy_materials,101000.00,sell,137785.00,buy,36785.00,36.4208,complete,provisional_portion_size
+```
+
+The export should have one row per input item, source hub, output hub, and deal
+direction. Material-level detail may be emitted in a second normalized CSV if
+putting all recovered materials into one row would make the primary export
+ambiguous.
+
+### Verification gates
+
+- Verify that `type_materials` quantities represent one `portion_size` of input
+  items, using an in-game observation that includes a non-1 portion-size item.
+- Confirm the joins and filters for published types, market groups, type names,
+  portion sizes, and material components.
+- Flag randomized material definitions for separate review; do not silently
+  treat them as ordinary fixed reprocessing output.
+- Manually reconcile at least one generated row against the component
+  quantities, assumed yield, market prices, and margin calculation.
+- Label generated profitability as provisional until portion-size semantics and
+  any other material game-mechanics assumptions have been verified.
+
+### Implementation phases
+
+1. Create a small data inspection script under
+   `dev/proof-scripts/reprocessing/` to establish eligible type and material
+   counts and expose excluded records.
+2. Create the prototype calculations and five-hub market comparison scripts in
+   the same directory.
+3. Generate the Markdown and CSV artifacts under
+   `dev/proof-scripts/proof-output/reprocessing/`.
+4. Review a small known sample and refine the report shape, filters, and
+   assumptions in this document.
+5. Decide whether the prototype is ready for migration into eve-argus proper.
+
+### Deferred work
+
+- Moving code into `src/pfmsoft/eve_argus/`.
+- Adding production tests under `tests/`.
+- Modeling hauling, route, broker, station-tax, or travel costs.
+- Modeling character skills or facility-specific yield modifiers.
+- Establishing the correct treatment of randomized materials.
+- Expanding the analysis into blueprint manufacturing economics.
