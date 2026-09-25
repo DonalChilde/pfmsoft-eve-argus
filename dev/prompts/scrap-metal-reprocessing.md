@@ -50,6 +50,79 @@ when the proven approach is migrated into eve-argus proper.
 - Use a configurable minimum margin, initially `0%`.
 - Produce both Markdown and CSV reports.
 
+### Expected data sources
+
+These are the
+expected sources to verify before implementation and again during migration.
+
+- static data is loaded via src/pfmsoft/eve_argus/static/db/query_helpers.py
+  - use of query helpers is preferred for database access.
+  - in production, all sql queries should live in query_helpers
+  - during prototyping note sql queries not available in query_helpers, for later inclusion.
+- pricing data is loaded via src/pfmsoft/eve_argus/market/orders/db/query_helpers.py
+  - pricing summary data is available in the database by hub system, as opposed to region, or station.
+
+#### Static type data
+
+- **Authoritative source:** the static database `types` data loaded from the
+  EVE static data set.
+- **Required fields:** type ID, type name, `published`, `market_group_id`, and
+  `portion_size`.
+- **Expected access path:** existing static database query helpers or the
+  corresponding read-only models already used by eve-argus.
+- **Used for:** selecting input items and materials, displaying names,
+  applying the published and market-group filters, showing portion size, and
+  grouping output by market path.
+- **Migration check:** confirm the prototype does not reconstruct type data
+  from report text or maintain a second copy of these fields.
+
+#### Type material data
+
+- **Authoritative source:** `type_materials` and its component records in the
+  static database.
+- **Required fields:** input type ID, material type ID, and component quantity.
+- **Expected access path:** the existing type-material query/model layer, or a
+  read-only equivalent in the proof script.
+- **Used for:** determining the materials in one input portion and calculating
+  recovered quantities after applying the assumed yield.
+- **Related source:** randomized-material tables should be read far enough to
+  flag affected inputs, but their quantities must not be treated as ordinary
+  fixed components until their in-game behavior is verified.
+- **Migration check:** reconcile at least one prototype composition against the
+  static database rows and preserve any excluded or unclassified materials in
+  the report status.
+
+#### Market Path
+
+- market path infomation is available as part of the market_group static data.
+
+#### Market hub definitions
+
+- **Authoritative source:** the existing configured market hub definitions.
+- **Required fields:** hub name, region ID, system ID, and station ID where
+  needed to identify the market request.
+- **Expected access path:** the existing market-hub model/configuration, not a
+  duplicated list maintained only by the prototype.
+- **Used for:** selecting Jita, Amarr, Dodixie, Hek, and Rens and labeling
+  every price and deal row with its hub.
+- **Migration check:** compare the prototype's hub IDs and names with the
+  configured definitions before moving the logic into eve-argus.
+
+#### Market orders and price summaries
+
+- market orders and pricing summaries are available through src/pfmsoft/eve_argus/market/orders/db/query_helpers.py
+- These values are loaded from the ESI, out of context for this operation.
+- Summary pricing is precaculated, and available in the database.
+
+- **Migration check:** preserve the distinction between missing orders, thin
+  orders, and a genuine zero-valued price; never convert missing data to zero.
+
+#### Report metadata
+
+Every generated report should identify the data snapshot or fetch time, assumed
+yield, order-depth setting, hub set, and provisional assumptions. This makes a
+later comparison between proof output and migrated eve-argus output possible.
+
 ### Calculation rules
 
 - Use a configurable assumed reprocessing yield, defaulting to `55%`.
@@ -76,7 +149,7 @@ model has been designed and approved.
 
 1. **Reprocessing value report**
 
-   A Markdown report grouped by market path and hub. For each eligible input,
+   A Markdown report grouped by market path and input item, with hub prices as columns. For each eligible input,
    show its portion size, assumed yield, recovered materials, material
    quantities, input market prices, recovered-material market prices, and gross
    reprocessed values.
