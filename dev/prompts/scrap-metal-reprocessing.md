@@ -86,7 +86,10 @@ model has been designed and approved.
    A Markdown report highlighting positive gross-margin opportunities while
    retaining the complete comparison data. Include both deal directions and
    identify whether an opportunity is local to one hub or improved by sourcing
-   and selling across different hubs.
+   and selling across different hubs. The ranked opportunities table is the
+   primary output. Add exception notes only when an opportunity has cross-hub,
+   missing-data, unusual-portion, randomized-material, or other provisional
+   conditions that need explanation.
 
 3. **Spreadsheet data export**
 
@@ -161,25 +164,31 @@ Status: PROVISIONAL - excludes hauling, taxes, broker fees, and route costs
 |    1 | Tristan        | Jita       | Jita       | buy input / sell materials |  95,000.00 |   140,731.00 |    45,731.00 | 48.14% | complete     |
 |    2 | Example Module | Amarr      | Jita       | buy input / sell materials | 210,000.00 |   244,000.00 |    34,000.00 | 16.19% | complete     |
 
-## Deal detail: Tristan
+## Exception notes
 
-| Field                         | Value                                            |
-| ----------------------------- | ------------------------------------------------ |
-| Source hub                    | Jita                                             |
-| Output hub                    | Jita                                             |
-| Input quantity                | 1 portion (1 item)                               |
-| Input buy price               | 95,000.00 ISK                                    |
-| Recovered-material sell value | 140,731.00 ISK                                   |
-| Gross profit                  | 45,731.00 ISK                                    |
-| Gross margin                  | 48.14%                                           |
-| Transport cost                | not modeled                                      |
-| Caveats                       | assumed 55% yield; portion size not yet verified |
+Routine opportunities do not receive a duplicate detail section. This section
+is emitted only for rows that require explanation.
+
+### Example Module
+
+| Field             | Value                                                      |
+| ----------------- | ---------------------------------------------------------- |
+| Reason for note   | Cross-hub opportunity with incomplete Hek material pricing |
+| Source hub        | Amarr                                                      |
+| Output hub        | Jita                                                       |
+| Affected material | Mexallon                                                   |
+| Missing data      | Hek sell price                                             |
+| Impact            | Hek is excluded as an output hub for this row              |
+| Transport cost    | not modeled                                                |
+| Caveats           | assumed 55% yield; portion size not yet verified           |
 ```
 
 The deals report should include both `sell input / buy materials` and
 `buy input / sell materials` rows. A cross-hub row should identify the source
 and output hubs separately and describe its result as a gross opportunity until
-transport costs exist.
+transport costs exist. Do not repeat the ranked row's prices, profit, and margin
+in an exception note unless the note explains a data-quality or calculation
+condition that changes how the row should be interpreted.
 
 #### Mockup: spreadsheet CSV export
 
