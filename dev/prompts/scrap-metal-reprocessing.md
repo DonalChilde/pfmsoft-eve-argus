@@ -43,7 +43,11 @@ when the proven approach is migrated into eve-argus proper.
 - Include input items whose types are published and have a `market_group_id`.
 - Include recovered materials only when their types are also published and have
   a `market_group_id`.
-- if an item is published, and has a `market_group_id`, but one or more recovered items are not published, or dont have a `market_group_id` log this. This should be an unusual situation, as a published parent item is usually the success gate.
+- If an eligible item has one or more recovered materials that are not
+  published or do not have a `market_group_id`, log the condition and retain
+  the material quantity in the reference output.
+- Treat this as an unusual condition because a published parent item is usually
+  the success gate.
 - Analyze all five configured market hubs: Jita, Amarr, Dodixie, Hek, and Rens.
 - Use existing 5% market-depth buy and sell summaries where available. It is possible that there is no pricing for an item, as it depends on player orders.
 - Retain all eligible rows in the output and rank positive opportunities.
@@ -52,15 +56,20 @@ when the proven approach is migrated into eve-argus proper.
 
 ### Expected data sources
 
-These are the
-expected sources to verify before implementation and again during migration.
+These are the expected sources to verify before implementation and again during
+migration.
 
 - static data is loaded via src/pfmsoft/eve_argus/static/db/query_helpers.py
   - use of query helpers is preferred for database access.
   - in production, all sql queries should live in query_helpers
   - during prototyping note sql queries not available in query_helpers, for later inclusion.
-- pricing data is loaded via src/pfmsoft/eve_argus/market/orders/db/query_helpers.py
-  - pricing summary data is available in the database by hub system, as opposed to region, or station.
+- upstream pricing data comes from ESI regional market orders.
+- prototype pricing data is loaded via
+  `src/pfmsoft/eve_argus/market/orders/db/query_helpers.py`.
+  - persisted 5% pricing summaries are available in the database by hub system,
+    rather than only by region or station.
+  - if persisted summaries are unavailable, the fallback is to transform raw
+    regional orders and calculate the summaries using the existing transform.
 
 #### Static type data
 
@@ -94,7 +103,10 @@ expected sources to verify before implementation and again during migration.
 
 #### Market Path
 
-- market path infomation is available as part of the market_group static data.
+- market path information is available in the Argus static database's
+  `market_groups` data.
+- use the market group's `str_path` for report grouping and retain its
+  `int_path` when a stable identifier is needed.
 
 #### Market hub definitions
 
@@ -110,12 +122,46 @@ expected sources to verify before implementation and again during migration.
 
 #### Market orders and price summaries
 
-- market orders and pricing summaries are available through src/pfmsoft/eve_argus/market/orders/db/query_helpers.py
+- **Upstream source:** ESI regional market orders.
+- **Prototype access path:** persisted market orders and pricing summaries are
+  available through
+  `src/pfmsoft/eve_argus/market/orders/db/query_helpers.py`.
+- **Required fields:** type ID, buy/sell side, 5% price, 5% item volume, 5%
+  order count, and snapshot metadata where available.
+- **Fallback calculation:** raw regional orders can be transformed and passed
+  through the existing 5% order-summary transformation.
 - These values are loaded from the ESI, out of context for this operation.
 - Summary pricing is precaculated, and available in the database.
 
 - **Migration check:** preserve the distinction between missing orders, thin
   orders, and a genuine zero-valued price; never convert missing data to zero.
+
+#### Verified prototype findings
+
+The first static-data inspection ran successfully against the configured
+databases and produced `static_inventory.json` in the proof-output directory.
+The current snapshot contained:
+
+- 26,992 published types.
+- 19,432 published types with a `market_group_id`.
+- 7,760 eligible types with fixed material records.
+- 10 randomized material definitions.
+- 6 fixed material components whose types are outside the eligible published
+  and market-grouped set.
+- All five configured hubs currently have persisted order summaries in the
+  market-orders database.
+
+Types without material records include terminal materials and other inputs that
+are not themselves reprocessable. They are not automatically errors. Fixed
+components outside the eligible set are retained in the reference output but
+excluded from priced reprocessed-value totals, and the affected item is marked
+incomplete.
+
+The persisted `order_summaries` table includes an `ID` column before the summary
+fields. The shared `get_order_summaries()` helper was corrected to select the
+modeled columns explicitly instead of relying on `SELECT *`. The prototype now
+uses that shared helper, and the correction is covered by the focused market
+summary and hub-fetch test runs.
 
 #### Report metadata
 
@@ -149,10 +195,11 @@ model has been designed and approved.
 
 1. **Reprocessing value report**
 
-   A Markdown report grouped by market path and input item, with hub prices as columns. For each eligible input,
-   show its portion size, assumed yield, recovered materials, material
-   quantities, input market prices, recovered-material market prices, and gross
-   reprocessed values.
+A Markdown report grouped by market path and input item, with hub prices as
+columns. For each eligible input,
+show its portion size, assumed yield, recovered materials, material
+quantities, input market prices, recovered-material market prices, and gross
+reprocessed values.
 
 2. **Reprocessing deals report**
 
@@ -295,12 +342,12 @@ ambiguous.
 
 ### Implementation phases
 
-1. Create a small data inspection script under
+1. **Complete:** Create a small data inspection script under
    `dev/proof-scripts/reprocessing/` to establish eligible type and material
    counts and expose excluded records.
-2. Create the prototype calculations and five-hub market comparison scripts in
-   the same directory.
-3. Generate the Markdown and CSV artifacts under
+2. **In progress:** Create the prototype calculations and five-hub market
+   comparison scripts in the same directory.
+3. **Partially complete:** Generate the Markdown value-report artifact under
    `dev/proof-scripts/proof-output/reprocessing/`.
 4. Review a small known sample and refine the report shape, filters, and
    assumptions in this document.
