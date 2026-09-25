@@ -150,12 +150,28 @@ The current snapshot contained:
   and market-grouped set.
 - All five configured hubs currently have persisted order summaries in the
   market-orders database.
+- In-game verification confirms that `type_materials` quantities represent the
+  recovered materials for the item's `portion_size`, including items with a
+  portion size greater than one.
+- In-game verification confirms that the prototype's reprocessing quantity
+  math and rounding match the observed results.
 
 Types without material records include terminal materials and other inputs that
 are not themselves reprocessable. They are not automatically errors. Fixed
 components outside the eligible set are retained in the reference output but
 excluded from priced reprocessed-value totals, and the affected item is marked
 incomplete.
+
+The full prototype run generated 7,760 input sections, 38,800 value CSV rows,
+and 388,000 deal CSV rows. The deal output is currently a gross comparison and
+should not be treated as an actionable ranking without market-depth quality
+flags. For example, 29,505 of 34,678 Jita summary rows currently have two or
+fewer orders at the 5% depth.
+
+Next refinement: propagate 5% order counts and item quantities into the report
+data, mark sparse sides as thin, and decide whether thin rows should remain in
+the ranked report or only in the comparison CSV. Do not silently discard them
+until that policy is decided.
 
 The persisted `order_summaries` table includes an `ID` column before the summary
 fields. The shared `get_order_summaries()` helper was corrected to select the
@@ -213,9 +229,10 @@ reprocessed values.
 
 3. **Spreadsheet data export**
 
-   A CSV suitable for further analysis. Prefer one row per input, hub, and deal
-   direction, or document the normalized equivalent if the report requires a
-   different shape.
+  A CSV suitable for further analysis. The value-report export uses one row
+  per input item and hub, with input prices, reprocessed values, and missing
+  material data. The later deals export will add one row per input item,
+  source hub, output hub, and deal direction.
 
 ### Report mockups
 
@@ -329,8 +346,9 @@ ambiguous.
 
 ### Verification gates
 
-- Verify that `type_materials` quantities represent one `portion_size` of input
-  items, using an in-game observation that includes a non-1 portion-size item.
+- **Complete:** Verify that `type_materials` quantities represent one
+  `portion_size` of input items, including a non-1 portion-size item, and that
+  the reprocessing math and rounding match in-game results.
 - Confirm the joins and filters for published types, market groups, type names,
   portion sizes, and material components.
 - Flag randomized material definitions for separate review; do not silently
@@ -347,11 +365,16 @@ ambiguous.
    counts and expose excluded records.
 2. **In progress:** Create the prototype calculations and five-hub market
    comparison scripts in the same directory.
-3. **Partially complete:** Generate the Markdown value-report artifact under
-   `dev/proof-scripts/proof-output/reprocessing/`.
+3. **Complete for the value report:** Generate the Markdown and normalized CSV
+  value-report artifacts under `dev/proof-scripts/proof-output/reprocessing/`.
 4. Review a small known sample and refine the report shape, filters, and
    assumptions in this document.
-5. Decide whether the prototype is ready for migration into eve-argus proper.
+5. **Complete for the prototype:** Implement the ranked deals report and its
+  deal-direction CSV export. The report ranks positive gross opportunities,
+  evaluates both deal directions across local and cross-hub pairs, and keeps
+  incomplete rows in the CSV with missing-data flags.
+6. Refine market-depth quality flags and review the full-run outliers.
+7. Decide whether the prototype is ready for migration into eve-argus proper.
 
 ### Deferred work
 
