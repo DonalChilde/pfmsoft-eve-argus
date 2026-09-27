@@ -1,8 +1,11 @@
 """Helpers for filtering market-group type IDs by ancestor paths."""
 
+from warnings import deprecated
+
 from pfmsoft.eve_argus.models.esi.argus_response_models import MarketGroup
 
 
+@deprecated("Argus uses database-based market path filters instead")
 def filter_type_ids_by_market_path(
     market_groups: dict[int, MarketGroup],
     include: set[int] | None = None,
