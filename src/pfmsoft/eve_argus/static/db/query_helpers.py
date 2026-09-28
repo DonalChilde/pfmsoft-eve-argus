@@ -821,7 +821,7 @@ def get_market_groups(connection: sqlite3.Connection) -> ASM.MarketGroupsDataset
 @log_timing(logger=logger, level=_timing_log_level)
 def get_industry_activities(
     connection: sqlite3.Connection,
-) -> ASM.IndustryActivityDataset:
+) -> ASM.IndustryActivitiesDataset:
     """Retrieve all industry activities from the database."""
     rows = connection.execute(
         """
