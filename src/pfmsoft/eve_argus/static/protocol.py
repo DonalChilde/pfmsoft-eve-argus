@@ -230,6 +230,18 @@ class ArgusStaticDBProtocol(Protocol):
         """
         ...
 
+    def metadata(self, connection: Connection) -> Any:
+        """Retrieve the metadata from the static database.
+
+        Args:
+            connection (Connection): The database connection to use.
+
+        Returns:
+            object: The metadata from the static database.
+        """
+        ...
+        # TODO Implement metadata retrieval once the static database defines metadata storage.
+
     def type_materials(self, connection: Connection) -> ASM.TypeMaterialsDataset:
         """Retrieve the dataset of type materials from the static database.
 

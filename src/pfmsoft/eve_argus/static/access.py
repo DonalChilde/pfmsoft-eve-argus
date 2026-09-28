@@ -1,6 +1,7 @@
 """Classes for accessing the Argus static db."""
 
 from sqlite3 import Connection
+from typing import Any
 
 from pfmsoft.eve_argus.models.argus import static as ASM
 from pfmsoft.eve_argus.models.esd import esd_datasets as ESD
@@ -53,6 +54,10 @@ class ArgusStaticDBQuery(ArgusStaticDBProtocol):
     def meta_groups(self, connection: Connection) -> ASM.MetaGroupsDataset:
         """Retrieve meta groups from the Argus static db."""
         return QH.get_meta_groups(connection)
+
+    def metadata(self, connection: Connection) -> Any:
+        """Retrieve the metadata from the Argus static db."""
+        raise NotImplementedError("Metadata retrieval is not implemented yet.")
 
     def type_materials(self, connection: Connection) -> ASM.TypeMaterialsDataset:
         """Retrieve type materials from the Argus static db."""
