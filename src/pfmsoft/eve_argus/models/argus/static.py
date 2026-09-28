@@ -16,8 +16,8 @@ class IndustryActivityRecord:
     name: str
 
 
-IndustryActivityDataset = dict[int, IndustryActivityRecord]
-IndustryActivityDatasetRoot = RootModel[IndustryActivityDataset]
+IndustryActivitiesDataset = dict[int, IndustryActivityRecord]
+IndustryActivitiesDatasetRoot = RootModel[IndustryActivitiesDataset]
 
 
 @dataclass(slots=True, kw_only=True)
