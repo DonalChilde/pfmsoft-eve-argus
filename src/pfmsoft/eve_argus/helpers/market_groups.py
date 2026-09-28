@@ -1,9 +1,6 @@
 """Helpers for filtering market-group type IDs by ancestor paths."""
 
-from pfmsoft.eve_argus.models.argus.static import (
-    MarketGroupsDataset,
-    MarketGroupsRecord,
-)
+from pfmsoft.eve_argus.models.argus.static import MarketGroupsDataset
 
 
 def filter_type_ids_by_market_path(
@@ -51,29 +48,3 @@ def filter_type_ids_by_market_path(
                 continue
             result.difference_update(market_group.types)
     return result
-
-
-def int_path_string(market_group: MarketGroupsRecord, sep: str = "/") -> str:
-    """Converts the integer path of a market group to a string representation.
-
-    Args:
-        market_group: The market group whose integer path is to be converted.
-        sep: The separator to use between path elements. Defaults to "/".
-
-    Returns:
-        A string representation of the market group's integer path.
-    """
-    return sep.join(str(i) for i in market_group.int_path)
-
-
-def str_path_string(market_group: MarketGroupsRecord, sep: str = "/") -> str:
-    """Converts the string path of a market group to a string representation.
-
-    Args:
-        market_group: The market group whose string path is to be converted.
-        sep: The separator to use between path elements. Defaults to "/".
-
-    Returns:
-        A string representation of the market group's string path.
-    """
-    return sep.join(market_group.str_path)

@@ -32,6 +32,28 @@ class MarketGroupsRecord:
     str_path: tuple[str, ...]
     types: tuple[int, ...]
 
+    def int_path_str(self, sep: str = "/") -> str:
+        """Converts the integer path of a market group to a string representation.
+
+        Args:
+            sep: The separator to use between path elements. Defaults to "/".
+
+        Returns:
+            A string representation of the market group's integer path.
+        """
+        return sep.join(str(i) for i in self.int_path)
+
+    def str_path_str(self, sep: str = "/") -> str:
+        """Converts the string path of a market group to a single string representation.
+
+        Args:
+            sep: The separator to use between path elements. Defaults to "/".
+
+        Returns:
+            A string representation of the market group's string path.
+        """
+        return sep.join(self.str_path)
+
 
 MarketGroupsDataset = dict[int, MarketGroupsRecord]
 MarketGroupsDatasetRoot = RootModel[MarketGroupsDataset]
