@@ -50,6 +50,8 @@ class EveArgusSettings:
     """The path to the static database file used by the application."""
     argus_static_database: Path
     """The path to the Argus static database file used by the application."""
+    argus_dynamic_database: Path
+    """The path to the Argus dynamic database file used by the application."""
     market_orders_database: Path
     """The path to the market orders database file used by the application."""
     eve_link_settings: EsiLinkSettings
@@ -177,6 +179,7 @@ def _initialize_settings(application_directory: Path) -> EveArgusSettings:
         logging_directory=application_directory / "logs",
         static_database=application_directory / "static-db.sqlite",
         argus_static_database=application_directory / "argus-static-db.sqlite",
+        argus_dynamic_database=application_directory / "argus-dynamic-db.sqlite",
         market_orders_database=application_directory / "market-orders-db.sqlite",
         eve_link_settings=get_eve_link_settings(
             application_directory=application_directory / "eve_link"

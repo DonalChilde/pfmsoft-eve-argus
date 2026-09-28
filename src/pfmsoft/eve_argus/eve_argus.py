@@ -10,6 +10,9 @@ from pfmsoft.eve_link import EsiLink, EsiSchema, SimpleRequests
 from pfmsoft.eve_sd import EveSdDbQueryManager
 from pfmsoft.eve_snippets.sqlite3.connection_helpers import create_read_write_connection
 
+from pfmsoft.eve_argus.dynamic.db.query_helpers import (
+    load_table_definitions as load_argus_dynamic_table_definitions,
+)
 from pfmsoft.eve_argus.market.orders.db.query_helpers import (
     load_table_definitions as load_order_table_definitions,
 )
@@ -31,6 +34,7 @@ class EveArgusResources:
         self._esi_schema: EsiSchema | None = None
         self._order_db_connection: sqlite3.Connection | None = None
         self._argus_static_db_connection: sqlite3.Connection | None = None
+        self._argus_dynamic_db_connection: sqlite3.Connection | None = None
 
     async def __aenter__(self) -> Self:
         """Enter the async context manager."""
@@ -48,6 +52,10 @@ class EveArgusResources:
         )
         self._argus_static_db_connection = create_read_write_connection(
             self._settings.static_database, load_argus_static_table_definitions()
+        )
+        self._argus_dynamic_db_connection = create_read_write_connection(
+            self._settings.argus_dynamic_database,
+            load_argus_dynamic_table_definitions(),
         )
         end = perf_counter_ns()
         seconds = f"{(end - start) / 1_000_000_000:.6f} s"
@@ -73,6 +81,9 @@ class EveArgusResources:
         if self._argus_static_db_connection is not None:
             self._argus_static_db_connection.close()
             self._argus_static_db_connection = None
+        if self._argus_dynamic_db_connection is not None:
+            self._argus_dynamic_db_connection.close()
+            self._argus_dynamic_db_connection = None
         if self._esi_schema is not None:
             self._esi_schema = None
 
@@ -111,6 +122,24 @@ class EveArgusResources:
                 "EveArgusResources is not initialized. Use 'async with' to initialize."
             )
         return self._order_db_connection
+
+    @property
+    def argus_static_db_connection(self) -> sqlite3.Connection:
+        """Get the Argus static database connection."""
+        if self._argus_static_db_connection is None:
+            raise RuntimeError(
+                "EveArgusResources is not initialized. Use 'async with' to initialize."
+            )
+        return self._argus_static_db_connection
+
+    @property
+    def argus_dynamic_db_connection(self) -> sqlite3.Connection:
+        """Get the Argus dynamic database connection."""
+        if self._argus_dynamic_db_connection is None:
+            raise RuntimeError(
+                "EveArgusResources is not initialized. Use 'async with' to initialize."
+            )
+        return self._argus_dynamic_db_connection
 
 
 __all__ = ["EveArgusResources"]
