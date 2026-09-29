@@ -120,6 +120,7 @@ class ExampleClass:
 - Prefer match case over complicated if then statements.
 - Prefer python language features from the project python version
 - Prefer multiple short functions over one long one, except where this makes the code harder to understand.
+- Data structures should prefer documented, typed, slotted, kw_only dataclasses over typeddicts over raw loosely typed dicts.
 
 ## Non Obvious Patterns
 

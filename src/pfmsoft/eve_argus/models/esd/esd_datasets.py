@@ -3,7 +3,7 @@
 from dataclasses import dataclass, field
 from typing import Any, Self
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 from pfmsoft.eve_argus.models.types import LanguageEnum
 
@@ -19,6 +19,8 @@ class SdeDataset(BaseModel):
     def deserialize(cls, data: str) -> Self:
         """Deserialize the dataset from a JSON string."""
         return cls.model_validate_json(data)
+
+    model_config = ConfigDict(extra="forbid")
 
 
 @dataclass(slots=True, kw_only=True)
@@ -50,6 +52,20 @@ class Blueprint_Activity:
         default_factory=list[Blueprint_Products]
     )
     time: int
+
+    def __post_init__(self) -> None:
+        """Check for duplicate skill entries in the activity."""
+        # If the list of skill requirements contains duplicates, only keep the one with
+        # the highest level.
+        if self.skills:
+            unique_skills: dict[int, Blueprint_Skill] = {}
+            for skill in self.skills:
+                if (
+                    skill.typeID not in unique_skills
+                    or skill.level > unique_skills[skill.typeID].level
+                ):
+                    unique_skills[skill.typeID] = skill
+            self.skills = list(unique_skills.values())
 
 
 @dataclass(slots=True, kw_only=True)
@@ -116,7 +132,7 @@ class TypeMaterialsRecord:
     materials: list[TypeMaterials_Material] | None = field(
         default_factory=list[TypeMaterials_Material]
     )
-    randomized_materials: list[TypeMaterials_RandomizedMaterial] | None = field(
+    randomizedMaterials: list[TypeMaterials_RandomizedMaterial] | None = field(
         default_factory=list[TypeMaterials_RandomizedMaterial]
     )
 
@@ -363,3 +379,253 @@ class GroupsRecord:
 
 class GroupsDataset(SdeDataset):
     dataset: dict[int, GroupsRecord]
+
+
+@dataclass(slots=True, kw_only=True)
+class IndustryActivitiesRecord:
+    """Record for a specific industrial activity.
+
+    - source: dev/tmp/sde-yaml/3464040
+    - records: 6 (key: int)
+    - valid: 6, skipped: 0
+
+    | Field       | Required | Type | Presence |
+    | ----------- | -------- | ---- | -------- |
+    | description | yes      | str  | 6/6      |
+    | name        | yes      | str  | 6/6      |
+    """
+
+    description: str
+    name: str
+
+
+class IndustryActivitiesDataset(SdeDataset):
+    dataset: dict[int, IndustryActivitiesRecord]
+
+
+@dataclass(slots=True, kw_only=True)
+class Position:
+    """A 3d position."""
+
+    x: float
+    y: float
+    z: float
+
+
+@dataclass(slots=True, kw_only=True)
+class MapRegionsRecord:
+    """Record for a specific map region.
+
+    - source: dev/tmp/sde-yaml/3464040
+    - records: 114 (key: int)
+    - valid: 114, skipped: 0
+
+    | Field            | Required | Type        | Presence |
+    | ---------------- | -------- | ----------- | -------- |
+    | constellationIDs | yes      | list[int]   | 114/114  |
+    | description      | no       | Description | 70/114   |
+    | factionID        | no       | int         | 33/114   |
+    | name             | yes      | Name        | 114/114  |
+    | nebulaID         | yes      | int         | 114/114  |
+    | position         | yes      | Position    | 114/114  |
+    | wormholeClassID  | no       | int         | 108/114  |
+    """
+
+    constellationIDs: list[int]
+    description: LocalizedString | None = None
+    factionID: int | None = None
+    name: LocalizedString
+    nebulaID: int
+    position: Position
+    wormholeClassID: int | None = None
+
+    def name_localized(self, language: LanguageEnum = LanguageEnum.EN) -> str:
+        """Get the localized name for the specified language.
+
+        Args:
+            language (LanguageEnum): The language code (default: LanguageEnum.EN).
+
+        Returns:
+            str: The localized name.
+        """
+        return getattr(self.name, language, self.name.en)
+
+    def description_localized(self, language: LanguageEnum = LanguageEnum.EN) -> str:
+        """Get the localized description for the specified language.
+
+        Args:
+            language (LanguageEnum): The language code (default: LanguageEnum.EN).
+
+        Returns:
+            str: The localized description.
+        """
+        if self.description is None:
+            return "NOT_DEFINED"
+        return getattr(self.description, language, self.description.en)
+
+
+class MapRegionsDataset(SdeDataset):
+    dataset: dict[int, MapRegionsRecord]
+
+
+@dataclass(slots=True, kw_only=True)
+class MapConstellationsRecord:
+    """Record for a specific map constellation.
+
+    - source: dev/tmp/sde-yaml/3464040
+    - records: 1184 (key: int)
+    - valid: 1184, skipped: 0
+
+    | Field           | Required | Type      | Presence  |
+    | --------------- | -------- | --------- | --------- |
+    | factionID       | no       | int       | 386/1184  |
+    | name            | yes      | Name      | 1184/1184 |
+    | position        | yes      | Position  | 1184/1184 |
+    | regionID        | yes      | int       | 1184/1184 |
+    | solarSystemIDs  | yes      | list[int] | 1184/1184 |
+    | wormholeClassID | no       | int       | 1127/1184 |
+    """
+
+    factionID: int | None = None
+    name: LocalizedString
+    position: Position
+    regionID: int
+    solarSystemIDs: list[int]
+    wormholeClassID: int | None = None
+
+    def name_localized(self, language: LanguageEnum = LanguageEnum.EN) -> str:
+        """Get the localized name for the specified language.
+
+        Args:
+            language (LanguageEnum): The language code (default: LanguageEnum.EN).
+
+        Returns:
+            str: The localized name.
+        """
+        return getattr(self.name, language, self.name.en)
+
+
+class MapConstellationsDataset(SdeDataset):
+    dataset: dict[int, MapConstellationsRecord]
+
+
+@dataclass(slots=True, kw_only=True)
+class Position2D:
+    x: float
+    y: float
+
+
+@dataclass(slots=True, kw_only=True)
+class MapSolarSystemsRecord:
+    """Record for a specific map solar system.
+
+    - source: dev/tmp/sde-yaml/3464040
+    - records: 8490 (key: int)
+    - valid: 8490, skipped: 0
+
+    | Field                      | Required | Type       | Presence  |
+    | -------------------------- | -------- | ---------- | --------- |
+    | border                     | no       | bool       | 2012/8490 |
+    | constellationID            | yes      | int        | 8490/8490 |
+    | corridor                   | no       | bool       | 1931/8490 |
+    | disallowedAnchorCategories | no       | list[int]  | 591/8490  |
+    | disallowedAnchorGroups     | no       | list[int]  | 79/8490   |
+    | factionID                  | no       | int        | 70/8490   |
+    | fringe                     | no       | bool       | 787/8490  |
+    | hub                        | no       | bool       | 2715/8490 |
+    | international              | no       | bool       | 109/8490  |
+    | luminosity                 | no       | float      | 5484/8490 |
+    | name                       | yes      | Name       | 8490/8490 |
+    | planetIDs                  | no       | list[int]  | 8088/8490 |
+    | position                   | yes      | Position   | 8490/8490 |
+    | position2D                 | no       | Position2D | 5485/8490 |
+    | radius                     | yes      | float      | 8490/8490 |
+    | regionID                   | yes      | int        | 8490/8490 |
+    | regional                   | no       | bool       | 542/8490  |
+    | securityClass              | no       | str        | 5193/8490 |
+    | securityStatus             | yes      | float      | 8490/8490 |
+    | starID                     | no       | int        | 8089/8490 |
+    | stargateIDs                | no       | list[int]  | 5268/8490 |
+    | visualEffect               | no       | str        | 130/8490  |
+    | wormholeClassID            | no       | int        | 692/8490  |
+    """
+
+    border: bool | None = None
+    constellationID: int
+    corridor: bool | None = None
+    disallowedAnchorCategories: list[int] | None = None
+    disallowedAnchorGroups: list[int] | None = None
+    factionID: int | None = None
+    fringe: bool | None = None
+    hub: bool | None = None
+    international: bool | None = None
+    luminosity: float | None = None
+    name: LocalizedString
+    planetIDs: list[int] | None = None
+    position: Position
+    position2D: Position2D | None = None
+    radius: float
+    regionID: int
+    regional: bool | None = None
+    securityClass: str | None = None
+    securityStatus: float
+    starID: int | None = None
+    stargateIDs: list[int] | None = None
+    visualEffect: str | None = None
+    wormholeClassID: int | None = None
+
+
+class MapSolarSystemsDataset(SdeDataset):
+    dataset: dict[int, MapSolarSystemsRecord]
+
+
+@dataclass(slots=True, kw_only=True)
+class MarketGroupsRecord:
+    """Record for market groups.
+
+    - source: dev/tmp/sde-yaml/3464040
+    - records: 2106 (key: int)
+    - valid: 2106, skipped: 0
+
+    | Field         | Required | Type        | Presence  |
+    | ------------- | -------- | ----------- | --------- |
+    | description   | no       | Description | 1582/2106 |
+    | hasTypes      | yes      | bool        | 2106/2106 |
+    | iconID        | no       | int         | 2076/2106 |
+    | name          | yes      | Name        | 2106/2106 |
+    | parentGroupID | no       | int         | 2087/2106 |
+    """
+
+    description: LocalizedString | None = None
+    hasTypes: bool
+    iconID: int | None = None
+    name: LocalizedString
+    parentGroupID: int | None = None
+
+    def name_localized(self, language: LanguageEnum = LanguageEnum.EN) -> str:
+        """Get the localized name for the specified language.
+
+        Args:
+            language (LanguageEnum): The language code (default: LanguageEnum.EN).
+
+        Returns:
+            str: The localized name.
+        """
+        return getattr(self.name, language, self.name.en)
+
+    def description_localized(self, language: LanguageEnum = LanguageEnum.EN) -> str:
+        """Get the localized description for the specified language.
+
+        Args:
+            language (LanguageEnum): The language code (default: LanguageEnum.EN).
+
+        Returns:
+            str: The localized description.
+        """
+        if self.description is None:
+            return "NOT_DEFINED"
+        return getattr(self.description, language, self.description.en)
+
+
+class MarketGroupsDataset(SdeDataset):
+    dataset: dict[int, MarketGroupsRecord]

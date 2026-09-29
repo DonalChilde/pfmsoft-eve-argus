@@ -292,7 +292,13 @@ def get_order_summaries(
     location_id: int | None = None,
 ) -> list[OrderSummaryItem]:
     """Retrieve order summaries for a specific region, optionally filtered by system and location."""
-    query = "SELECT * FROM order_summaries WHERE region_id = ?"
+    query = """
+        SELECT region_id, type_id, system_id, location_id, is_buy_summary,
+            five_price, five_orders, five_items, lowest, highest,
+            total_items, total_orders, average, filtered_items, filtered_orders
+        FROM order_summaries
+        WHERE region_id = ?
+    """
     params: list[int] = [region_id]
     if system_id is not None:
         query += " AND system_id = ?"
