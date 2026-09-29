@@ -67,3 +67,18 @@ CREATE TABLE IF NOT EXISTS corporation_jobs(
     response_metadata_id INTEGER,
     FOREIGN KEY(response_metadata_id) REFERENCES response_metadata(id)
 )STRICT;
+
+CREATE TABLE IF NOT EXISTS corporation_blueprints(
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    corporation_id INTEGER NOT NULL,
+    item_id INTEGER NOT NULL, -- the unique identifier for the blueprint item.
+    type_id INTEGER NOT NULL, -- the type ID of the blueprint.
+    location_id INTEGER NOT NULL, -- the location ID where the blueprint is stored.
+    location_flag TEXT NOT NULL, -- the flag indicating the type of location of the blueprint within the location_id.
+    quantity INTEGER NOT NULL, -- -1 for BPO, -2 for BPC, >0 for unprocessed stack of BPO.
+    time_efficiency INTEGER,
+    material_efficiency INTEGER,
+    runs INTEGER NOT NULL, -- -1 for BPO, or number of runs for BPC.
+    response_metadata_id INTEGER,
+    FOREIGN KEY(response_metadata_id) REFERENCES response_metadata(id)
+)STRICT;
