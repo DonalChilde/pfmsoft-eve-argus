@@ -21,8 +21,8 @@ CREATE TABLE IF NOT EXISTS request_metadata(
 CREATE TABLE IF NOT EXISTS universe_prices(
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     type_id INTEGER NOT NULL,
-    average_price INTEGER, -- stored as an integer for precision. Prices are assumed to be 0.00 format
-    adjusted_price INTEGER, -- stored as an integer for precision. Prices are assumed to be 0.00 format
+    average_price INTEGER, -- stored as an integer for precision. Values are assumed to be 0.00 format
+    adjusted_price INTEGER, -- stored as an integer for precision. Values are assumed to be 0.00 format
     response_metadata_id INTEGER,
     FOREIGN KEY(response_metadata_id) REFERENCES response_metadata(id)
 )STRICT;
@@ -42,7 +42,28 @@ CREATE TABLE IF NOT EXISTS cost_indices(
 CREATE TABLE IF NOT EXISTS corporation_jobs(
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     corporation_id INTEGER NOT NULL,
-    -- Additional columns for corporation jobs can be added here as needed
+    activity_id INTEGER NOT NULL,
+    blueprint_id INTEGER NOT NULL,
+    blueprint_location_id INTEGER NOT NULL,
+    blueprint_type_id INTEGER NOT NULL,
+    completed_character_id INTEGER,
+    completed_date TEXT,
+    cost INTEGER, -- stored as an integer for precision. Values are assumed to be 0.00 format
+    duration INTEGER NOT NULL,
+    end_date TEXT NOT NULL,
+    facility_id INTEGER NOT NULL,
+    installer_id INTEGER NOT NULL,
+    job_id INTEGER NOT NULL,
+    licensed_runs INTEGER,
+    location_id INTEGER NOT NULL,
+    output_location_id INTEGER NOT NULL,
+    pause_date TEXT,
+    probability REAL,
+    product_type_id INTEGER,
+    runs INTEGER NOT NULL,
+    start_date TEXT NOT NULL,
+    status TEXT NOT NULL,
+    successful_runs INTEGER,
     response_metadata_id INTEGER,
     FOREIGN KEY(response_metadata_id) REFERENCES response_metadata(id)
 )STRICT;
