@@ -3,6 +3,7 @@
 from decimal import ROUND_HALF_UP, Decimal
 
 _CURRENCY_QUANTUM = Decimal("0.01")
+_DECIMAL_100 = Decimal("100")
 
 
 def as_currency(value: Decimal) -> Decimal:
@@ -20,12 +21,12 @@ def to_cents(amount: Decimal | float | str) -> int:
         decimal_amount = Decimal(str(amount))
     else:
         decimal_amount = amount
-    return int(decimal_amount.quantize(Decimal("0.01")) * 100)
+    return int(decimal_amount.quantize(_CURRENCY_QUANTUM) * _DECIMAL_100)
 
 
 def from_cents(cents: int) -> Decimal:
     """Divide integer cents by Decimal('100') to retain precision."""
-    return Decimal(cents) / Decimal("100")
+    return Decimal(cents) / _DECIMAL_100
 
 
 def to_cents_precision(amount: Decimal | float | str, precision: int) -> int:

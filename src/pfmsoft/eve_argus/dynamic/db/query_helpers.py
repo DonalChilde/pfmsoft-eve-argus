@@ -9,7 +9,7 @@ Write functions that insert primary records from a response need to:
 # The definition for this database lives at src/pfmsoft/eve_argus/dynamic/db/table_definitions.sql
 import logging
 from sqlite3 import Connection
-from typing import cast
+from typing import Any, cast
 
 from pfmsoft.eve_argus.helpers.currency import to_cents
 from pfmsoft.eve_argus.helpers.timing import log_timing
@@ -95,3 +95,76 @@ def write_universe_prices(
                 for price in universe_prices.markets_prices
             ),
         )
+
+
+def write_market_orders(
+    connection: Connection,
+    market_orders: ERM.GetMarketsRegionIdOrders,
+) -> None:
+    """Write the market orders to the database."""
+    with connection:
+        response_metadata_id = write_response_metadata(
+            connection,
+            received_at=market_orders.received_at,
+            expires_at=market_orders.expires_at,
+            argus_expires_at=None,
+        )
+        region_id = market_orders.region_id
+        # update the get_markets_region_id_orders_response table
+        connection.execute(
+            """
+            INSERT INTO get_markets_region_id_orders_response (
+                response_metadata_id, region_id
+            )
+            VALUES (?, ?)
+            """,
+            (response_metadata_id, region_id),
+        )
+        connection.executemany(
+            """
+            INSERT INTO market_orders (
+                response_metadata_id, region_id, duration, is_buy_order, issued,
+                location_id, min_volume, order_id, price, range_, system_id,
+                type_id, volume_remain, volume_total
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                (
+                    response_metadata_id,
+                    region_id,
+                    order.duration,
+                    order.is_buy_order,
+                    order.issued,
+                    order.location_id,
+                    order.min_volume,
+                    order.order_id,
+                    to_cents(order.price),
+                    order.range,
+                    order.system_id,
+                    order.type_id,
+                    order.volume_remain,
+                    order.volume_total,
+                )
+                for order in market_orders.orders
+            ),
+        )
+
+
+def write_order_summaries(
+    connection: Connection,
+    order_summaries: Any,
+) -> None:
+    """Write the order summaries to the database."""
+    raise NotImplementedError()
+
+
+def write_system_cost_indices(
+    connection: Connection,
+    system_cost_indices: ERM.GetIndustrySystems,
+) -> None:
+    """Write the system cost indices to the database."""
+    # Needs a helper function to round trip 0.0000 float numbers, the db stores them as ints.
+    # See to_cents function for an example of how this is handled with currency values.
+    # for convenience these helpers can be kept in the currency.py module alongside to_cents and from_cents.
+    raise NotImplementedError()

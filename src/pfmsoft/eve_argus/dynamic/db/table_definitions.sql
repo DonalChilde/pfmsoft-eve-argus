@@ -3,6 +3,7 @@
 
 PRAGMA foreign_keys = ON;
 
+-- This table stores metadata about API responses, including when they were received and when they expire.
 CREATE TABLE IF NOT EXISTS response_metadata(
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     received_at TEXT NOT NULL,
@@ -10,7 +11,7 @@ CREATE TABLE IF NOT EXISTS response_metadata(
     argus_expires_at TEXT -- included to allow custom expiration handling
 )STRICT;
 
--- GetMarketsRegionIdOrders
+-- GetMarketsRegionIdOrders API response metadata link.
 CREATE TABLE IF NOT EXISTS get_markets_region_id_orders_response(
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     response_metadata_id INTEGER,
@@ -18,7 +19,7 @@ CREATE TABLE IF NOT EXISTS get_markets_region_id_orders_response(
     FOREIGN KEY(response_metadata_id) REFERENCES response_metadata(id)
 ) STRICT;
 
--- This table is used to store individual market orders linked to a response
+-- This table stores records from the GetMarketsRegionIdOrders API response.
 CREATE TABLE IF NOT EXISTS market_orders (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     response_metadata_id INTEGER,
@@ -68,6 +69,8 @@ CREATE TABLE IF NOT EXISTS get_markets_prices_response(
     FOREIGN KEY(response_metadata_id) REFERENCES response_metadata(id)
 ) STRICT;
 
+-- This table stores the records from the GetMarketsPrices API response
+-- The table name is different to more clearly reflect the data stored.
 CREATE TABLE IF NOT EXISTS universe_prices(
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     type_id INTEGER NOT NULL,
@@ -84,7 +87,9 @@ CREATE TABLE IF NOT EXISTS get_industry_systems_response(
     FOREIGN KEY(response_metadata_id) REFERENCES response_metadata(id)
 ) STRICT;
 
-CREATE TABLE IF NOT EXISTS cost_indices(
+-- This table stores the records from the GetIndustrySystems API response
+-- The table name is different to more clearly reflect the data stored.
+CREATE TABLE IF NOT EXISTS system_cost_indices(
     system_id INTEGER PRIMARY KEY,
     copying INTEGER, -- stored as an integer for precision. Values are assumed to be 0.0000 format
     manufacturing INTEGER, -- stored as an integer for precision. Values are assumed to be 0.0000 format
@@ -104,7 +109,8 @@ CREATE TABLE IF NOT EXISTS get_corporations_corporation_id_industry_jobs_respons
     FOREIGN KEY(response_metadata_id) REFERENCES response_metadata(id)
 ) STRICT;
 
-CREATE TABLE IF NOT EXISTS corporation_jobs(
+-- This table stores the records from the GetCorporationsCorporationIdIndustryJobs API response
+CREATE TABLE IF NOT EXISTS corporation_industry_jobs(
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     corporation_id INTEGER NOT NULL,
     activity_id INTEGER NOT NULL,
@@ -141,6 +147,7 @@ CREATE TABLE IF NOT EXISTS get_corporations_corporation_id_blueprints_response(
     FOREIGN KEY(response_metadata_id) REFERENCES response_metadata(id) 
 ) STRICT;
 
+-- This table stores the records from the GetCorporationsCorporationIdBlueprints API response
 CREATE TABLE IF NOT EXISTS corporation_blueprints(
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     corporation_id INTEGER NOT NULL,
