@@ -12,6 +12,7 @@ from dataclasses import astuple, dataclass
 from sqlite3 import Connection
 from typing import Any, cast
 
+from pfmsoft.eve_argus.dynamic.db import models
 from pfmsoft.eve_argus.helpers.currency import (
     to_cents,
     to_four_places,
@@ -412,3 +413,47 @@ def write_corporation_blueprints(
             """,
             (astuple(row) for row in rows),
         )
+
+
+def get_response_metadata(
+    connection: Connection, response_metadata_ids: set[int] | None
+) -> list[models.ResponseMetadata]:
+    """Get response metadata by IDs.
+
+    Args:
+        connection: sqlite3 db connection.
+        response_metadata_ids: IDs to fetch. If None, fetch all.
+
+    Returns:
+        List of response metadata.
+    """
+    query = """
+        SELECT id, received_at, expires_at, argus_expires_at
+        FROM response_metadata
+    """
+    parameters: tuple[int, ...] = ()
+    if response_metadata_ids is not None:
+        if not response_metadata_ids:
+            return []
+        placeholders = ", ".join("?" for _ in response_metadata_ids)
+        query += f" WHERE id IN ({placeholders})"
+        parameters = tuple(response_metadata_ids)
+    query += " ORDER BY id"
+
+    return [
+        models.ResponseMetadata(
+            response_metadata_id=row[0],
+            received_at=row[1],
+            expires_at=row[2],
+            argus_expires_at=row[3],
+        )
+        for row in connection.execute(query, parameters)
+    ]
+
+
+def get_universe_prices_responses(
+    connection: Connection,
+) -> list[models.UniversePricesResponse]: ...
+def get_universe_prices(
+    connection: Connection, response_metadata_id: int
+) -> models.UniversePriceDataset: ...
