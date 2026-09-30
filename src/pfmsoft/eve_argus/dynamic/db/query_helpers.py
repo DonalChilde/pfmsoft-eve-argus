@@ -11,7 +11,12 @@ import logging
 from sqlite3 import Connection
 from typing import Any, cast
 
-from pfmsoft.eve_argus.helpers.currency import to_cents
+from pfmsoft.eve_argus.helpers.currency import (
+    from_cents,
+    from_four_places,
+    to_cents,
+    to_four_places,
+)
 from pfmsoft.eve_argus.helpers.timing import log_timing
 from pfmsoft.eve_argus.models.esi import esi_response_models as ERM
 
@@ -164,7 +169,4 @@ def write_system_cost_indices(
     system_cost_indices: ERM.GetIndustrySystems,
 ) -> None:
     """Write the system cost indices to the database."""
-    # Needs a helper function to round trip 0.0000 float numbers, the db stores them as ints.
-    # See to_cents function for an example of how this is handled with currency values.
-    # for convenience these helpers can be kept in the currency.py module alongside to_cents and from_cents.
-    raise NotImplementedError()
+    ...
