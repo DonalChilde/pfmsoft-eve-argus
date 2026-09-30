@@ -8,12 +8,11 @@ Write functions that insert primary records from a response need to:
 
 # The definition for this database lives at src/pfmsoft/eve_argus/dynamic/db/table_definitions.sql
 import logging
+from dataclasses import astuple, dataclass
 from sqlite3 import Connection
 from typing import Any, cast
 
 from pfmsoft.eve_argus.helpers.currency import (
-    from_cents,
-    from_four_places,
     to_cents,
     to_four_places,
 )
@@ -57,6 +56,7 @@ def write_response_metadata(
         return cast(int, cursor.lastrowid)
 
 
+@log_timing(logger=logger, level=_timing_log_level)
 def write_universe_prices(
     connection: Connection,
     universe_prices: ERM.GetMarketsPrices,
@@ -102,6 +102,7 @@ def write_universe_prices(
         )
 
 
+@log_timing(logger=logger, level=_timing_log_level)
 def write_market_orders(
     connection: Connection,
     market_orders: ERM.GetMarketsRegionIdOrders,
@@ -156,6 +157,7 @@ def write_market_orders(
         )
 
 
+@log_timing(logger=logger, level=_timing_log_level)
 def write_order_summaries(
     connection: Connection,
     order_summaries: Any,
@@ -164,9 +166,106 @@ def write_order_summaries(
     raise NotImplementedError()
 
 
+@log_timing(logger=logger, level=_timing_log_level)
 def write_system_cost_indices(
     connection: Connection,
     system_cost_indices: ERM.GetIndustrySystems,
 ) -> None:
     """Write the system cost indices to the database."""
+    activity_columns = {
+        ERM.CostIndicesActivity.COPYING: "copying",
+        ERM.CostIndicesActivity.MANUFACTURING: "manufacturing",
+        ERM.CostIndicesActivity.INVENTION: "invention",
+        ERM.CostIndicesActivity.REACTION: "reaction",
+        ERM.CostIndicesActivity.RESEARCHING_MATERIAL_EFFICIENCY: (
+            "researching_material_efficiency"
+        ),
+        ERM.CostIndicesActivity.RESEARCHING_TIME_EFFICIENCY: (
+            "researching_time_efficiency"
+        ),
+    }
+
+    def to_stored_precision(value: float) -> int:
+        return to_four_places(value)
+
+    with connection:
+        response_metadata_id = write_response_metadata(
+            connection,
+            received_at=system_cost_indices.received_at,
+            expires_at=system_cost_indices.expires_at,
+            argus_expires_at=None,
+        )
+        connection.execute(
+            """
+            INSERT INTO get_industry_systems_response (response_metadata_id)
+            VALUES (?)
+            """,
+            (response_metadata_id,),
+        )
+
+        @dataclass(slots=True)
+        class SystemCostIndexRow:
+            system_id: int
+            copying: int | None
+            manufacturing: int | None
+            invention: int | None
+            reaction: int | None
+            researching_material_efficiency: int | None
+            researching_time_efficiency: int | None
+            response_metadata_id: int
+
+        rows: list[SystemCostIndexRow] = []
+        for system in system_cost_indices.industry_systems:
+            values: dict[str, int | None] = {
+                column: None for column in activity_columns.values()
+            }
+            for index in system.cost_indices:
+                column = activity_columns.get(index.activity)
+                if column is None:
+                    raise ValueError(
+                        f"Unsupported industry cost index activity: {index.activity}"
+                    )
+                values[column] = to_stored_precision(index.cost_index)
+
+            rows.append(
+                SystemCostIndexRow(
+                    system_id=system.solar_system_id,
+                    copying=values["copying"],
+                    manufacturing=values["manufacturing"],
+                    invention=values["invention"],
+                    reaction=values["reaction"],
+                    researching_material_efficiency=values[
+                        "researching_material_efficiency"
+                    ],
+                    researching_time_efficiency=values["researching_time_efficiency"],
+                    response_metadata_id=response_metadata_id,
+                )
+            )
+
+        connection.executemany(
+            """
+            INSERT INTO system_cost_indices (
+                system_id, copying, manufacturing, invention, reaction,
+                researching_material_efficiency, researching_time_efficiency,
+                response_metadata_id
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (astuple(row) for row in rows),
+        )
+
+
+@log_timing(logger=logger, level=_timing_log_level)
+def write_corporation_industry_jobs(
+    connection: Connection, jobs: ERM.GetCorporationsCorporationIdIndustryJobs
+):
+    """Write corporation industry jobs to the database."""
+    ...
+
+
+@log_timing(logger=logger, level=_timing_log_level)
+def write_corporation_blueprints(
+    connection: Connection, blueprints: ERM.GetCorporationsCorporationIdBlueprints
+):
+    """Write corporation blueprints to the database."""
     ...

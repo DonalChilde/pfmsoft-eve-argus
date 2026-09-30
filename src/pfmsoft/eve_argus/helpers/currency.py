@@ -18,7 +18,15 @@ def as_currency(value: Decimal) -> Decimal:
 
 
 def to_cents(value: Decimal | float | str) -> int:
-    """Quantize ensures 2 decimal places, then convert to integer cents."""
+    """Quantize ensures 2 decimal places, then convert to integer.
+
+    Example:
+        to_cents(Decimal("1.23")) -> 123
+        to_cents(1.23) -> 123
+        to_cents("1.23") -> 123
+        to_cents(1) -> 100
+        to_cents("1.236") -> 124
+    """
     match value:
         case Decimal():
             decimal_amount = value
@@ -34,8 +42,13 @@ def from_cents(cents: int) -> Decimal:
     return Decimal(cents) / _DECIMAL_100
 
 
-def to_four_places(value: Decimal | float | str) -> Decimal:
-    """Round a monetary value to four decimal places."""
+def to_four_places(value: Decimal | float | str) -> int:
+    """Quantize ensures 4 decimal places, then convert to integer.
+
+    Example:
+        to_four_places(Decimal("1.23456")) -> 12346
+        to_four_places(Decimal("1.2345")) -> 12345
+    """
     match value:
         case Decimal():
             decimal_value = value
@@ -43,7 +56,10 @@ def to_four_places(value: Decimal | float | str) -> Decimal:
             decimal_value = Decimal(str(value))
         case _:
             raise TypeError("Value must be a Decimal, float, or str")
-    return decimal_value.quantize(_DECIMAL_10000, rounding=ROUND_HALF_UP)
+    return int(
+        decimal_value.quantize(_FOUR_PLACES_QUANTUM, rounding=ROUND_HALF_UP)
+        * _DECIMAL_10000
+    )
 
 
 def from_four_places(value: Decimal | int) -> Decimal:
