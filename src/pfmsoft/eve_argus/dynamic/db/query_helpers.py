@@ -14,6 +14,7 @@ from typing import Any, cast
 
 from pfmsoft.eve_argus.dynamic.db import models
 from pfmsoft.eve_argus.helpers.currency import (
+    from_cents,
     to_cents,
     to_four_places,
 )
@@ -415,6 +416,7 @@ def write_corporation_blueprints(
         )
 
 
+@log_timing(logger=logger, level=_timing_log_level)
 def get_response_metadata(
     connection: Connection, response_metadata_ids: set[int] | None
 ) -> list[models.ResponseMetadata]:
@@ -451,9 +453,86 @@ def get_response_metadata(
     ]
 
 
+@log_timing(logger=logger, level=_timing_log_level)
 def get_universe_prices_responses(
     connection: Connection,
-) -> list[models.UniversePricesResponse]: ...
+) -> list[models.UniversePricesResponse]:
+    """Get metadata for all stored universe prices responses."""
+    return [
+        models.UniversePricesResponse(
+            response_metadata_id=row[0],
+            received_at=row[1],
+            expires_at=row[2],
+            argus_expires_at=row[3],
+        )
+        for row in connection.execute(
+            """
+            SELECT metadata.id, metadata.received_at, metadata.expires_at,
+                   metadata.argus_expires_at
+            FROM get_markets_prices_response AS response
+            JOIN response_metadata AS metadata
+                ON metadata.id = response.response_metadata_id
+            ORDER BY metadata.id
+            """
+        )
+    ]
+
+
+@log_timing(logger=logger, level=_timing_log_level)
 def get_universe_prices(
     connection: Connection, response_metadata_id: int
-) -> models.UniversePriceDataset: ...
+) -> models.UniversePriceDataset:
+    """Get a universe prices dataset by response metadata ID.
+
+    Args:
+        connection: SQLite database connection.
+        response_metadata_id: ID identifying the stored universe prices response.
+
+    Returns:
+        The response metadata and universe price records indexed by type ID.
+
+    Raises:
+        ValueError: If the ID does not identify a stored universe prices response.
+    """
+    metadata = connection.execute(
+        """
+        SELECT metadata.id, metadata.received_at, metadata.expires_at,
+               metadata.argus_expires_at
+        FROM get_markets_prices_response AS response
+        JOIN response_metadata AS metadata
+            ON metadata.id = response.response_metadata_id
+        WHERE metadata.id = ?
+        """,
+        (response_metadata_id,),
+    ).fetchone()
+    if metadata is None:
+        raise ValueError(
+            "No universe prices response found for response metadata ID "
+            f"{response_metadata_id}"
+        )
+
+    records = {
+        row[0]: models.UniversePriceRecord(
+            type_id=row[0],
+            average_price=from_cents(row[1]) if row[1] is not None else None,
+            adjusted_price=from_cents(row[2]) if row[2] is not None else None,
+            response_metadata_id=row[3],
+        )
+        for row in connection.execute(
+            """
+            SELECT type_id, average_price, adjusted_price, response_metadata_id
+            FROM universe_prices
+            WHERE response_metadata_id = ?
+            ORDER BY type_id
+            """,
+            (response_metadata_id,),
+        )
+    }
+
+    return models.UniversePriceDataset(
+        response_metadata_id=metadata[0],
+        received_at=metadata[1],
+        expires_at=metadata[2],
+        argus_expires_at=metadata[3],
+        records=records,
+    )
