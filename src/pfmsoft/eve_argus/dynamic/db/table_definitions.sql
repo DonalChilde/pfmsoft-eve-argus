@@ -1,4 +1,5 @@
 -- Table definitions for the Argus dynamic database.
+-- This database stores data retrieved from the EVE Online API.
 
 PRAGMA foreign_keys = ON;
 
@@ -9,14 +10,63 @@ CREATE TABLE IF NOT EXISTS response_metadata(
     argus_expires_at TEXT -- included to allow custom expiration handling
 )STRICT;
 
--- Table for storing request metadata, linked to response metadata.
--- Not sure if this will be used. maybe store all data in response table row?
-CREATE TABLE IF NOT EXISTS request_metadata(
+-- GetMarketsRegionIdOrders
+CREATE TABLE IF NOT EXISTS get_markets_region_id_orders_response(
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    metadata_json TEXT,
+    response_metadata_id INTEGER,
+    region_id INTEGER NOT NULL,
+    FOREIGN KEY(response_metadata_id) REFERENCES response_metadata(id)
+) STRICT;
+
+-- This table is used to store individual market orders linked to a response
+CREATE TABLE IF NOT EXISTS market_orders (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    response_metadata_id INTEGER,
+    region_id INTEGER NOT NULL,
+    duration INTEGER NOT NULL,
+    is_buy_order INTEGER NOT NULL,
+    issued TEXT NOT NULL,
+    location_id INTEGER NOT NULL,
+    min_volume INTEGER NOT NULL,
+    order_id INTEGER NOT NULL,
+    price INTEGER NOT NULL, -- stored as an integer for precision. Values are assumed to be 0.00 format
+    range_ TEXT NOT NULL,
+    system_id INTEGER NOT NULL,
+    type_id INTEGER NOT NULL,
+    volume_remain INTEGER NOT NULL,
+    volume_total INTEGER NOT NULL,
+    FOREIGN KEY(response_metadata_id) REFERENCES response_metadata(id)
+) STRICT;
+
+-- This table is used to store summarized market order data for a specific region, type, solar system, and location combination
+CREATE TABLE IF NOT EXISTS order_summaries (
+    ID INTEGER PRIMARY KEY AUTOINCREMENT,
+    response_metadata_id INTEGER,
+    region_id INTEGER NOT NULL,
+    type_id INTEGER NOT NULL,
+    system_id INTEGER,
+    location_id INTEGER,
+    is_buy_summary INTEGER NOT NULL,
+    five_price INTEGER NOT NULL,
+    five_orders INTEGER NOT NULL,
+    five_items INTEGER NOT NULL,
+    lowest INTEGER NOT NULL,
+    highest INTEGER NOT NULL,
+    average INTEGER NOT NULL,
+    total_items INTEGER NOT NULL,
+    total_orders INTEGER NOT NULL,
+    filtered_items INTEGER NOT NULL,
+    filtered_orders INTEGER NOT NULL,
+    UNIQUE (region_id, type_id, system_id, location_id),
+    FOREIGN KEY(response_metadata_id) REFERENCES response_metadata(id)
+) STRICT;
+
+-- GetMarketsPrices
+CREATE TABLE IF NOT EXISTS get_markets_prices_response(
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
     response_metadata_id INTEGER,
     FOREIGN KEY(response_metadata_id) REFERENCES response_metadata(id)
-)STRICT;
+) STRICT;
 
 CREATE TABLE IF NOT EXISTS universe_prices(
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -26,6 +76,13 @@ CREATE TABLE IF NOT EXISTS universe_prices(
     response_metadata_id INTEGER,
     FOREIGN KEY(response_metadata_id) REFERENCES response_metadata(id)
 )STRICT;
+
+-- GetIndustrySystems
+CREATE TABLE IF NOT EXISTS get_industry_systems_response(
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    response_metadata_id INTEGER,
+    FOREIGN KEY(response_metadata_id) REFERENCES response_metadata(id)
+) STRICT;
 
 CREATE TABLE IF NOT EXISTS cost_indices(
     system_id INTEGER PRIMARY KEY,
@@ -38,6 +95,14 @@ CREATE TABLE IF NOT EXISTS cost_indices(
     response_metadata_id INTEGER,
     FOREIGN KEY(response_metadata_id) REFERENCES response_metadata(id)
 )STRICT;
+
+-- GetCorporationsCorporationIdIndustryJobs
+CREATE TABLE IF NOT EXISTS get_corporations_corporation_id_industry_jobs_response(
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    response_metadata_id INTEGER,
+    corporation_id INTEGER NOT NULL,
+    FOREIGN KEY(response_metadata_id) REFERENCES response_metadata(id)
+) STRICT;
 
 CREATE TABLE IF NOT EXISTS corporation_jobs(
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -67,6 +132,14 @@ CREATE TABLE IF NOT EXISTS corporation_jobs(
     response_metadata_id INTEGER,
     FOREIGN KEY(response_metadata_id) REFERENCES response_metadata(id)
 )STRICT;
+
+-- GetCorporationsCorporationIdBlueprints
+CREATE TABLE IF NOT EXISTS get_corporations_corporation_id_blueprints_response(
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    response_metadata_id INTEGER,
+    corporation_id INTEGER NOT NULL,
+    FOREIGN KEY(response_metadata_id) REFERENCES response_metadata(id) 
+) STRICT;
 
 CREATE TABLE IF NOT EXISTS corporation_blueprints(
     id INTEGER PRIMARY KEY AUTOINCREMENT,

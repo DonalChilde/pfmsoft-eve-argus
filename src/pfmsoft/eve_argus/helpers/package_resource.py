@@ -3,7 +3,7 @@
 from importlib.resources import files as resource_files
 
 
-def load_package_resouce_text(package: str, resource_name: str) -> str:
+def load_package_resource_text(package: str, resource_name: str) -> str:
     """Load a resource from the package as text.
 
     Args:

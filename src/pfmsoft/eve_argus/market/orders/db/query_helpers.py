@@ -7,7 +7,7 @@ from decimal import Decimal
 
 from pfmsoft.eve_argus.data_transform.order_summaries import OrderSummaryItem
 from pfmsoft.eve_argus.helpers.currency import from_cents, to_cents
-from pfmsoft.eve_argus.helpers.package_resource import load_package_resouce_text
+from pfmsoft.eve_argus.helpers.package_resource import load_package_resource_text
 from pfmsoft.eve_argus.models.esi import argus_response_models as ARM
 from pfmsoft.eve_argus.models.esi import esi_response_models as ERM
 from pfmsoft.eve_argus.models.esi.argus_response_models import RegionMarketOrders
@@ -18,7 +18,7 @@ _table_def_file = "table_definitions.sql"
 
 def load_table_definitions() -> str:
     """Load the SQL table definitions for the market orders database."""
-    return load_package_resouce_text(_table_def_parent, _table_def_file)
+    return load_package_resource_text(_table_def_parent, _table_def_file)
 
 
 @dataclass(slots=True, kw_only=True)
