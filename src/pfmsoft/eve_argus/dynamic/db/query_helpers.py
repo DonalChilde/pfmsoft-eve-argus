@@ -258,14 +258,157 @@ def write_system_cost_indices(
 @log_timing(logger=logger, level=_timing_log_level)
 def write_corporation_industry_jobs(
     connection: Connection, jobs: ERM.GetCorporationsCorporationIdIndustryJobs
-):
+) -> None:
     """Write corporation industry jobs to the database."""
-    ...
+
+    @dataclass(slots=True)
+    class CorporationIndustryJobRow:
+        corporation_id: int
+        activity_id: int
+        blueprint_id: int
+        blueprint_location_id: int
+        blueprint_type_id: int
+        completed_character_id: int | None
+        completed_date: str | None
+        cost: int | None
+        duration: int
+        end_date: str
+        facility_id: int
+        installer_id: int
+        job_id: int
+        licensed_runs: int | None
+        location_id: int
+        output_location_id: int
+        pause_date: str | None
+        probability: float | None
+        product_type_id: int | None
+        runs: int
+        start_date: str
+        status: str
+        successful_runs: int | None
+        response_metadata_id: int
+
+    with connection:
+        response_metadata_id = write_response_metadata(
+            connection,
+            received_at=jobs.received_at,
+            expires_at=jobs.expires_at,
+            argus_expires_at=None,
+        )
+        connection.execute(
+            """
+            INSERT INTO get_corporations_corporation_id_industry_jobs_response (
+                response_metadata_id, corporation_id
+            )
+            VALUES (?, ?)
+            """,
+            (response_metadata_id, jobs.corporation_id),
+        )
+
+        rows = [
+            CorporationIndustryJobRow(
+                corporation_id=jobs.corporation_id,
+                activity_id=job.activity_id,
+                blueprint_id=job.blueprint_id,
+                blueprint_location_id=job.blueprint_location_id,
+                blueprint_type_id=job.blueprint_type_id,
+                completed_character_id=job.completed_character_id,
+                completed_date=job.completed_date,
+                cost=to_cents(job.cost) if job.cost is not None else None,
+                duration=job.duration,
+                end_date=job.end_date,
+                facility_id=job.facility_id,
+                installer_id=job.installer_id,
+                job_id=job.job_id,
+                licensed_runs=job.licensed_runs,
+                location_id=job.location_id,
+                output_location_id=job.output_location_id,
+                pause_date=job.pause_date,
+                probability=job.probability,
+                product_type_id=job.product_type_id,
+                runs=job.runs,
+                start_date=job.start_date,
+                status=job.status.value,
+                successful_runs=job.successful_runs,
+                response_metadata_id=response_metadata_id,
+            )
+            for job in jobs.industry_jobs
+        ]
+        connection.executemany(
+            """
+            INSERT INTO corporation_industry_jobs (
+                corporation_id, activity_id, blueprint_id, blueprint_location_id,
+                blueprint_type_id, completed_character_id, completed_date, cost,
+                duration, end_date, facility_id, installer_id, job_id,
+                licensed_runs, location_id, output_location_id, pause_date,
+                probability, product_type_id, runs, start_date, status,
+                successful_runs, response_metadata_id
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (astuple(row) for row in rows),
+        )
 
 
 @log_timing(logger=logger, level=_timing_log_level)
 def write_corporation_blueprints(
     connection: Connection, blueprints: ERM.GetCorporationsCorporationIdBlueprints
-):
+) -> None:
     """Write corporation blueprints to the database."""
-    ...
+
+    @dataclass(slots=True)
+    class CorporationBlueprintRow:
+        corporation_id: int
+        item_id: int
+        type_id: int
+        location_id: int
+        location_flag: str
+        quantity: int
+        time_efficiency: int
+        material_efficiency: int
+        runs: int
+        response_metadata_id: int
+
+    with connection:
+        response_metadata_id = write_response_metadata(
+            connection,
+            received_at=blueprints.received_at,
+            expires_at=blueprints.expires_at,
+            argus_expires_at=None,
+        )
+        connection.execute(
+            """
+            INSERT INTO get_corporations_corporation_id_blueprints_response (
+                response_metadata_id, corporation_id
+            )
+            VALUES (?, ?)
+            """,
+            (response_metadata_id, blueprints.corporation_id),
+        )
+
+        rows = [
+            CorporationBlueprintRow(
+                corporation_id=blueprints.corporation_id,
+                item_id=blueprint.item_id,
+                type_id=blueprint.type_id,
+                location_id=blueprint.location_id,
+                location_flag=blueprint.location_flag.value,
+                quantity=blueprint.quantity,
+                time_efficiency=blueprint.time_efficiency,
+                material_efficiency=blueprint.material_efficiency,
+                runs=blueprint.runs,
+                response_metadata_id=response_metadata_id,
+            )
+            for blueprint in blueprints.blueprints
+        ]
+        connection.executemany(
+            """
+            INSERT INTO corporation_blueprints (
+                corporation_id, item_id, type_id, location_id, location_flag,
+                quantity, time_efficiency, material_efficiency, runs,
+                response_metadata_id
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (astuple(row) for row in rows),
+        )
