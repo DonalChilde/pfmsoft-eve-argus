@@ -70,8 +70,7 @@ CREATE TABLE IF NOT EXISTS get_markets_prices_response(
 ) STRICT;
 
 -- This table stores the records from the GetMarketsPrices API response
--- The table name is different to more clearly reflect the data stored.
-CREATE TABLE IF NOT EXISTS universe_prices(
+CREATE TABLE IF NOT EXISTS markets_prices(
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     type_id INTEGER NOT NULL,
     average_price INTEGER, -- stored as an integer for precision. Values are assumed to be 0.00 format

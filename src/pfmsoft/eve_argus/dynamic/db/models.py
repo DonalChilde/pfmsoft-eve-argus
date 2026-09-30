@@ -39,12 +39,12 @@ class SystemCostIndexRecord:
 
 
 @dataclass(slots=True, kw_only=True, frozen=True)
-class SystemCostIndexDataset(EsiDataset):
+class SystemCostIndicesDataset(EsiDataset):
     records: dict[int, SystemCostIndexRecord]
 
 
 @dataclass(slots=True, kw_only=True, frozen=True)
-class SystemCostIndexResponse(ResponseMetadata):
+class SystemCostIndicesResponse(ResponseMetadata):
     """Represents a system cost index response.
 
     Note that this model does not contain extra fields for Universe prices
@@ -54,7 +54,7 @@ class SystemCostIndexResponse(ResponseMetadata):
 
 
 @dataclass(slots=True, kw_only=True, frozen=True)
-class UniversePriceRecord:
+class MarketsPriceRecord:
     type_id: int
     average_price: Decimal | None
     adjusted_price: Decimal | None
@@ -62,13 +62,13 @@ class UniversePriceRecord:
 
 
 @dataclass(slots=True, kw_only=True, frozen=True)
-class UniversePriceDataset(EsiDataset):
-    records: dict[int, UniversePriceRecord]
+class MarketsPricesDataset(EsiDataset):
+    records: dict[int, MarketsPriceRecord]
 
 
 @dataclass(slots=True, kw_only=True, frozen=True)
-class UniversePricesResponse(ResponseMetadata):
-    """Represents a universe prices response.
+class MarketsPricesResponse(ResponseMetadata):
+    """Represents a universe markets prices response.
 
     Note that this model does not contain extra fields for Universe prices
     because none are defined in the table. This model is included for completness,

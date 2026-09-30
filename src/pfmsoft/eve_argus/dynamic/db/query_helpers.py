@@ -18,13 +18,20 @@ from pfmsoft.eve_argus.helpers.currency import (
     to_cents,
     to_four_places,
 )
+from pfmsoft.eve_argus.helpers.package_resource import load_package_resource_text
 from pfmsoft.eve_argus.helpers.timing import log_timing
 from pfmsoft.eve_argus.models.esi import esi_response_models as ERM
 
 logger = logging.getLogger(__name__)
 
-
+_table_def_parent = "pfmsoft.eve_argus.dynamic.db"
+_table_def_file = "table_definitions.sql"
 _timing_log_level = logging.INFO
+
+
+def load_table_definitions() -> str:
+    """Load the SQL table definitions for the dynamic database."""
+    return load_package_resource_text(_table_def_parent, _table_def_file)
 
 
 @log_timing(logger=logger, level=_timing_log_level)
@@ -61,14 +68,14 @@ def write_response_metadata(
 @log_timing(logger=logger, level=_timing_log_level)
 def write_universe_prices(
     connection: Connection,
-    universe_prices: ERM.GetMarketsPrices,
+    markets_prices: ERM.GetMarketsPrices,
 ) -> None:
     """Write the universe prices to the database."""
     with connection:
         response_metadata_id = write_response_metadata(
             connection,
-            received_at=universe_prices.received_at,
-            expires_at=universe_prices.expires_at,
+            received_at=markets_prices.received_at,
+            expires_at=markets_prices.expires_at,
             argus_expires_at=None,
         )
         # update the get_markets_prices_response table
@@ -83,7 +90,7 @@ def write_universe_prices(
         )
         connection.executemany(
             """
-            INSERT INTO universe_prices (
+            INSERT INTO markets_prices (
                 type_id, average_price, adjusted_price, response_metadata_id
             )
             VALUES (?, ?, ?, ?)
@@ -99,7 +106,7 @@ def write_universe_prices(
                     else None,
                     response_metadata_id,
                 )
-                for price in universe_prices.markets_prices
+                for price in markets_prices.markets_prices
             ),
         )
 
@@ -454,12 +461,12 @@ def get_response_metadata(
 
 
 @log_timing(logger=logger, level=_timing_log_level)
-def get_universe_prices_responses(
+def get_markets_prices_responses(
     connection: Connection,
-) -> list[models.UniversePricesResponse]:
+) -> list[models.MarketsPricesResponse]:
     """Get metadata for all stored universe prices responses."""
     return [
-        models.UniversePricesResponse(
+        models.MarketsPricesResponse(
             response_metadata_id=row[0],
             received_at=row[1],
             expires_at=row[2],
@@ -479,10 +486,10 @@ def get_universe_prices_responses(
 
 
 @log_timing(logger=logger, level=_timing_log_level)
-def get_universe_prices(
+def get_markets_prices(
     connection: Connection, response_metadata_id: int
-) -> models.UniversePriceDataset:
-    """Get a universe prices dataset by response metadata ID.
+) -> models.MarketsPricesDataset:
+    """Get a universe markets prices dataset by response metadata ID.
 
     Args:
         connection: SQLite database connection.
@@ -507,12 +514,12 @@ def get_universe_prices(
     ).fetchone()
     if metadata is None:
         raise ValueError(
-            "No universe prices response found for response metadata ID "
+            "No universe markets prices response found for response metadata ID "
             f"{response_metadata_id}"
         )
 
     records = {
-        row[0]: models.UniversePriceRecord(
+        row[0]: models.MarketsPriceRecord(
             type_id=row[0],
             average_price=from_cents(row[1]) if row[1] is not None else None,
             adjusted_price=from_cents(row[2]) if row[2] is not None else None,
@@ -521,7 +528,7 @@ def get_universe_prices(
         for row in connection.execute(
             """
             SELECT type_id, average_price, adjusted_price, response_metadata_id
-            FROM universe_prices
+            FROM markets_prices
             WHERE response_metadata_id = ?
             ORDER BY type_id
             """,
@@ -529,10 +536,136 @@ def get_universe_prices(
         )
     }
 
-    return models.UniversePriceDataset(
+    return models.MarketsPricesDataset(
         response_metadata_id=metadata[0],
         received_at=metadata[1],
         expires_at=metadata[2],
         argus_expires_at=metadata[3],
         records=records,
     )
+
+
+@log_timing(logger=logger, level=_timing_log_level)
+def get_market_orders_responses(
+    connection: Connection, region_id: int | None
+) -> list[models.MarketOrdersResponse]:
+    """Get metadata for stored market-order responses, optionally filtered by region."""
+    query = """
+        SELECT metadata.id, metadata.received_at, metadata.expires_at,
+               metadata.argus_expires_at, response.region_id
+        FROM get_markets_region_id_orders_response AS response
+        JOIN response_metadata AS metadata
+            ON metadata.id = response.response_metadata_id
+    """
+    parameters: list[int] = []
+    if region_id is not None:
+        query += " WHERE response.region_id = ?"
+        parameters.append(region_id)
+    query += " ORDER BY metadata.id"
+
+    return [
+        models.MarketOrdersResponse(
+            response_metadata_id=row[0],
+            received_at=row[1],
+            expires_at=row[2],
+            argus_expires_at=row[3],
+            region_id=row[4],
+        )
+        for row in connection.execute(query, parameters)
+    ]
+
+
+@log_timing(logger=logger, level=_timing_log_level)
+def get_market_orders(
+    connection: Connection, response_metadata_id: int
+) -> models.MarketOrdersDataset:
+    """Get the market order dataset for a response metadata ID."""
+    metadata = connection.execute(
+        """
+        SELECT metadata.id, metadata.received_at, metadata.expires_at,
+               metadata.argus_expires_at, response.region_id
+        FROM get_markets_region_id_orders_response AS response
+        JOIN response_metadata AS metadata
+            ON metadata.id = response.response_metadata_id
+        WHERE metadata.id = ?
+        """,
+        (response_metadata_id,),
+    ).fetchone()
+    if metadata is None:
+        raise ValueError(
+            "No market orders response found for response metadata ID "
+            f"{response_metadata_id}"
+        )
+
+    grouped_orders: dict[int, dict[str, list[models.MarketOrderRecord]]] = {}
+    for row in connection.execute(
+        """
+        SELECT type_id, response_metadata_id, region_id, duration, is_buy_order,
+               issued, location_id, min_volume, order_id, price, range_,
+               system_id, volume_remain, volume_total
+        FROM market_orders
+        WHERE response_metadata_id = ?
+        ORDER BY type_id, order_id
+        """,
+        (response_metadata_id,),
+    ):
+        type_id = row[0]
+        bucket = grouped_orders.setdefault(type_id, {"buy": [], "sell": []})
+        order = models.MarketOrderRecord(
+            response_metadata_id=row[1],
+            region_id=row[2],
+            duration=row[3],
+            is_buy_order=bool(row[4]),
+            issued=row[5],
+            location_id=row[6],
+            min_volume=row[7],
+            order_id=row[8],
+            price=from_cents(row[9]),
+            range=row[10],
+            system_id=row[11],
+            type_id=type_id,
+            volume_remain=row[12],
+            volume_total=row[13],
+        )
+        bucket["buy" if order.is_buy_order else "sell"].append(order)
+
+    records = {
+        type_id: models.BuySellOrders(
+            buy_orders=tuple(bucket["buy"]),
+            sell_orders=tuple(bucket["sell"]),
+        )
+        for type_id, bucket in grouped_orders.items()
+    }
+
+    return models.MarketOrdersDataset(
+        response_metadata_id=metadata[0],
+        received_at=metadata[1],
+        expires_at=metadata[2],
+        argus_expires_at=metadata[3],
+        region_id=metadata[4],
+        records=records,
+    )
+
+
+def get_system_cost_indices_responses(
+    connection: Connection,
+) -> list[models.SystemCostIndicesResponse]: ...
+def get_system_cost_indices(
+    connection: Connection, response_metadata_id: int
+) -> models.SystemCostIndicesDataset: ...
+
+
+def get_corporation_industry_jobs_responses(
+    connection: Connection, corporation_id: int | None
+) -> list[models.CorporationIndustryJobsResponse]: ...
+def get_corporation_industry_jobs(
+    connection: Connection, response_metadata_id: int
+) -> models.CorporationIndustryJobsDataset: ...
+
+
+def get_corporation_blueprints_responses(
+    connection: Connection, corporation_id: int | None
+) -> list[models.CorporationBlueprintsResponse]: ...
+def get_corporation_blueprints(
+    connection: Connection, response_metadata_id: int
+) -> models.CorporationBlueprintsDataset: ...
