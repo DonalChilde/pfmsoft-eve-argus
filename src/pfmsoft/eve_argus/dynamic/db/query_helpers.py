@@ -1,4 +1,4 @@
-"""Helper functions for writing data to the database.
+"""Helper functions for writing to and reading from the database.
 
 Write functions that insert primary records from a response need to:
 - write to the response_metadata table first, and get the returned ID.
@@ -15,6 +15,7 @@ from typing import Any, cast
 from pfmsoft.eve_argus.dynamic.db import models
 from pfmsoft.eve_argus.helpers.currency import (
     from_cents,
+    from_four_places,
     to_cents,
     to_four_places,
 )
@@ -647,25 +648,279 @@ def get_market_orders(
     )
 
 
+@log_timing(logger=logger, level=_timing_log_level)
 def get_system_cost_indices_responses(
     connection: Connection,
-) -> list[models.SystemCostIndicesResponse]: ...
+) -> list[models.SystemCostIndicesResponse]:
+    """Get metadata for all stored system cost index responses."""
+    return [
+        models.SystemCostIndicesResponse(
+            response_metadata_id=row[0],
+            received_at=row[1],
+            expires_at=row[2],
+            argus_expires_at=row[3],
+        )
+        for row in connection.execute(
+            """
+            SELECT metadata.id, metadata.received_at, metadata.expires_at,
+                   metadata.argus_expires_at
+            FROM get_industry_systems_response AS response
+            JOIN response_metadata AS metadata
+                ON metadata.id = response.response_metadata_id
+            ORDER BY metadata.id
+            """
+        )
+    ]
+
+
+@log_timing(logger=logger, level=_timing_log_level)
 def get_system_cost_indices(
     connection: Connection, response_metadata_id: int
-) -> models.SystemCostIndicesDataset: ...
+) -> models.SystemCostIndicesDataset:
+    """Get the system cost index dataset for a response metadata ID."""
+    metadata = connection.execute(
+        """
+        SELECT metadata.id, metadata.received_at, metadata.expires_at,
+               metadata.argus_expires_at
+        FROM get_industry_systems_response AS response
+        JOIN response_metadata AS metadata
+            ON metadata.id = response.response_metadata_id
+        WHERE metadata.id = ?
+        """,
+        (response_metadata_id,),
+    ).fetchone()
+    if metadata is None:
+        raise ValueError(
+            "No system cost indices response found for response metadata ID "
+            f"{response_metadata_id}"
+        )
+
+    records = {
+        row[0]: models.SystemCostIndexRecord(
+            system_id=row[0],
+            copying=from_four_places(row[1]) if row[1] is not None else None,
+            manufacturing=from_four_places(row[2]) if row[2] is not None else None,
+            invention=from_four_places(row[3]) if row[3] is not None else None,
+            reaction=from_four_places(row[4]) if row[4] is not None else None,
+            researching_material_efficiency=(
+                from_four_places(row[5]) if row[5] is not None else None
+            ),
+            researching_time_efficiency=(
+                from_four_places(row[6]) if row[6] is not None else None
+            ),
+            response_metadata_id=row[7],
+        )
+        for row in connection.execute(
+            """
+            SELECT system_id, copying, manufacturing, invention, reaction,
+                   researching_material_efficiency,
+                   researching_time_efficiency, response_metadata_id
+            FROM system_cost_indices
+            WHERE response_metadata_id = ?
+            ORDER BY system_id
+            """,
+            (response_metadata_id,),
+        )
+    }
+
+    return models.SystemCostIndicesDataset(
+        response_metadata_id=metadata[0],
+        received_at=metadata[1],
+        expires_at=metadata[2],
+        argus_expires_at=metadata[3],
+        records=records,
+    )
 
 
+@log_timing(logger=logger, level=_timing_log_level)
 def get_corporation_industry_jobs_responses(
     connection: Connection, corporation_id: int | None
-) -> list[models.CorporationIndustryJobsResponse]: ...
+) -> list[models.CorporationIndustryJobsResponse]:
+    """Get metadata for stored corporation industry job responses."""
+    query = """
+        SELECT metadata.id, metadata.received_at, metadata.expires_at,
+               metadata.argus_expires_at, response.corporation_id
+        FROM get_corporations_corporation_id_industry_jobs_response AS response
+        JOIN response_metadata AS metadata
+            ON metadata.id = response.response_metadata_id
+    """
+    parameters: list[int] = []
+    if corporation_id is not None:
+        query += " WHERE response.corporation_id = ?"
+        parameters.append(corporation_id)
+    query += " ORDER BY metadata.id"
+
+    return [
+        models.CorporationIndustryJobsResponse(
+            response_metadata_id=row[0],
+            received_at=row[1],
+            expires_at=row[2],
+            argus_expires_at=row[3],
+            corporation_id=row[4],
+        )
+        for row in connection.execute(query, parameters)
+    ]
+
+
+@log_timing(logger=logger, level=_timing_log_level)
 def get_corporation_industry_jobs(
     connection: Connection, response_metadata_id: int
-) -> models.CorporationIndustryJobsDataset: ...
+) -> models.CorporationIndustryJobsDataset:
+    """Get the corporation industry jobs dataset for a response metadata ID."""
+    metadata = connection.execute(
+        """
+        SELECT metadata.id, metadata.received_at, metadata.expires_at,
+               metadata.argus_expires_at, response.corporation_id
+        FROM get_corporations_corporation_id_industry_jobs_response AS response
+        JOIN response_metadata AS metadata
+            ON metadata.id = response.response_metadata_id
+        WHERE metadata.id = ?
+        """,
+        (response_metadata_id,),
+    ).fetchone()
+    if metadata is None:
+        raise ValueError(
+            "No corporation industry jobs response found for response metadata ID "
+            f"{response_metadata_id}"
+        )
+
+    records = {
+        row[12]: models.CorporationIndustryJobRow(
+            corporation_id=row[0],
+            activity_id=row[1],
+            blueprint_id=row[2],
+            blueprint_location_id=row[3],
+            blueprint_type_id=row[4],
+            completed_character_id=row[5],
+            completed_date=row[6],
+            cost=from_cents(row[7]) if row[7] is not None else None,
+            duration=row[8],
+            end_date=row[9],
+            facility_id=row[10],
+            installer_id=row[11],
+            job_id=row[12],
+            licensed_runs=row[13],
+            location_id=row[14],
+            output_location_id=row[15],
+            pause_date=row[16],
+            probability=row[17],
+            product_type_id=row[18],
+            runs=row[19],
+            start_date=row[20],
+            status=row[21],
+            successful_runs=row[22],
+            response_metadata_id=row[23],
+        )
+        for row in connection.execute(
+            """
+            SELECT corporation_id, activity_id, blueprint_id,
+                   blueprint_location_id, blueprint_type_id,
+                   completed_character_id, completed_date, cost, duration,
+                   end_date, facility_id, installer_id, job_id, licensed_runs,
+                   location_id, output_location_id, pause_date, probability,
+                   product_type_id, runs, start_date, status,
+                   successful_runs, response_metadata_id
+            FROM corporation_industry_jobs
+            WHERE response_metadata_id = ?
+            ORDER BY job_id
+            """,
+            (response_metadata_id,),
+        )
+    }
+
+    return models.CorporationIndustryJobsDataset(
+        response_metadata_id=metadata[0],
+        received_at=metadata[1],
+        expires_at=metadata[2],
+        argus_expires_at=metadata[3],
+        corporation_id=metadata[4],
+        records=records,
+    )
 
 
+@log_timing(logger=logger, level=_timing_log_level)
 def get_corporation_blueprints_responses(
     connection: Connection, corporation_id: int | None
-) -> list[models.CorporationBlueprintsResponse]: ...
+) -> list[models.CorporationBlueprintsResponse]:
+    """Get metadata for stored corporation blueprint responses."""
+    query = """
+        SELECT metadata.id, metadata.received_at, metadata.expires_at,
+               metadata.argus_expires_at, response.corporation_id
+        FROM get_corporations_corporation_id_blueprints_response AS response
+        JOIN response_metadata AS metadata
+            ON metadata.id = response.response_metadata_id
+    """
+    parameters: list[int] = []
+    if corporation_id is not None:
+        query += " WHERE response.corporation_id = ?"
+        parameters.append(corporation_id)
+    query += " ORDER BY metadata.id"
+
+    return [
+        models.CorporationBlueprintsResponse(
+            response_metadata_id=row[0],
+            received_at=row[1],
+            expires_at=row[2],
+            argus_expires_at=row[3],
+            corporation_id=row[4],
+        )
+        for row in connection.execute(query, parameters)
+    ]
+
+
+@log_timing(logger=logger, level=_timing_log_level)
 def get_corporation_blueprints(
     connection: Connection, response_metadata_id: int
-) -> models.CorporationBlueprintsDataset: ...
+) -> models.CorporationBlueprintsDataset:
+    """Get the corporation blueprints dataset for a response metadata ID."""
+    metadata = connection.execute(
+        """
+        SELECT metadata.id, metadata.received_at, metadata.expires_at,
+               metadata.argus_expires_at, response.corporation_id
+        FROM get_corporations_corporation_id_blueprints_response AS response
+        JOIN response_metadata AS metadata
+            ON metadata.id = response.response_metadata_id
+        WHERE metadata.id = ?
+        """,
+        (response_metadata_id,),
+    ).fetchone()
+    if metadata is None:
+        raise ValueError(
+            "No corporation blueprints response found for response metadata ID "
+            f"{response_metadata_id}"
+        )
+
+    records = {
+        row[0]: models.CorporationBlueprintRecord(
+            corporation_id=row[1],
+            item_id=row[0],
+            type_id=row[2],
+            location_id=row[3],
+            location_flag=row[4],
+            quantity=row[5],
+            time_efficiency=row[6],
+            material_efficiency=row[7],
+            runs=row[8],
+            response_metadata_id=row[9],
+        )
+        for row in connection.execute(
+            """
+            SELECT item_id, corporation_id, type_id, location_id, location_flag,
+                   quantity, time_efficiency, material_efficiency, runs,
+                   response_metadata_id
+            FROM corporation_blueprints
+            WHERE response_metadata_id = ?
+            ORDER BY item_id
+            """,
+            (response_metadata_id,),
+        )
+    }
+
+    return models.CorporationBlueprintsDataset(
+        response_metadata_id=metadata[0],
+        received_at=metadata[1],
+        expires_at=metadata[2],
+        argus_expires_at=metadata[3],
+        corporation_id=metadata[4],
+        records=records,
+    )
