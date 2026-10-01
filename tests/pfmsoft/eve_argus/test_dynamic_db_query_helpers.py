@@ -223,6 +223,18 @@ def test_write_and_get_order_summaries_round_trip_both_sides() -> None:
     assert query_helpers.get_order_summaries(connection, batch_id) == dataset
 
 
+def test_write_order_summaries_accepts_application_row_factory() -> None:
+    """Summary source validation accepts the application's sqlite3.Row results."""
+    connection = _make_connection()
+    connection.row_factory = sqlite3.Row
+    _insert_source_order_response(connection)
+    dataset = _summary_dataset()
+
+    batch_id = query_helpers.write_order_summaries(connection, dataset)
+
+    assert query_helpers.get_order_summaries(connection, batch_id) == dataset
+
+
 def test_order_summaries_preserve_empty_and_one_sided_types() -> None:
     """Type membership persists even when no side has positive volume."""
     connection = _make_connection()

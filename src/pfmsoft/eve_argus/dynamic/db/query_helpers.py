@@ -198,7 +198,7 @@ def write_order_summaries(
     ).fetchone()
     if source is None:
         raise ValueError("No market orders response found for the summary source.")
-    if source != (
+    if tuple(source) != (
         order_summaries.region_id,
         order_summaries.received_at,
         order_summaries.expires_at,
