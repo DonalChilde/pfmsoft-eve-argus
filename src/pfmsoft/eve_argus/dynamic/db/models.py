@@ -5,6 +5,7 @@ Where appropriate, the field data is transformed into the correct Python types.
 For example, currency values are stored as Integers in the database but are transformed into Decimal in Python.
 """
 
+from collections.abc import Iterable
 from dataclasses import dataclass
 from decimal import Decimal
 from typing import Any
@@ -194,3 +195,71 @@ class MarketOrdersDataset(EsiDataset):
 @dataclass(slots=True, kw_only=True, frozen=True)
 class MarketOrdersResponse(ResponseMetadata):
     region_id: int
+
+
+@dataclass(slots=True, kw_only=True, frozen=True)
+class OrderSummaryItem:
+    """Represents one side of the market depth for a single item type.
+
+    Scope is repeated on each item so a summary remains meaningful when separated from
+    its report. Monetary values are rounded to two decimal places. The depth metrics
+    include every order at or better than `five_price`, including all orders tied at that
+    price.
+    """
+
+    region_id: int
+    type_id: int
+    system_id: int | None
+    location_id: int | None
+    is_buy_summary: bool
+    five_price: Decimal
+    five_orders: int
+    five_items: int
+    lowest: Decimal
+    highest: Decimal
+    total_items: int
+    total_orders: int
+    average: Decimal
+    filtered_items: int
+    filtered_orders: int
+    response_metadata_id: int
+
+
+@dataclass(slots=True, kw_only=True, frozen=True)
+class BuySellSummary:
+    """Represents the available buy and sell summaries for an item type."""
+
+    buy_summary: OrderSummaryItem | None
+    sell_summary: OrderSummaryItem | None
+
+    @property
+    def buy_5(self) -> Decimal | None:
+        """Return the buy-side 5% depth price, if buy orders are available."""
+        return self.buy_summary.five_price if self.buy_summary is not None else None
+
+    @property
+    def sell_5(self) -> Decimal | None:
+        """Return the sell-side 5% depth price, if sell orders are available."""
+        return self.sell_summary.five_price if self.sell_summary is not None else None
+
+
+@dataclass(slots=True, kw_only=True, frozen=True)
+class OrderSummaryDataset(EsiDataset):
+    """Represents order summaries for a region and optional narrower scope.
+
+    Calculation settings such as the outlier filter factor are input-only and are not
+    persisted in the report.
+    """
+
+    region_id: int
+    system_id: int | None
+    location_id: int | None
+    records: dict[int, BuySellSummary]
+
+    def iter_summaries(self) -> Iterable[OrderSummaryItem]:
+        """Iterate over all buy and sell summaries in the report."""
+        for bs_summary in self.records.values():
+            if bs_summary.buy_summary is not None:
+                yield bs_summary.buy_summary
+            if bs_summary.sell_summary is not None:
+                yield bs_summary.sell_summary
