@@ -1,11 +1,15 @@
 """Tests for dynamic database query helpers."""
 
 import sqlite3
+from dataclasses import replace
 from decimal import Decimal
+
+import pytest
 
 from pfmsoft.eve_argus.dynamic.db import load_table_definitions, query_helpers
 from pfmsoft.eve_argus.dynamic.db.models import (
     BuySellOrders,
+    BuySellSummary,
     CorporationBlueprintRecord,
     CorporationBlueprintsDataset,
     CorporationBlueprintsResponse,
@@ -18,17 +22,392 @@ from pfmsoft.eve_argus.dynamic.db.models import (
     MarketsPriceRecord,
     MarketsPricesDataset,
     MarketsPricesResponse,
+    OrderSummaryDataset,
+    OrderSummaryRecord,
+    OrderSummaryResponse,
     ResponseMetadata,
     SystemCostIndexRecord,
     SystemCostIndicesDataset,
     SystemCostIndicesResponse,
 )
+from pfmsoft.eve_argus.models.esi import esi_response_models as ERM
 
 
 def _make_connection() -> sqlite3.Connection:
     connection = sqlite3.connect(":memory:")
     connection.executescript(load_table_definitions())
     return connection
+
+
+def test_market_orders_response_rejects_duplicate_region_timestamp() -> None:
+    """Only one source order set per region and receipt time can be stored."""
+    connection = _make_connection()
+    connection.executemany(
+        "INSERT INTO response_metadata (received_at) VALUES (?)",
+        [("2026-09-01T00:00:00Z",), ("2026-09-01T00:00:00Z",)],
+    )
+    connection.execute(
+        """
+        INSERT INTO get_markets_region_id_orders_response
+            (response_metadata_id, region_id, received_at)
+        VALUES (1, 10000002, '2026-09-01T00:00:00Z')
+        """
+    )
+
+    with pytest.raises(sqlite3.IntegrityError):
+        connection.execute(
+            """
+            INSERT INTO get_markets_region_id_orders_response
+                (response_metadata_id, region_id, received_at)
+            VALUES (2, 10000002, '2026-09-01T00:00:00Z')
+            """
+        )
+    with pytest.raises(sqlite3.IntegrityError):
+        connection.execute(
+            """
+            INSERT INTO get_markets_region_id_orders_response
+                (response_metadata_id, region_id, received_at)
+            VALUES (2, 10000005, '2026-09-02T00:00:00Z')
+            """
+        )
+
+
+def test_write_market_orders_rolls_back_duplicate_response_metadata() -> None:
+    """A duplicate order set must not leave a second metadata row behind."""
+    connection = _make_connection()
+    response = ERM.GetMarketsRegionIdOrders(
+        region_id=10000002,
+        received_at="2026-09-01T00:00:00Z",
+        expires_at=None,
+        orders=[],
+    )
+
+    query_helpers.write_market_orders(connection, response)
+    with pytest.raises(sqlite3.IntegrityError):
+        query_helpers.write_market_orders(connection, response)
+
+    assert connection.execute("SELECT count(*) FROM response_metadata").fetchone() == (
+        1,
+    )
+
+
+def test_write_market_orders_allows_multiple_sets_per_region() -> None:
+    """Distinct response timestamps can coexist within one region."""
+    connection = _make_connection()
+    response = ERM.GetMarketsRegionIdOrders(
+        region_id=10000002,
+        received_at="2026-09-01T00:00:00Z",
+        expires_at=None,
+        orders=[],
+    )
+
+    query_helpers.write_market_orders(connection, response)
+    query_helpers.write_market_orders(
+        connection, replace(response, received_at="2026-09-02T00:00:00Z")
+    )
+
+    assert len(query_helpers.get_market_orders_responses(connection, 10000002)) == 2
+
+
+def test_order_summary_schema_tracks_scopes_and_type_membership() -> None:
+    """A source can own different scopes, each with at most one side per type."""
+    connection = _make_connection()
+    connection.execute(
+        "INSERT INTO response_metadata (received_at) VALUES ('2026-09-01T00:00:00Z')"
+    )
+    connection.execute(
+        """INSERT INTO get_markets_region_id_orders_response
+           (response_metadata_id, region_id, received_at)
+           VALUES (1, 10000002, '2026-09-01T00:00:00Z')"""
+    )
+    connection.executemany(
+        """INSERT INTO order_summary_response
+           (response_metadata_id, region_id, system_id, location_id)
+           VALUES (?, 10000002, ?, ?)""",
+        [(1, None, None), (1, 30000142, None), (1, None, 60003760)],
+    )
+    connection.execute(
+        "INSERT INTO order_summary_types (order_summary_response_id, type_id) VALUES (1, 34)"
+    )
+
+    with pytest.raises(sqlite3.IntegrityError):
+        connection.execute(
+            """INSERT INTO order_summary_response
+               (response_metadata_id, region_id) VALUES (1, 10000002)"""
+        )
+    with pytest.raises(sqlite3.IntegrityError):
+        connection.execute(
+            """INSERT INTO order_summary_response
+               (response_metadata_id, region_id, system_id, location_id)
+               VALUES (1, 10000002, 30000142, 60003760)"""
+        )
+    with pytest.raises(sqlite3.IntegrityError):
+        connection.execute(
+            """INSERT INTO order_summary_response
+               (response_metadata_id, region_id) VALUES (1, 10000005)"""
+        )
+
+
+def _insert_source_order_response(connection: sqlite3.Connection) -> None:
+    connection.execute(
+        """INSERT INTO response_metadata (received_at, expires_at, argus_expires_at)
+           VALUES ('2026-09-01T00:00:00Z', '2026-09-02T00:00:00Z', NULL)"""
+    )
+    connection.execute(
+        """INSERT INTO get_markets_region_id_orders_response
+           (response_metadata_id, region_id, received_at)
+           VALUES (1, 10000002, '2026-09-01T00:00:00Z')"""
+    )
+
+
+def _summary_dataset(
+    *,
+    system_id: int | None = None,
+    location_id: int | None = None,
+    records: dict[int, BuySellSummary] | None = None,
+) -> OrderSummaryDataset:
+    return OrderSummaryDataset(
+        response_metadata_id=1,
+        received_at="2026-09-01T00:00:00Z",
+        expires_at="2026-09-02T00:00:00Z",
+        argus_expires_at=None,
+        region_id=10000002,
+        system_id=system_id,
+        location_id=location_id,
+        records={} if records is None else records,
+    )
+
+
+def _summary_record(*, is_buy_summary: bool) -> OrderSummaryRecord:
+    return OrderSummaryRecord(
+        region_id=10000002,
+        type_id=34,
+        system_id=None,
+        location_id=None,
+        is_buy_summary=is_buy_summary,
+        five_price=Decimal("100.12") if is_buy_summary else Decimal("110.23"),
+        five_orders=2,
+        five_items=10,
+        lowest=Decimal("90.01") if is_buy_summary else Decimal("110.23"),
+        highest=Decimal("100.12") if is_buy_summary else Decimal("120.45"),
+        total_items=100,
+        total_orders=4,
+        average=Decimal("95.55") if is_buy_summary else Decimal("115.34"),
+        filtered_items=12,
+        filtered_orders=1,
+    )
+
+
+def test_write_and_get_order_summaries_round_trip_both_sides() -> None:
+    """Saved records use cents and can be reconstructed as a complete dataset."""
+    connection = _make_connection()
+    _insert_source_order_response(connection)
+    dataset = _summary_dataset(
+        records={
+            34: BuySellSummary(
+                buy_summary=_summary_record(is_buy_summary=True),
+                sell_summary=_summary_record(is_buy_summary=False),
+            )
+        }
+    )
+
+    batch_id = query_helpers.write_order_summaries(connection, dataset)
+
+    assert isinstance(batch_id, int)
+    assert connection.execute(
+        "SELECT is_buy_summary, five_price, average FROM order_summaries ORDER BY is_buy_summary"
+    ).fetchall() == [(0, 11023, 11534), (1, 10012, 9555)]
+    assert connection.execute("SELECT count(*) FROM response_metadata").fetchone() == (
+        1,
+    )
+    assert query_helpers.get_order_summaries(connection, batch_id) == dataset
+
+
+def test_order_summaries_preserve_empty_and_one_sided_types() -> None:
+    """Type membership persists even when no side has positive volume."""
+    connection = _make_connection()
+    _insert_source_order_response(connection)
+    empty = _summary_dataset()
+
+    batch_id = query_helpers.write_order_summaries(connection, empty)
+
+    assert query_helpers.get_order_summaries(connection, batch_id) == empty
+    one_side = _summary_dataset(
+        records={
+            34: BuySellSummary(
+                buy_summary=_summary_record(is_buy_summary=True),
+                sell_summary=None,
+            ),
+            35: BuySellSummary(buy_summary=None, sell_summary=None),
+        }
+    )
+
+    assert query_helpers.write_order_summaries(connection, one_side) == batch_id
+    assert query_helpers.get_order_summaries(connection, batch_id) == one_side
+    assert connection.execute(
+        "SELECT type_id FROM order_summary_types ORDER BY type_id"
+    ).fetchall() == [(34,), (35,)]
+    assert query_helpers.write_order_summaries(connection, empty) == batch_id
+    assert query_helpers.get_order_summaries(connection, batch_id) == empty
+    assert connection.execute("SELECT count(*) FROM order_summaries").fetchone() == (0,)
+
+
+def test_order_summary_responses_discover_independent_scopes() -> None:
+    """Each saved scope has a discoverable ID linked to one source response."""
+    connection = _make_connection()
+    _insert_source_order_response(connection)
+    region = _summary_dataset()
+    system = _summary_dataset(system_id=30000142)
+    location = _summary_dataset(location_id=60003760)
+    region_id = query_helpers.write_order_summaries(connection, region)
+    system_id = query_helpers.write_order_summaries(connection, system)
+    location_id = query_helpers.write_order_summaries(connection, location)
+
+    assert len({region_id, system_id, location_id}) == 3
+    assert query_helpers.get_order_summary_responses(connection, 1) == [
+        OrderSummaryResponse(
+            order_summary_response_id=batch_id,
+            response_metadata_id=1,
+            received_at="2026-09-01T00:00:00Z",
+            expires_at="2026-09-02T00:00:00Z",
+            argus_expires_at=None,
+            region_id=10000002,
+            system_id=scope_system_id,
+            location_id=scope_location_id,
+        )
+        for batch_id, scope_system_id, scope_location_id in (
+            (region_id, None, None),
+            (system_id, 30000142, None),
+            (location_id, None, 60003760),
+        )
+    ]
+    assert query_helpers.get_order_summary_responses(connection, 999) == []
+    assert query_helpers.get_order_summaries(connection, system_id) == system
+    assert query_helpers.get_order_summaries(connection, region_id) == region
+    assert query_helpers.get_order_summaries(connection, location_id) == location
+
+
+def test_order_summaries_reject_mismatched_source_or_record() -> None:
+    """Invalid data does not create or overwrite a saved summary batch."""
+    connection = _make_connection()
+    _insert_source_order_response(connection)
+    original = _summary_dataset(
+        records={
+            34: BuySellSummary(
+                buy_summary=_summary_record(is_buy_summary=True),
+                sell_summary=None,
+            )
+        }
+    )
+    batch_id = query_helpers.write_order_summaries(connection, original)
+
+    for invalid in (
+        replace(original, response_metadata_id=999),
+        replace(original, received_at="2026-09-03T00:00:00Z"),
+    ):
+        with pytest.raises(ValueError):
+            query_helpers.write_order_summaries(connection, invalid)
+
+    wrong_side = replace(_summary_record(is_buy_summary=True), is_buy_summary=False)
+    with pytest.raises(ValueError, match="does not match"):
+        query_helpers.write_order_summaries(
+            connection,
+            replace(
+                original,
+                records={34: BuySellSummary(buy_summary=wrong_side, sell_summary=None)},
+            ),
+        )
+    assert query_helpers.get_order_summaries(connection, batch_id) == original
+    with pytest.raises(ValueError, match="No order summary response"):
+        query_helpers.get_order_summaries(connection, 999)
+
+
+def test_order_summaries_reject_invalid_scope_type_and_region() -> None:
+    """Record and dataset scope mismatches cannot create a saved response."""
+    connection = _make_connection()
+    _insert_source_order_response(connection)
+    record = _summary_record(is_buy_summary=True)
+    for invalid in (
+        _summary_dataset(system_id=30000142, location_id=60003760),
+        replace(_summary_dataset(), region_id=10000005),
+        _summary_dataset(
+            records={35: BuySellSummary(buy_summary=record, sell_summary=None)}
+        ),
+        _summary_dataset(
+            system_id=30000142,
+            records={34: BuySellSummary(buy_summary=record, sell_summary=None)},
+        ),
+    ):
+        with pytest.raises(ValueError):
+            query_helpers.write_order_summaries(connection, invalid)
+    assert connection.execute(
+        "SELECT count(*) FROM order_summary_response"
+    ).fetchone() == (0,)
+
+
+def test_order_summary_replacement_keeps_other_scopes() -> None:
+    """Replacing one batch does not change other scopes from the same source."""
+    connection = _make_connection()
+    _insert_source_order_response(connection)
+    region = _summary_dataset(
+        records={
+            34: BuySellSummary(
+                buy_summary=_summary_record(is_buy_summary=True),
+                sell_summary=None,
+            )
+        }
+    )
+    location_record = replace(
+        _summary_record(is_buy_summary=False), location_id=60003760
+    )
+    location = _summary_dataset(
+        location_id=60003760,
+        records={34: BuySellSummary(buy_summary=None, sell_summary=location_record)},
+    )
+    region_id = query_helpers.write_order_summaries(connection, region)
+    location_id = query_helpers.write_order_summaries(connection, location)
+
+    assert (
+        query_helpers.write_order_summaries(connection, _summary_dataset()) == region_id
+    )
+    assert (
+        query_helpers.get_order_summaries(connection, region_id) == _summary_dataset()
+    )
+    assert query_helpers.get_order_summaries(connection, location_id) == location
+
+
+def test_order_summary_schema_rejects_orphan_type_and_duplicate_side() -> None:
+    """Foreign keys and the batch/type/side key reject invalid direct inserts."""
+    connection = _make_connection()
+    _insert_source_order_response(connection)
+    dataset = _summary_dataset(
+        records={
+            34: BuySellSummary(
+                buy_summary=_summary_record(is_buy_summary=True),
+                sell_summary=None,
+            )
+        }
+    )
+    query_helpers.write_order_summaries(connection, dataset)
+
+    assert connection.execute("PRAGMA foreign_keys").fetchone() == (1,)
+    with pytest.raises(sqlite3.IntegrityError):
+        connection.execute("INSERT INTO order_summary_types VALUES (999, 35)")
+    with pytest.raises(sqlite3.IntegrityError):
+        connection.execute(
+            """
+            INSERT INTO order_summaries (
+                order_summary_response_id, region_id, type_id, system_id,
+                location_id, is_buy_summary, five_price, five_orders, five_items,
+                lowest, highest, average, total_items, total_orders,
+                filtered_items, filtered_orders
+            ) SELECT order_summary_response_id, region_id, type_id, system_id,
+                     location_id, is_buy_summary, five_price, five_orders, five_items,
+                     lowest, highest, average, total_items, total_orders,
+                     filtered_items, filtered_orders
+              FROM order_summaries
+            """
+        )
 
 
 def test_get_response_metadata_filters_by_ids() -> None:
@@ -161,10 +540,13 @@ def test_get_market_orders_returns_grouped_buy_and_sell_order_records() -> None:
     connection.executemany(
         """
         INSERT INTO get_markets_region_id_orders_response (
-            response_metadata_id, region_id
-        ) VALUES (?, ?)
+            response_metadata_id, region_id, received_at
+        ) VALUES (?, ?, ?)
         """,
-        [(1, 10000002), (2, 10000005)],
+        [
+            (1, 10000002, "2026-09-01T00:00:00Z"),
+            (2, 10000005, "2026-09-03T00:00:00Z"),
+        ],
     )
     connection.executemany(
         """

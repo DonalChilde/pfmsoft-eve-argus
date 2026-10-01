@@ -202,9 +202,9 @@ class OrderSummaryRecord:
     """Represents one side of the market depth for a single item type.
 
     Scope is repeated on each item so a summary remains meaningful when separated from
-    its report. Monetary values are rounded to two decimal places. The depth metrics
-    include every order at or better than `five_price`, including all orders tied at that
-    price.
+    its dataset; source response metadata belongs to the dataset. Monetary values are
+    rounded to two decimal places. The depth metrics include every order at or better
+    than `five_price`, including all orders tied at that price.
     """
 
     region_id: int
@@ -222,7 +222,6 @@ class OrderSummaryRecord:
     average: Decimal
     filtered_items: int
     filtered_orders: int
-    response_metadata_id: int
 
 
 @dataclass(slots=True, kw_only=True, frozen=True)
@@ -263,3 +262,13 @@ class OrderSummaryDataset(EsiDataset):
                 yield bs_summary.buy_summary
             if bs_summary.sell_summary is not None:
                 yield bs_summary.sell_summary
+
+
+@dataclass(slots=True, kw_only=True, frozen=True)
+class OrderSummaryResponse(ResponseMetadata):
+    """A saved summary scope linked to its source market-order response."""
+
+    order_summary_response_id: int
+    region_id: int
+    system_id: int | None
+    location_id: int | None

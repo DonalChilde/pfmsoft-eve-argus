@@ -144,7 +144,6 @@ def _calculate_side(
         / total_items
     )
     return models.OrderSummaryRecord(
-        response_metadata_id=market_orders.response_metadata_id,
         region_id=market_orders.region_id,
         type_id=type_id,
         system_id=system_id,

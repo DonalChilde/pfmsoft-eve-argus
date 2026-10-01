@@ -10,7 +10,7 @@ Write functions that insert primary records from a response need to:
 import logging
 from dataclasses import astuple, dataclass
 from sqlite3 import Connection
-from typing import Any, cast
+from typing import cast
 
 from pfmsoft.eve_argus.dynamic.db import models
 from pfmsoft.eve_argus.helpers.currency import (
@@ -53,17 +53,16 @@ def write_response_metadata(
     Returns:
         int: The ID of the inserted row.
     """
-    with connection:
-        cursor = connection.execute(
-            """
-            INSERT INTO response_metadata (
-                received_at, expires_at, argus_expires_at
-            )
-            VALUES (?, ?, ?)
-            """,
-            (received_at, expires_at, argus_expires_at),
+    cursor = connection.execute(
+        """
+        INSERT INTO response_metadata (
+            received_at, expires_at, argus_expires_at
         )
-        return cast(int, cursor.lastrowid)
+        VALUES (?, ?, ?)
+        """,
+        (received_at, expires_at, argus_expires_at),
+    )
+    return cast(int, cursor.lastrowid)
 
 
 @log_timing(logger=logger, level=_timing_log_level)
@@ -130,11 +129,11 @@ def write_market_orders(
         connection.execute(
             """
             INSERT INTO get_markets_region_id_orders_response (
-                response_metadata_id, region_id
+                response_metadata_id, region_id, received_at
             )
-            VALUES (?, ?)
+            VALUES (?, ?, ?)
             """,
-            (response_metadata_id, region_id),
+            (response_metadata_id, region_id, market_orders.received_at),
         )
         connection.executemany(
             """
@@ -170,10 +169,251 @@ def write_market_orders(
 @log_timing(logger=logger, level=_timing_log_level)
 def write_order_summaries(
     connection: Connection,
-    order_summaries: Any,
-) -> None:
-    """Write the order summaries to the database."""
-    raise NotImplementedError()
+    order_summaries: models.OrderSummaryDataset,
+) -> int:
+    """Save a scoped summary for an existing market-order response.
+
+    Returns:
+        The stable ID of the saved summary response.
+
+    Raises:
+        ValueError: If the source response or any summary scope/type is inconsistent.
+    """
+    if (
+        order_summaries.system_id is not None
+        and order_summaries.location_id is not None
+    ):
+        raise ValueError("Cannot specify both system_id and location_id.")
+
+    source = connection.execute(
+        """
+        SELECT response.region_id, metadata.received_at, metadata.expires_at,
+               metadata.argus_expires_at
+        FROM get_markets_region_id_orders_response AS response
+        JOIN response_metadata AS metadata
+            ON metadata.id = response.response_metadata_id
+        WHERE response.response_metadata_id = ?
+        """,
+        (order_summaries.response_metadata_id,),
+    ).fetchone()
+    if source is None:
+        raise ValueError("No market orders response found for the summary source.")
+    if source != (
+        order_summaries.region_id,
+        order_summaries.received_at,
+        order_summaries.expires_at,
+        order_summaries.argus_expires_at,
+    ):
+        raise ValueError("Summary metadata does not match the source market orders.")
+
+    for type_id, summary in order_summaries.records.items():
+        for is_buy_summary, record in (
+            (True, summary.buy_summary),
+            (False, summary.sell_summary),
+        ):
+            if record is not None and (
+                record.region_id != order_summaries.region_id
+                or record.type_id != type_id
+                or record.system_id != order_summaries.system_id
+                or record.location_id != order_summaries.location_id
+                or record.is_buy_summary != is_buy_summary
+            ):
+                raise ValueError("Summary record does not match its dataset or side.")
+
+    with connection:
+        existing = connection.execute(
+            """
+            SELECT id FROM order_summary_response
+            WHERE response_metadata_id = ? AND region_id = ?
+              AND system_id IS ? AND location_id IS ?
+            """,
+            (
+                order_summaries.response_metadata_id,
+                order_summaries.region_id,
+                order_summaries.system_id,
+                order_summaries.location_id,
+            ),
+        ).fetchone()
+        if existing is None:
+            cursor = connection.execute(
+                """
+                INSERT INTO order_summary_response (
+                    response_metadata_id, region_id, system_id, location_id
+                ) VALUES (?, ?, ?, ?)
+                """,
+                (
+                    order_summaries.response_metadata_id,
+                    order_summaries.region_id,
+                    order_summaries.system_id,
+                    order_summaries.location_id,
+                ),
+            )
+            batch_id = cast(int, cursor.lastrowid)
+        else:
+            batch_id = existing[0]
+            connection.execute(
+                "DELETE FROM order_summaries WHERE order_summary_response_id = ?",
+                (batch_id,),
+            )
+            connection.execute(
+                "DELETE FROM order_summary_types WHERE order_summary_response_id = ?",
+                (batch_id,),
+            )
+
+        connection.executemany(
+            """
+            INSERT INTO order_summary_types (order_summary_response_id, type_id)
+            VALUES (?, ?)
+            """,
+            ((batch_id, type_id) for type_id in order_summaries.records),
+        )
+        connection.executemany(
+            """
+            INSERT INTO order_summaries (
+                order_summary_response_id, region_id, type_id, system_id,
+                location_id, is_buy_summary, five_price, five_orders, five_items,
+                lowest, highest, average, total_items, total_orders,
+                filtered_items, filtered_orders
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                (
+                    batch_id,
+                    record.region_id,
+                    record.type_id,
+                    record.system_id,
+                    record.location_id,
+                    int(record.is_buy_summary),
+                    to_cents(record.five_price),
+                    record.five_orders,
+                    record.five_items,
+                    to_cents(record.lowest),
+                    to_cents(record.highest),
+                    to_cents(record.average),
+                    record.total_items,
+                    record.total_orders,
+                    record.filtered_items,
+                    record.filtered_orders,
+                )
+                for record in order_summaries.iter_summaries()
+            ),
+        )
+    return batch_id
+
+
+@log_timing(logger=logger, level=_timing_log_level)
+def get_order_summaries(
+    connection: Connection, order_summary_response_id: int
+) -> models.OrderSummaryDataset:
+    """Retrieve a scoped summary dataset by its saved response ID.
+
+    Raises:
+        ValueError: If the summary response does not exist.
+    """
+    metadata = connection.execute(
+        """
+        SELECT response.response_metadata_id, metadata.received_at,
+               metadata.expires_at, metadata.argus_expires_at, response.region_id,
+               response.system_id, response.location_id
+        FROM order_summary_response AS response
+        JOIN response_metadata AS metadata
+            ON metadata.id = response.response_metadata_id
+        WHERE response.id = ?
+        """,
+        (order_summary_response_id,),
+    ).fetchone()
+    if metadata is None:
+        raise ValueError(
+            f"No order summary response found for ID {order_summary_response_id}"
+        )
+
+    grouped: dict[int, dict[bool, models.OrderSummaryRecord]] = {
+        row[0]: {}
+        for row in connection.execute(
+            """
+            SELECT type_id FROM order_summary_types
+            WHERE order_summary_response_id = ? ORDER BY type_id
+            """,
+            (order_summary_response_id,),
+        )
+    }
+    for row in connection.execute(
+        """
+        SELECT type_id, region_id, system_id, location_id, is_buy_summary,
+               five_price, five_orders, five_items, lowest, highest, average,
+               total_items, total_orders, filtered_items, filtered_orders
+        FROM order_summaries WHERE order_summary_response_id = ?
+        ORDER BY type_id, is_buy_summary DESC
+        """,
+        (order_summary_response_id,),
+    ):
+        grouped[row[0]][bool(row[4])] = models.OrderSummaryRecord(
+            type_id=row[0],
+            region_id=row[1],
+            system_id=row[2],
+            location_id=row[3],
+            is_buy_summary=bool(row[4]),
+            five_price=from_cents(row[5]),
+            five_orders=row[6],
+            five_items=row[7],
+            lowest=from_cents(row[8]),
+            highest=from_cents(row[9]),
+            average=from_cents(row[10]),
+            total_items=row[11],
+            total_orders=row[12],
+            filtered_items=row[13],
+            filtered_orders=row[14],
+        )
+
+    return models.OrderSummaryDataset(
+        response_metadata_id=metadata[0],
+        received_at=metadata[1],
+        expires_at=metadata[2],
+        argus_expires_at=metadata[3],
+        region_id=metadata[4],
+        system_id=metadata[5],
+        location_id=metadata[6],
+        records={
+            type_id: models.BuySellSummary(
+                buy_summary=sides.get(True), sell_summary=sides.get(False)
+            )
+            for type_id, sides in grouped.items()
+        },
+    )
+
+
+@log_timing(logger=logger, level=_timing_log_level)
+def get_order_summary_responses(
+    connection: Connection, response_metadata_id: int | None = None
+) -> list[models.OrderSummaryResponse]:
+    """List saved summary scopes, optionally filtered by source response ID."""
+    query = """
+        SELECT response.id, response.response_metadata_id, metadata.received_at,
+               metadata.expires_at, metadata.argus_expires_at, response.region_id,
+               response.system_id, response.location_id
+        FROM order_summary_response AS response
+        JOIN response_metadata AS metadata
+            ON metadata.id = response.response_metadata_id
+    """
+    parameters: tuple[int, ...] = ()
+    if response_metadata_id is not None:
+        query += " WHERE response.response_metadata_id = ?"
+        parameters = (response_metadata_id,)
+    query += " ORDER BY response.id"
+
+    return [
+        models.OrderSummaryResponse(
+            order_summary_response_id=row[0],
+            response_metadata_id=row[1],
+            received_at=row[2],
+            expires_at=row[3],
+            argus_expires_at=row[4],
+            region_id=row[5],
+            system_id=row[6],
+            location_id=row[7],
+        )
+        for row in connection.execute(query, parameters)
+    ]
 
 
 @log_timing(logger=logger, level=_timing_log_level)

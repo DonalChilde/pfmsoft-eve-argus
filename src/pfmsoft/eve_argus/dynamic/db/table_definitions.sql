@@ -8,15 +8,20 @@ CREATE TABLE IF NOT EXISTS response_metadata(
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     received_at TEXT NOT NULL,
     expires_at TEXT,
-    argus_expires_at TEXT -- included to allow custom expiration handling
+    argus_expires_at TEXT, -- included to allow custom expiration handling
+    UNIQUE (id, received_at)
 )STRICT;
 
 -- GetMarketsRegionIdOrders API response metadata link.
 CREATE TABLE IF NOT EXISTS get_markets_region_id_orders_response(
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    response_metadata_id INTEGER,
+    response_metadata_id INTEGER NOT NULL UNIQUE,
     region_id INTEGER NOT NULL,
-    FOREIGN KEY(response_metadata_id) REFERENCES response_metadata(id)
+    received_at TEXT NOT NULL,
+    UNIQUE (region_id, received_at),
+    UNIQUE (response_metadata_id, region_id),
+    FOREIGN KEY(response_metadata_id, received_at)
+        REFERENCES response_metadata(id, received_at)
 ) STRICT;
 
 -- This table stores records from the GetMarketsRegionIdOrders API response.
@@ -39,10 +44,40 @@ CREATE TABLE IF NOT EXISTS market_orders (
     FOREIGN KEY(response_metadata_id) REFERENCES response_metadata(id)
 ) STRICT;
 
+CREATE TABLE IF NOT EXISTS order_summary_response(
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    response_metadata_id INTEGER NOT NULL,
+    region_id INTEGER NOT NULL,
+    system_id INTEGER,
+    location_id INTEGER,
+    CHECK (system_id IS NULL OR location_id IS NULL),
+    FOREIGN KEY(response_metadata_id, region_id)
+        REFERENCES get_markets_region_id_orders_response(response_metadata_id, region_id)
+) STRICT;
+
+CREATE UNIQUE INDEX IF NOT EXISTS order_summary_response_region_scope
+    ON order_summary_response(response_metadata_id, region_id)
+    WHERE system_id IS NULL AND location_id IS NULL;
+
+CREATE UNIQUE INDEX IF NOT EXISTS order_summary_response_system_scope
+    ON order_summary_response(response_metadata_id, region_id, system_id)
+    WHERE system_id IS NOT NULL AND location_id IS NULL;
+
+CREATE UNIQUE INDEX IF NOT EXISTS order_summary_response_location_scope
+    ON order_summary_response(response_metadata_id, region_id, location_id)
+    WHERE location_id IS NOT NULL AND system_id IS NULL;
+
+CREATE TABLE IF NOT EXISTS order_summary_types (
+    order_summary_response_id INTEGER NOT NULL,
+    type_id INTEGER NOT NULL,
+    PRIMARY KEY (order_summary_response_id, type_id),
+    FOREIGN KEY(order_summary_response_id) REFERENCES order_summary_response(id)
+) STRICT;
+
 -- This table is used to store summarized market order data for a specific region, type, solar system, and location combination
 CREATE TABLE IF NOT EXISTS order_summaries (
     ID INTEGER PRIMARY KEY AUTOINCREMENT,
-    response_metadata_id INTEGER,
+    order_summary_response_id INTEGER NOT NULL,
     region_id INTEGER NOT NULL,
     type_id INTEGER NOT NULL,
     system_id INTEGER,
@@ -58,8 +93,10 @@ CREATE TABLE IF NOT EXISTS order_summaries (
     total_orders INTEGER NOT NULL,
     filtered_items INTEGER NOT NULL,
     filtered_orders INTEGER NOT NULL,
-    UNIQUE (region_id, type_id, system_id, location_id),
-    FOREIGN KEY(response_metadata_id) REFERENCES response_metadata(id)
+    UNIQUE (order_summary_response_id, type_id, is_buy_summary),
+    FOREIGN KEY(order_summary_response_id) REFERENCES order_summary_response(id),
+    FOREIGN KEY(order_summary_response_id, type_id)
+        REFERENCES order_summary_types(order_summary_response_id, type_id)
 ) STRICT;
 
 -- GetMarketsPrices

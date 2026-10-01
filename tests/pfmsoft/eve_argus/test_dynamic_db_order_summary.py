@@ -49,7 +49,7 @@ def _dataset(
 
 
 def test_calculate_summaries_builds_dataset_from_market_orders() -> None:
-    """Calculated records retain the source response ID and metadata."""
+    """The dataset owns the source response ID and timestamps."""
     orders = _dataset({
         34: models.BuySellOrders(
             buy_orders=(
@@ -83,7 +83,8 @@ def test_calculate_summaries_builds_dataset_from_market_orders() -> None:
     sell = result.records[34].sell_summary
     assert isinstance(buy, models.OrderSummaryRecord)
     assert isinstance(sell, models.OrderSummaryRecord)
-    assert (buy.response_metadata_id, sell.response_metadata_id) == (17, 17)
+    assert not hasattr(buy, "response_metadata_id")
+    assert not hasattr(sell, "response_metadata_id")
     assert (buy.five_price, buy.five_orders, buy.five_items) == (
         Decimal("100.00"),
         1,
