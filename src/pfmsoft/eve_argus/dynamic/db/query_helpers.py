@@ -382,12 +382,11 @@ def get_order_summaries(
     )
 
 
-# FIXME this should filter by region_id instead
 @log_timing(logger=logger, level=_timing_log_level)
 def get_order_summary_responses(
-    connection: Connection, response_metadata_id: int | None = None
+    connection: Connection, region_id: int | None = None
 ) -> list[models.OrderSummaryResponse]:
-    """List saved summary scopes, optionally filtered by source response ID."""
+    """List saved summary scopes, optionally filtered by region ID."""
     query = """
         SELECT response.id, response.response_metadata_id, metadata.received_at,
                metadata.expires_at, metadata.argus_expires_at, response.region_id,
@@ -397,9 +396,9 @@ def get_order_summary_responses(
             ON metadata.id = response.response_metadata_id
     """
     parameters: tuple[int, ...] = ()
-    if response_metadata_id is not None:
-        query += " WHERE response.response_metadata_id = ?"
-        parameters = (response_metadata_id,)
+    if region_id is not None:
+        query += " WHERE response.region_id = ?"
+        parameters = (region_id,)
     query += " ORDER BY response.id"
 
     return [

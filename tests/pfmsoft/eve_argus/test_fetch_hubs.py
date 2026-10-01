@@ -377,7 +377,7 @@ def test_fetch_hubs_2_persists_summary_in_dynamic_database(
     source = query_helpers.get_market_orders_responses(connection, hub.region_id)
     assert len(source) == 1
     saved = query_helpers.get_order_summary_responses(
-        connection, source[0].response_metadata_id
+        connection, region_id=hub.region_id
     )
     assert len(saved) == 1
     report = query_helpers.get_order_summaries(
@@ -425,7 +425,7 @@ def test_fetch_hubs_2_can_resume_a_previous_response(
         assert failures == []
 
     assert len(query_helpers.get_market_orders_responses(connection, 1)) == 1
-    assert len(query_helpers.get_order_summary_responses(connection, 1)) == 1
+    assert len(query_helpers.get_order_summary_responses(connection, region_id=1)) == 1
 
 
 def test_fetch_hubs_2_uses_unexpired_orders_without_network_request(
@@ -471,7 +471,7 @@ def test_fetch_hubs_2_uses_unexpired_orders_without_network_request(
     assert (
         len(query_helpers.get_market_orders_responses(connection, hub.region_id)) == 1
     )
-    assert len(query_helpers.get_order_summary_responses(connection, 1)) == 1
+    assert len(query_helpers.get_order_summary_responses(connection, region_id=1)) == 1
 
 
 @pytest.mark.parametrize(
@@ -539,7 +539,7 @@ def test_fetch_hubs_2_refreshes_expired_orders(
         "2026-10-01T00:00:00Z",
     ]
     summaries = query_helpers.get_order_summary_responses(
-        connection, responses[-1].response_metadata_id
+        connection, region_id=hub.region_id
     )
     assert len(summaries) == 1
 
@@ -585,4 +585,4 @@ def test_fetch_hubs_2_rejects_expired_response_without_new_timestamp(
     assert (
         len(query_helpers.get_market_orders_responses(connection, hub.region_id)) == 1
     )
-    assert query_helpers.get_order_summary_responses(connection, 1) == []
+    assert query_helpers.get_order_summary_responses(connection, region_id=1) == []

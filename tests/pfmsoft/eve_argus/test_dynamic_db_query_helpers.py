@@ -276,7 +276,9 @@ def test_order_summary_responses_discover_independent_scopes() -> None:
     location_id = query_helpers.write_order_summaries(connection, location)
 
     assert len({region_id, system_id, location_id}) == 3
-    assert query_helpers.get_order_summary_responses(connection, 1) == [
+    assert query_helpers.get_order_summary_responses(
+        connection, region_id=10000002
+    ) == [
         OrderSummaryResponse(
             order_summary_response_id=batch_id,
             response_metadata_id=1,
@@ -293,7 +295,8 @@ def test_order_summary_responses_discover_independent_scopes() -> None:
             (location_id, None, 60003760),
         )
     ]
-    assert query_helpers.get_order_summary_responses(connection, 999) == []
+    assert len(query_helpers.get_order_summary_responses(connection)) == 3
+    assert query_helpers.get_order_summary_responses(connection, region_id=999) == []
     assert query_helpers.get_order_summaries(connection, system_id) == system
     assert query_helpers.get_order_summaries(connection, region_id) == region
     assert query_helpers.get_order_summaries(connection, location_id) == location
