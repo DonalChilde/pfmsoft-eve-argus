@@ -362,9 +362,9 @@ def test_fetch_hubs_2_persists_summary_in_dynamic_database(
     monkeypatch.setattr(
         fetch_hubs_2_module,
         "EsiResponseLoader",
-        lambda esi_link, schema: FakeLoader(
-            {1: SimpleNamespace(response_data=response)}
-        ),
+        lambda esi_link, schema: FakeLoader({
+            1: SimpleNamespace(response_data=response)
+        }),
     )
 
     failures = fetch_hubs_2_module.asyncio.run(
@@ -411,9 +411,9 @@ def test_fetch_hubs_2_can_resume_a_previous_response(
     monkeypatch.setattr(
         fetch_hubs_2_module,
         "EsiResponseLoader",
-        lambda esi_link, schema: FakeLoader(
-            {1: SimpleNamespace(response_data=response)}
-        ),
+        lambda esi_link, schema: FakeLoader({
+            1: SimpleNamespace(response_data=response)
+        }),
     )
 
     for _ in range(2):
@@ -454,9 +454,9 @@ def test_fetch_hubs_2_uses_unexpired_orders_without_network_request(
     monkeypatch.setattr(
         fetch_hubs_2_module,
         "EsiResponseLoader",
-        lambda esi_link, schema: FakeLoader(
-            {hub.region_id: RuntimeError("unexpected ESI request")}
-        ),
+        lambda esi_link, schema: FakeLoader({
+            hub.region_id: RuntimeError("unexpected ESI request")
+        }),
     )
 
     output = StringIO()
@@ -521,9 +521,9 @@ def test_fetch_hubs_2_refreshes_expired_orders(
     monkeypatch.setattr(
         fetch_hubs_2_module,
         "EsiResponseLoader",
-        lambda esi_link, schema: FakeLoader(
-            {hub.region_id: SimpleNamespace(response_data=fetched)}
-        ),
+        lambda esi_link, schema: FakeLoader({
+            hub.region_id: SimpleNamespace(response_data=fetched)
+        }),
     )
 
     failures = fetch_hubs_2_module.asyncio.run(
@@ -568,9 +568,9 @@ def test_fetch_hubs_2_rejects_expired_response_without_new_timestamp(
     monkeypatch.setattr(
         fetch_hubs_2_module,
         "EsiResponseLoader",
-        lambda esi_link, schema: FakeLoader(
-            {hub.region_id: SimpleNamespace(response_data=response)}
-        ),
+        lambda esi_link, schema: FakeLoader({
+            hub.region_id: SimpleNamespace(response_data=response)
+        }),
     )
 
     output = StringIO()
