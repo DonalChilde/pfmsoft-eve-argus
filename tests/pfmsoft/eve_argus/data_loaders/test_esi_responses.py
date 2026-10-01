@@ -101,24 +101,28 @@ def test_region_market_orders_maps_region_and_requests_all_orders(
     schema: object,
 ) -> None:
     """Regional orders should include the region and request all order types."""
-    link = FakeEsiLink([
-        successful_response([
-            {
-                "duration": 90,
-                "is_buy_order": True,
-                "issued": "2025-01-01T00:00:00Z",
-                "location_id": 60003760,
-                "min_volume": 1,
-                "order_id": 1,
-                "price": 10.5,
-                "range": "station",
-                "system_id": 30000142,
-                "type_id": 34,
-                "volume_remain": 5,
-                "volume_total": 5,
-            }
-        ])
-    ])
+    link = FakeEsiLink(
+        [
+            successful_response(
+                [
+                    {
+                        "duration": 90,
+                        "is_buy_order": True,
+                        "issued": "2025-01-01T00:00:00Z",
+                        "location_id": 60003760,
+                        "min_volume": 1,
+                        "order_id": 1,
+                        "price": 10.5,
+                        "range": "station",
+                        "system_id": 30000142,
+                        "type_id": 34,
+                        "volume_remain": 5,
+                        "volume_total": 5,
+                    }
+                ]
+            )
+        ]
+    )
     loader = EsiResponseLoader(link, schema)
 
     result = run(loader.region_market_orders(10000002))
@@ -138,16 +142,20 @@ def test_market_groups_details_collects_each_successful_response(
     responses = SimpleNamespace(
         failed_responses={},
         successful_responses={
-            "one": successful_response({
-                "market_group_id": 10,
-                "name": "Root",
-                "description": "",
-            }),
-            "two": successful_response({
-                "market_group_id": 20,
-                "name": "Child",
-                "description": "",
-            }),
+            "one": successful_response(
+                {
+                    "market_group_id": 10,
+                    "name": "Root",
+                    "description": "",
+                }
+            ),
+            "two": successful_response(
+                {
+                    "market_group_id": 20,
+                    "name": "Child",
+                    "description": "",
+                }
+            ),
         },
     )
     link = FakeEsiLink([responses])
@@ -203,30 +211,34 @@ def test_corporation_blueprints_builds_request_and_maps_response(
 ) -> None:
     """Corporation blueprints should include auth fields and map blueprint items."""
     credential_id = uuid4()
-    link = FakeEsiLink([
-        successful_response([
-            {
-                "item_id": 1000000016835,
-                "type_id": 691,
-                "location_id": 60014719,
-                "location_flag": "CorpSAG1",
-                "quantity": -1,
-                "time_efficiency": 10,
-                "material_efficiency": 20,
-                "runs": -1,
-            },
-            {
-                "item_id": 1000000016836,
-                "type_id": 692,
-                "location_id": 1026060253567,
-                "location_flag": "Hangar",
-                "quantity": -2,
-                "time_efficiency": 0,
-                "material_efficiency": 0,
-                "runs": 5,
-            },
-        ])
-    ])
+    link = FakeEsiLink(
+        [
+            successful_response(
+                [
+                    {
+                        "item_id": 1000000016835,
+                        "type_id": 691,
+                        "location_id": 60014719,
+                        "location_flag": "CorpSAG1",
+                        "quantity": -1,
+                        "time_efficiency": 10,
+                        "material_efficiency": 20,
+                        "runs": -1,
+                    },
+                    {
+                        "item_id": 1000000016836,
+                        "type_id": 692,
+                        "location_id": 1026060253567,
+                        "location_flag": "Hangar",
+                        "quantity": -2,
+                        "time_efficiency": 0,
+                        "material_efficiency": 0,
+                        "runs": 5,
+                    },
+                ]
+            )
+        ]
+    )
     loader = EsiResponseLoader(link, schema)
 
     result = run(loader.corporation_blueprints(98777771, 90000001, credential_id))

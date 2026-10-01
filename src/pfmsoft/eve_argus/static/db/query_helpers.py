@@ -462,12 +462,14 @@ def write_blueprints(
                     continue
                 activity = cast(ESD.Blueprint_Activity, activity)
                 for material in activity.materials or []:
-                    material_rows.append((
-                        blueprint_type_id,
-                        activity_name,
-                        material.typeID,
-                        material.quantity,
-                    ))
+                    material_rows.append(
+                        (
+                            blueprint_type_id,
+                            activity_name,
+                            material.typeID,
+                            material.quantity,
+                        )
+                    )
 
         connection.executemany(
             """
@@ -517,13 +519,15 @@ def write_blueprints(
                     continue
                 activity = cast(ESD.Blueprint_Activity, activity)
                 for product in activity.products or []:
-                    product_rows.append((
-                        blueprint_type_id,
-                        activity_name,
-                        product.typeID,
-                        product.quantity,
-                        product.probability,
-                    ))
+                    product_rows.append(
+                        (
+                            blueprint_type_id,
+                            activity_name,
+                            product.typeID,
+                            product.quantity,
+                            product.probability,
+                        )
+                    )
 
         connection.executemany(
             """

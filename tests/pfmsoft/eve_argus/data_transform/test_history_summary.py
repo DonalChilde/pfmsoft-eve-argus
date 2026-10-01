@@ -69,24 +69,26 @@ def test_date_range_days_rejects_non_positive_length() -> None:
 
 def test_calculate_history_summary_weights_prices_and_counts_missing_days() -> None:
     """Summary prices should be volume weighted across the requested window."""
-    market_history = history([
-        entry(
-            "2025-01-03",
-            average=10.0,
-            highest=12.0,
-            lowest=8.0,
-            order_count=10,
-            volume=100,
-        ),
-        entry(
-            "2025-01-02",
-            average=20.0,
-            highest=22.0,
-            lowest=18.0,
-            order_count=5,
-            volume=50,
-        ),
-    ])
+    market_history = history(
+        [
+            entry(
+                "2025-01-03",
+                average=10.0,
+                highest=12.0,
+                lowest=8.0,
+                order_count=10,
+                volume=100,
+            ),
+            entry(
+                "2025-01-02",
+                average=20.0,
+                highest=22.0,
+                lowest=18.0,
+                order_count=5,
+                volume=50,
+            ),
+        ]
+    )
 
     result = calculate_history_summary(market_history, period=3)
 
@@ -102,16 +104,18 @@ def test_calculate_history_summary_weights_prices_and_counts_missing_days() -> N
 
 def test_calculate_history_summary_supports_explicit_start_and_zero_volume() -> None:
     """An explicit start date should anchor a zero-volume window without division errors."""
-    market_history = history([
-        entry(
-            "2025-01-01",
-            average=10.0,
-            highest=10.0,
-            lowest=10.0,
-            order_count=3,
-            volume=0,
-        )
-    ])
+    market_history = history(
+        [
+            entry(
+                "2025-01-01",
+                average=10.0,
+                highest=10.0,
+                lowest=10.0,
+                order_count=3,
+                volume=0,
+            )
+        ]
+    )
 
     result = calculate_history_summary(
         market_history,
@@ -129,16 +133,18 @@ def test_calculate_history_summary_supports_explicit_start_and_zero_volume() -> 
         (history([]), 1, None, "empty"),
         (history([]), 0, None, "positive integer"),
         (
-            history([
-                entry(
-                    "2025-01-01",
-                    average=1,
-                    highest=1,
-                    lowest=1,
-                    order_count=1,
-                    volume=1,
-                )
-            ]),
+            history(
+                [
+                    entry(
+                        "2025-01-01",
+                        average=1,
+                        highest=1,
+                        lowest=1,
+                        order_count=1,
+                        volume=1,
+                    )
+                ]
+            ),
             1,
             "2025-01-02",
             "not in",
@@ -158,9 +164,9 @@ def test_calculate_history_summary_rejects_invalid_inputs(
 
 def test_calculate_regional_history_summaries_builds_type_mapping() -> None:
     """Regional calculation should summarize every type in its single region."""
-    market_history = history([
-        entry("2025-01-01", average=4, highest=5, lowest=3, order_count=2, volume=10)
-    ])
+    market_history = history(
+        [entry("2025-01-01", average=4, highest=5, lowest=3, order_count=2, volume=10)]
+    )
 
     result = calculate_regional_history_summaries(
         {10000002: {34: market_history}}, period=1

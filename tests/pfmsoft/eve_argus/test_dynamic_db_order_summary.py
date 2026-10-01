@@ -50,20 +50,22 @@ def _dataset(
 
 def test_calculate_summaries_builds_dataset_from_market_orders() -> None:
     """The dataset owns the source response ID and timestamps."""
-    orders = _dataset({
-        34: models.BuySellOrders(
-            buy_orders=(
-                _order(1, price="100", volume=10, is_buy_order=True),
-                _order(2, price="90", volume=20, is_buy_order=True),
-                _order(3, price="5", volume=30, is_buy_order=True),
-            ),
-            sell_orders=(
-                _order(4, price="110", volume=10, is_buy_order=False),
-                _order(5, price="120", volume=20, is_buy_order=False),
-                _order(6, price="1200", volume=30, is_buy_order=False),
-            ),
-        )
-    })
+    orders = _dataset(
+        {
+            34: models.BuySellOrders(
+                buy_orders=(
+                    _order(1, price="100", volume=10, is_buy_order=True),
+                    _order(2, price="90", volume=20, is_buy_order=True),
+                    _order(3, price="5", volume=30, is_buy_order=True),
+                ),
+                sell_orders=(
+                    _order(4, price="110", volume=10, is_buy_order=False),
+                    _order(5, price="120", volume=20, is_buy_order=False),
+                    _order(6, price="1200", volume=30, is_buy_order=False),
+                ),
+            )
+        }
+    )
 
     result = order_summary.calculate_summaries(orders, filter_factor=Decimal("10"))
 
@@ -111,36 +113,38 @@ def test_calculate_summaries_scopes_orders_and_includes_price_ties(
     scope: str, scope_id: int
 ) -> None:
     """The threshold counts all tied orders within the requested scope."""
-    orders = _dataset({
-        34: models.BuySellOrders(
-            buy_orders=(
-                _order(1, price="100", volume=5, is_buy_order=True),
-                _order(2, price="100", volume=5, is_buy_order=True),
-                _order(3, price="99", volume=100, is_buy_order=True),
-                _order(
-                    4,
-                    price="1000",
-                    volume=50,
-                    is_buy_order=True,
-                    system_id=30000143,
-                    location_id=60003761,
+    orders = _dataset(
+        {
+            34: models.BuySellOrders(
+                buy_orders=(
+                    _order(1, price="100", volume=5, is_buy_order=True),
+                    _order(2, price="100", volume=5, is_buy_order=True),
+                    _order(3, price="99", volume=100, is_buy_order=True),
+                    _order(
+                        4,
+                        price="1000",
+                        volume=50,
+                        is_buy_order=True,
+                        system_id=30000143,
+                        location_id=60003761,
+                    ),
                 ),
-            ),
-            sell_orders=(
-                _order(5, price="100", volume=5, is_buy_order=False),
-                _order(6, price="100", volume=5, is_buy_order=False),
-                _order(7, price="101", volume=100, is_buy_order=False),
-                _order(
-                    8,
-                    price="1",
-                    volume=50,
-                    is_buy_order=False,
-                    system_id=30000143,
-                    location_id=60003761,
+                sell_orders=(
+                    _order(5, price="100", volume=5, is_buy_order=False),
+                    _order(6, price="100", volume=5, is_buy_order=False),
+                    _order(7, price="101", volume=100, is_buy_order=False),
+                    _order(
+                        8,
+                        price="1",
+                        volume=50,
+                        is_buy_order=False,
+                        system_id=30000143,
+                        location_id=60003761,
+                    ),
                 ),
-            ),
-        )
-    })
+            )
+        }
+    )
     original_buy_orders = orders.records[34].buy_orders
 
     result = order_summary.calculate_summaries(orders, **{scope: scope_id})
@@ -166,15 +170,17 @@ def test_calculate_summaries_scopes_orders_and_includes_price_ties(
 
 def test_calculate_summaries_reaches_exact_five_percent_and_sorts_orders() -> None:
     """The best order sets the threshold when it reaches exactly 5% of volume."""
-    orders = _dataset({
-        34: models.BuySellOrders(
-            buy_orders=(
-                _order(1, price="90", volume=95, is_buy_order=True),
-                _order(2, price="100", volume=5, is_buy_order=True),
-            ),
-            sell_orders=(),
-        )
-    })
+    orders = _dataset(
+        {
+            34: models.BuySellOrders(
+                buy_orders=(
+                    _order(1, price="90", volume=95, is_buy_order=True),
+                    _order(2, price="100", volume=5, is_buy_order=True),
+                ),
+                sell_orders=(),
+            )
+        }
+    )
 
     result = order_summary.calculate_summaries(orders)
 
@@ -190,18 +196,20 @@ def test_calculate_summaries_handles_empty_and_nonpositive_books() -> None:
     empty = order_summary.calculate_summaries(_dataset({}))
     assert empty.records == {}
 
-    orders = _dataset({
-        34: models.BuySellOrders(
-            buy_orders=(_order(1, price="100", volume=0, is_buy_order=True),),
-            sell_orders=(),
-        ),
-        35: models.BuySellOrders(
-            buy_orders=(),
-            sell_orders=(
-                _order(2, price="110", volume=1, is_buy_order=False, type_id=35),
+    orders = _dataset(
+        {
+            34: models.BuySellOrders(
+                buy_orders=(_order(1, price="100", volume=0, is_buy_order=True),),
+                sell_orders=(),
             ),
-        ),
-    })
+            35: models.BuySellOrders(
+                buy_orders=(),
+                sell_orders=(
+                    _order(2, price="110", volume=1, is_buy_order=False, type_id=35),
+                ),
+            ),
+        }
+    )
 
     result = order_summary.calculate_summaries(orders)
 
@@ -246,9 +254,9 @@ def test_calculate_summaries_rejects_invalid_orders(
     bad_order: models.MarketOrderRecord, message: str
 ) -> None:
     """Order type and side must match the enclosing type and book side."""
-    orders = _dataset({
-        34: models.BuySellOrders(buy_orders=(bad_order,), sell_orders=())
-    })
+    orders = _dataset(
+        {34: models.BuySellOrders(buy_orders=(bad_order,), sell_orders=())}
+    )
 
     with pytest.raises(ValueError, match=message):
         order_summary.calculate_summaries(orders)

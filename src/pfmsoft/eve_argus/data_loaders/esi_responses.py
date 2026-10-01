@@ -82,9 +82,9 @@ class EsiResponseLoader(EsiResponseLoaderProtocol):
             market_group_id = response_item.response_data["market_group_id"]
             collected_dict[market_group_id] = response_dict
 
-        return esi_response_models.GetMarketsGroupsMarketGroupIdCollectedResponse.model_validate({
-            "response_data": collected_dict
-        })
+        return esi_response_models.GetMarketsGroupsMarketGroupIdCollectedResponse.model_validate(
+            {"response_data": collected_dict}
+        )
 
     async def region_market_orders(
         self, region_id: int
@@ -107,9 +107,9 @@ class EsiResponseLoader(EsiResponseLoaderProtocol):
             "orders": response.response_data,
         }
 
-        return esi_response_models.GetMarketsRegionIdOrdersResponse.model_validate({
-            "response_data": response_dict
-        })
+        return esi_response_models.GetMarketsRegionIdOrdersResponse.model_validate(
+            {"response_data": response_dict}
+        )
 
     async def region_market_histories(
         self, region_id: int, type_ids: set[int]
@@ -147,9 +147,9 @@ class EsiResponseLoader(EsiResponseLoaderProtocol):
                 "history": response_item.response_data,
             }
             result_list.append(response_dict)
-        return esi_response_models.GetMarketsRegionIdHistoryCollectedResponse.model_validate({
-            "response_data": result_list
-        })
+        return esi_response_models.GetMarketsRegionIdHistoryCollectedResponse.model_validate(
+            {"response_data": result_list}
+        )
 
     async def markets_prices(self) -> esi_response_models.GetMarketsPricesResponse:
         """Loads the market prices from ESI."""
@@ -164,9 +164,9 @@ class EsiResponseLoader(EsiResponseLoaderProtocol):
             "expires_at": _expires_at_from_response(response),
             "markets_prices": response.response_data,
         }
-        return esi_response_models.GetMarketsPricesResponse.model_validate({
-            "response_data": response_dict
-        })
+        return esi_response_models.GetMarketsPricesResponse.model_validate(
+            {"response_data": response_dict}
+        )
 
     async def industry_systems(self) -> esi_response_models.GetIndustrySystemsResponse:
         """Loads the industry systems from ESI."""
@@ -181,9 +181,9 @@ class EsiResponseLoader(EsiResponseLoaderProtocol):
             "expires_at": _expires_at_from_response(response),
             "industry_systems": response.response_data,
         }
-        return esi_response_models.GetIndustrySystemsResponse.model_validate({
-            "response_data": response_dict
-        })
+        return esi_response_models.GetIndustrySystemsResponse.model_validate(
+            {"response_data": response_dict}
+        )
 
     async def universe_names(
         self, ids: set[int]
@@ -218,9 +218,9 @@ class EsiResponseLoader(EsiResponseLoaderProtocol):
                 "expires_at": _expires_at_from_response(response),
                 "names": response.response_data,
             }
-            return esi_response_models.PostUniverseNamesResponse.model_validate({
-                "response_data": response_dict
-            })
+            return esi_response_models.PostUniverseNamesResponse.model_validate(
+                {"response_data": response_dict}
+            )
 
         responses = await asyncio.gather(*[_load_batch(batch) for batch in batches])
         # Combine the results from all batches into a single response. Use the first
@@ -233,9 +233,9 @@ class EsiResponseLoader(EsiResponseLoaderProtocol):
                 name for response in responses for name in response.response_data.names
             ],
         }
-        return esi_response_models.PostUniverseNamesResponse.model_validate({
-            "response_data": combined_response_dict
-        })
+        return esi_response_models.PostUniverseNamesResponse.model_validate(
+            {"response_data": combined_response_dict}
+        )
 
     async def corporation_industry_jobs(
         self,
@@ -262,9 +262,9 @@ class EsiResponseLoader(EsiResponseLoaderProtocol):
             "corporation_id": corporation_id,
             "industry_jobs": response.response_data,
         }
-        return esi_response_models.GetCorporationsCorporationIdIndustryJobsResponse.model_validate({
-            "response_data": response_dict
-        })
+        return esi_response_models.GetCorporationsCorporationIdIndustryJobsResponse.model_validate(
+            {"response_data": response_dict}
+        )
 
     async def corporation_blueprints(
         self,
@@ -290,9 +290,9 @@ class EsiResponseLoader(EsiResponseLoaderProtocol):
             "corporation_id": corporation_id,
             "blueprints": response.response_data,
         }
-        return esi_response_models.GetCorporationsCorporationIdBlueprintsResponse.model_validate({
-            "response_data": response_dict
-        })
+        return esi_response_models.GetCorporationsCorporationIdBlueprintsResponse.model_validate(
+            {"response_data": response_dict}
+        )
 
     async def universe_type_ids(self) -> esi_response_models.GetUniverseTypesResponse:
         """Loads the universe type IDs from ESI."""
@@ -307,9 +307,9 @@ class EsiResponseLoader(EsiResponseLoaderProtocol):
             "expires_at": _expires_at_from_response(response),
             "type_ids": response.response_data,
         }
-        return esi_response_models.GetUniverseTypesResponse.model_validate({
-            "response_data": response_dict
-        })
+        return esi_response_models.GetUniverseTypesResponse.model_validate(
+            {"response_data": response_dict}
+        )
 
 
 def _expires_at_from_response(response: EsiResponse) -> str | None:

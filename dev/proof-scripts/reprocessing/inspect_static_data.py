@@ -33,10 +33,12 @@ def build_inventory(
     for input_type_id, input_record in eligible_types.items():
         material_record = type_materials.get(input_type_id)
         if material_record is None:
-            missing_material_records.append({
-                "type_id": input_type_id,
-                "name": input_record.name_localized(),
-            })
+            missing_material_records.append(
+                {
+                    "type_id": input_type_id,
+                    "name": input_record.name_localized(),
+                }
+            )
             continue
 
         materials = material_record.materials or []
@@ -45,22 +47,26 @@ def build_inventory(
 
         randomized_materials = material_record.randomizedMaterials or []
         if randomized_materials:
-            randomized_inputs.append({
-                "type_id": input_type_id,
-                "name": input_record.name_localized(),
-                "material_count": len(materials),
-                "randomized_material_count": len(randomized_materials),
-            })
+            randomized_inputs.append(
+                {
+                    "type_id": input_type_id,
+                    "name": input_record.name_localized(),
+                    "material_count": len(materials),
+                    "randomized_material_count": len(randomized_materials),
+                }
+            )
 
         for material in materials:
             material_type = eligible_material_types.get(material.materialTypeID)
             if material_type is None:
-                unclassified_components.append({
-                    "input_type_id": input_type_id,
-                    "input_name": input_record.name_localized(),
-                    "material_type_id": material.materialTypeID,
-                    "quantity": material.quantity,
-                })
+                unclassified_components.append(
+                    {
+                        "input_type_id": input_type_id,
+                        "input_name": input_record.name_localized(),
+                        "material_type_id": material.materialTypeID,
+                        "quantity": material.quantity,
+                    }
+                )
 
     return {
         "published_type_count": len(types),
