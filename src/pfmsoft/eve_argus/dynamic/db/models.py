@@ -198,7 +198,7 @@ class MarketOrdersResponse(ResponseMetadata):
 
 
 @dataclass(slots=True, kw_only=True, frozen=True)
-class OrderSummaryItem:
+class OrderSummaryRecord:
     """Represents one side of the market depth for a single item type.
 
     Scope is repeated on each item so a summary remains meaningful when separated from
@@ -229,8 +229,8 @@ class OrderSummaryItem:
 class BuySellSummary:
     """Represents the available buy and sell summaries for an item type."""
 
-    buy_summary: OrderSummaryItem | None
-    sell_summary: OrderSummaryItem | None
+    buy_summary: OrderSummaryRecord | None
+    sell_summary: OrderSummaryRecord | None
 
     @property
     def buy_5(self) -> Decimal | None:
@@ -256,7 +256,7 @@ class OrderSummaryDataset(EsiDataset):
     location_id: int | None
     records: dict[int, BuySellSummary]
 
-    def iter_summaries(self) -> Iterable[OrderSummaryItem]:
+    def iter_summaries(self) -> Iterable[OrderSummaryRecord]:
         """Iterate over all buy and sell summaries in the report."""
         for bs_summary in self.records.values():
             if bs_summary.buy_summary is not None:
