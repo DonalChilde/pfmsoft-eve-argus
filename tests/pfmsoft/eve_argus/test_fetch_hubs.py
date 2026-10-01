@@ -213,34 +213,35 @@ def test_fetch_hubs_2_writes_and_summarizes_the_matching_order_set(
     )
     resources = FakeResources()
     resources.argus_dynamic_db_connection = object()
+    reader = Mock()
+    writer = Mock()
+    monkeypatch.setattr(fetch_hubs_2_module, "DynamicDBReader", lambda: reader)
+    monkeypatch.setattr(fetch_hubs_2_module, "DynamicDBWriter", lambda: writer)
     write_orders = Mock()
-    get_responses = Mock(
-        side_effect=[
-            [
-                SimpleNamespace(
-                    received_at="2026-08-01T00:00:00Z",
-                    response_metadata_id=4,
-                    expires_at="2026-08-02T00:00:00Z",
-                    argus_expires_at=None,
-                )
-            ],
-            [
-                SimpleNamespace(
-                    received_at="2026-08-01T00:00:00Z",
-                    response_metadata_id=4,
-                    expires_at="2026-08-02T00:00:00Z",
-                    argus_expires_at=None,
-                ),
-                SimpleNamespace(
-                    received_at="2026-09-01T00:00:00Z", response_metadata_id=7
-                ),
-            ],
-        ]
-    )
-    get_orders = Mock(return_value=Mock(records={34: Mock()}))
+    reader.read_market_orders_responses.side_effect = [
+        [
+            SimpleNamespace(
+                received_at="2026-08-01T00:00:00Z",
+                response_metadata_id=4,
+                expires_at="2026-08-02T00:00:00Z",
+                argus_expires_at=None,
+            )
+        ],
+        [
+            SimpleNamespace(
+                received_at="2026-08-01T00:00:00Z",
+                response_metadata_id=4,
+                expires_at="2026-08-02T00:00:00Z",
+                argus_expires_at=None,
+            ),
+            SimpleNamespace(received_at="2026-09-01T00:00:00Z", response_metadata_id=7),
+        ],
+    ]
+    reader.read_market_orders.return_value = Mock(records={34: Mock()})
     summary = Mock(records={34: Mock()})
     calculate = Mock(return_value=summary)
-    write_summaries = Mock(return_value=3)
+    writer.write_market_orders = write_orders
+    writer.write_order_summaries = Mock()
 
     monkeypatch.setattr(fetch_hubs_2_module, "MARKET_HUBS", [hub])
     monkeypatch.setattr(
@@ -250,18 +251,6 @@ def test_fetch_hubs_2_writes_and_summarizes_the_matching_order_set(
         fetch_hubs_2_module,
         "EsiResponseLoader",
         lambda esi_link, schema: FakeLoader({1: response}),
-    )
-    monkeypatch.setattr(
-        fetch_hubs_2_module.query_helpers, "write_market_orders", write_orders
-    )
-    monkeypatch.setattr(
-        fetch_hubs_2_module.query_helpers, "get_market_orders_responses", get_responses
-    )
-    monkeypatch.setattr(
-        fetch_hubs_2_module.query_helpers, "get_market_orders", get_orders
-    )
-    monkeypatch.setattr(
-        fetch_hubs_2_module.query_helpers, "write_order_summaries", write_summaries
     )
     monkeypatch.setattr(fetch_hubs_2_module, "calculate_summaries", calculate)
 
@@ -274,15 +263,20 @@ def test_fetch_hubs_2_writes_and_summarizes_the_matching_order_set(
 
     assert failures == []
     write_orders.assert_called_once_with(
-        resources.argus_dynamic_db_connection, response.response_data
+        resources.argus_dynamic_db_connection, market_orders=response.response_data
     )
-    assert get_responses.call_count == 2
-    for call in get_responses.call_args_list:
-        assert call.args == (resources.argus_dynamic_db_connection, hub.region_id)
-    get_orders.assert_called_once_with(resources.argus_dynamic_db_connection, 7)
-    calculate.assert_called_once_with(get_orders.return_value, system_id=hub.system_id)
-    write_summaries.assert_called_once_with(
-        resources.argus_dynamic_db_connection, summary
+    assert reader.read_market_orders_responses.call_count == 2
+    for call in reader.read_market_orders_responses.call_args_list:
+        assert call.args == (resources.argus_dynamic_db_connection,)
+        assert call.kwargs == {"region_id": hub.region_id}
+    reader.read_market_orders.assert_called_once_with(
+        resources.argus_dynamic_db_connection, response_metadata_id=7
+    )
+    calculate.assert_called_once_with(
+        reader.read_market_orders.return_value, system_id=hub.system_id
+    )
+    writer.write_order_summaries.assert_called_once_with(
+        resources.argus_dynamic_db_connection, order_summaries=summary
     )
     assert "Fetching market data for Alpha..." in output.getvalue()
     assert "Fetched 0 orders." in output.getvalue()

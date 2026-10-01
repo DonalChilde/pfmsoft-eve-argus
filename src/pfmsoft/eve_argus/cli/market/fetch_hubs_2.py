@@ -10,7 +10,7 @@ from whenever import Instant
 
 from pfmsoft.eve_argus.cli.helpers import get_eve_argus_settings_from_context
 from pfmsoft.eve_argus.data_loaders.esi_responses import EsiResponseLoader
-from pfmsoft.eve_argus.dynamic.db import query_helpers
+from pfmsoft.eve_argus.dynamic.access import DynamicDBReader, DynamicDBWriter
 from pfmsoft.eve_argus.dynamic.db.order_summary import calculate_summaries
 from pfmsoft.eve_argus.eve_argus import EveArgusResources
 from pfmsoft.eve_argus.models.esi import esi_response_models as ERM
@@ -51,12 +51,16 @@ async def _fetch_hubs_2(*, settings: EveArgusSettings, messenger: Console) -> li
         loader = EsiResponseLoader(
             esi_link=resources.esi_link, schema=resources.esi_schema
         )
+        reader = DynamicDBReader()
+        writer = DynamicDBWriter()
         for hub in MARKET_HUBS:
             try:
                 await _fetch_hub_2(
                     hub=hub,
                     loader=loader,
                     connection=resources.argus_dynamic_db_connection,
+                    reader=reader,
+                    writer=writer,
                     messenger=messenger,
                 )
             except Exception as error:
@@ -72,11 +76,13 @@ async def _fetch_hub_2(
     hub: MarketHub,
     loader: EsiResponseLoader,
     connection: sqlite3.Connection,
+    reader: DynamicDBReader,
+    writer: DynamicDBWriter,
     messenger: Console,
 ) -> None:
     """Fetch, store, and summarize one market hub in the dynamic database."""
-    stored_responses = query_helpers.get_market_orders_responses(
-        connection, hub.region_id
+    stored_responses = reader.read_market_orders_responses(
+        connection, region_id=hub.region_id
     )
     latest = stored_responses[-1] if stored_responses else None
     expires_at = (latest.argus_expires_at or latest.expires_at) if latest else None
@@ -111,13 +117,13 @@ async def _fetch_hub_2(
                 "ESI returned an expired order set without a new received_at."
             )
         if order_response is None:
-            query_helpers.write_market_orders(connection, response.response_data)
+            writer.write_market_orders(connection, market_orders=response.response_data)
             messenger.print("\tWrote orders to database.")
             order_response = next(
                 (
                     stored
-                    for stored in query_helpers.get_market_orders_responses(
-                        connection, hub.region_id
+                    for stored in reader.read_market_orders_responses(
+                        connection, region_id=hub.region_id
                     )
                     if stored.received_at == response.response_data.received_at
                 ),
@@ -127,12 +133,12 @@ async def _fetch_hub_2(
             messenger.print("\tOrders already in database.")
     if order_response is None:
         raise ValueError("No matching market orders response found after writing.")
-    region_orders = query_helpers.get_market_orders(
-        connection, order_response.response_metadata_id
+    region_orders = reader.read_market_orders(
+        connection, response_metadata_id=order_response.response_metadata_id
     )
     report = calculate_summaries(region_orders, system_id=hub.system_id)
     messenger.print(
         f"\tCalculated order summaries for {len(report.records.keys())} types."
     )
-    query_helpers.write_order_summaries(connection, report)
+    writer.write_order_summaries(connection, order_summaries=report)
     messenger.print("\tWrote order summaries to database.")
