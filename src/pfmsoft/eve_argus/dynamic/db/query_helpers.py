@@ -66,11 +66,11 @@ def write_response_metadata(
 
 
 @log_timing(logger=logger, level=_timing_log_level)
-def write_universe_prices(
+def write_markets_prices(
     connection: Connection,
     markets_prices: ERM.GetMarketsPrices,
 ) -> None:
-    """Write the universe prices to the database."""
+    """Write the universe markets prices to the database."""
     with connection:
         response_metadata_id = write_response_metadata(
             connection,
@@ -382,6 +382,7 @@ def get_order_summaries(
     )
 
 
+# FIXME this should filter by region_id instead
 @log_timing(logger=logger, level=_timing_log_level)
 def get_order_summary_responses(
     connection: Connection, response_metadata_id: int | None = None
