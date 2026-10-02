@@ -165,6 +165,7 @@ class DynamicDBReadProtocol(Protocol):
         ...
 
 
+# TODO implement other delete methods
 class DynamicDBDeleteProtocol(Protocol):
     def delete_market_orders(
         self, connection: Connection, *, response_metadata_id: int
@@ -173,4 +174,5 @@ class DynamicDBDeleteProtocol(Protocol):
         ...
 
 
+# TODO implement other util methods
 class DynamicDBUtilProtocol(Protocol): ...
