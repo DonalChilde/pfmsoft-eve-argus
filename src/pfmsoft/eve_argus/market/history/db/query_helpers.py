@@ -108,15 +108,45 @@ def read_market_history_date_range(
         connection: Database connection.
         region_id: Region ID for the market history.
         type_id: Type ID for the market history.
-        start: ISO date string for the most recent date, or None to start at
-            the beginning of available history.
-        end: ISO date string for the oldest date, or None to continue through
-            the end of available history.
+        start: Inclusive ISO date bound for the most recent date, or None to
+            start at the beginning of available history.
+        end: Inclusive ISO date bound for the oldest date, or None to continue
+            through the end of available history.
 
     Returns:
         Market history records ordered by date descending, most recent first.
     """
-    ...
+    query = """
+        SELECT received_at, region_id, type_id, average, date_, highest,
+            lowest, order_count, volume
+        FROM market_history
+        WHERE region_id = ? AND type_id = ?
+    """
+    parameters: list[int | str] = [region_id, type_id]
+    if start is not None:
+        query += " AND date_ <= ?"
+        parameters.append(start)
+    if end is not None:
+        query += " AND date_ >= ?"
+        parameters.append(end)
+    query += " ORDER BY date_ DESC"
+
+    with connection:
+        cursor = connection.execute(query, tuple(parameters))
+        return tuple(
+            models.MarketHistoryRecord(
+                received_at=row[0],
+                region_id=row[1],
+                type_id=row[2],
+                average=from_cents(row[3]),
+                date=row[4],
+                highest=from_cents(row[5]),
+                lowest=from_cents(row[6]),
+                order_count=row[7],
+                volume=row[8],
+            )
+            for row in cursor
+        )
 
 
 def read_market_history_latest(

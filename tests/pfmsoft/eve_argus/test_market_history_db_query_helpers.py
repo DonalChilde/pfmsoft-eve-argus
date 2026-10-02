@@ -52,3 +52,31 @@ def test_read_market_history_filters_and_orders_records() -> None:
             volume=80,
         ),
     )
+
+    bounded_records = query_helpers.read_market_history_date_range(
+        connection,
+        10,
+        20,
+        start="2026-09-30",
+        end="2026-09-29",
+    )
+    assert bounded_records == records
+
+    assert [
+        record.date
+        for record in query_helpers.read_market_history_date_range(
+            connection, 10, 20, start="2026-09-29", end=None
+        )
+    ] == ["2026-09-29"]
+    assert [
+        record.date
+        for record in query_helpers.read_market_history_date_range(
+            connection, 10, 20, start=None, end="2026-09-30"
+        )
+    ] == ["2026-09-30"]
+    assert [
+        record.date
+        for record in query_helpers.read_market_history_date_range(
+            connection, 10, 20, start=None, end=None
+        )
+    ] == ["2026-09-30", "2026-09-29"]
