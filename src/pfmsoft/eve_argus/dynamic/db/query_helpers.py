@@ -6,6 +6,7 @@ Write functions that insert primary records from a response need to:
 - use the returned id to write to the specific record table.
 """
 
+# FIXME change get_ to read_
 # The definition for this database lives at src/pfmsoft/eve_argus/dynamic/db/table_definitions.sql
 import logging
 from dataclasses import astuple, dataclass
