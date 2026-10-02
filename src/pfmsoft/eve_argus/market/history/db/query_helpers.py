@@ -202,4 +202,36 @@ def read_market_history_latest(
 
 def read_market_history_responses(
     connection: Connection, region_id: int, type_id: int
-) -> tuple[models.MarketHistoryResponse, ...]: ...
+) -> tuple[models.MarketHistoryResponse, ...]:
+    """Read response metadata for a region and type, newest first.
+
+    Args:
+        connection: Database connection.
+        region_id: Region ID for the market history.
+        type_id: Type ID for the market history.
+
+    Returns:
+        Response metadata ordered by received time descending.
+    """
+    with connection:
+        cursor = connection.execute(
+            """
+            SELECT id, received_at, expires_at, argus_expires_at, region_id,
+                type_id
+            FROM market_history_response
+            WHERE region_id = ? AND type_id = ?
+            ORDER BY received_at DESC, id DESC
+            """,
+            (region_id, type_id),
+        )
+        return tuple(
+            models.MarketHistoryResponse(
+                response_metadata_id=row[0],
+                received_at=row[1],
+                expires_at=row[2],
+                argus_expires_at=row[3],
+                region_id=row[4],
+                type_id=row[5],
+            )
+            for row in cursor
+        )

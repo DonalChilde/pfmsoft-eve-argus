@@ -86,6 +86,47 @@ def test_read_market_history_filters_and_orders_records() -> None:
     assert query_helpers.read_market_history_latest(connection, 10, 20, 1) == (
         records[0],
     )
-    assert query_helpers.read_market_history_latest(connection, 10, 20, 0) == ()
-    with pytest.raises(ValueError, match="count must be non-negative"):
+    with pytest.raises(ValueError, match="count must be positive"):
+        query_helpers.read_market_history_latest(connection, 10, 20, 0)
+    with pytest.raises(ValueError, match="count must be positive"):
         query_helpers.read_market_history_latest(connection, 10, 20, -1)
+
+
+def test_read_market_history_responses_filters_and_orders_by_received_at() -> None:
+    """Read matching response metadata newest first."""
+    connection = sqlite3.connect(":memory:")
+    connection.executescript(query_helpers.load_table_definitions())
+    connection.executemany(
+        """
+        INSERT INTO market_history_response (
+            received_at, expires_at, argus_expires_at, region_id, type_id
+        )
+        VALUES (?, ?, ?, ?, ?)
+        """,
+        [
+            ("2026-10-01", "2026-10-02", None, 10, 20),
+            ("2026-10-02", None, "2026-10-03", 10, 20),
+            ("2026-10-03", "2026-10-04", None, 10, 21),
+        ],
+    )
+
+    responses = query_helpers.read_market_history_responses(connection, 10, 20)
+
+    assert responses == (
+        models.MarketHistoryResponse(
+            response_metadata_id=2,
+            received_at="2026-10-02",
+            expires_at=None,
+            argus_expires_at="2026-10-03",
+            region_id=10,
+            type_id=20,
+        ),
+        models.MarketHistoryResponse(
+            response_metadata_id=1,
+            received_at="2026-10-01",
+            expires_at="2026-10-02",
+            argus_expires_at=None,
+            region_id=10,
+            type_id=20,
+        ),
+    )
