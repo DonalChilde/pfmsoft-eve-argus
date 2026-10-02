@@ -1,14 +1,18 @@
 """Query helpers for the market history database."""
 
+import logging
 from sqlite3 import Connection
 
 from pfmsoft.eve_argus.helpers.currency import from_cents, to_cents
 from pfmsoft.eve_argus.helpers.package_resource import load_package_resource_text
+from pfmsoft.eve_argus.helpers.timing import log_timing
 from pfmsoft.eve_argus.market.history.db import models
 from pfmsoft.eve_argus.models.esi import esi_response_models as ERM
 
+logger = logging.getLogger(__name__)
 _table_def_parent = "pfmsoft.eve_argus.market.history.db"
 _table_def_file = "table_definitions.sql"
+_timing_log_level = logging.INFO
 
 
 def load_table_definitions() -> str:
@@ -16,6 +20,7 @@ def load_table_definitions() -> str:
     return load_package_resource_text(_table_def_parent, _table_def_file)
 
 
+@log_timing(logger=logger, level=_timing_log_level)
 def write_market_history(
     connection: Connection,
     *,
@@ -66,6 +71,7 @@ def write_market_history(
         )
 
 
+@log_timing(logger=logger, level=_timing_log_level)
 def read_market_history(
     connection: Connection,
     *,
@@ -109,6 +115,7 @@ def read_market_history(
         )
 
 
+@log_timing(logger=logger, level=_timing_log_level)
 def read_market_history_date_range(
     connection: Connection,
     *,
@@ -164,6 +171,7 @@ def read_market_history_date_range(
         )
 
 
+@log_timing(logger=logger, level=_timing_log_level)
 def read_market_history_latest(
     connection: Connection,
     *,
@@ -216,6 +224,7 @@ def read_market_history_latest(
         )
 
 
+@log_timing(logger=logger, level=_timing_log_level)
 def read_market_history_responses(
     connection: Connection,
     *,
@@ -256,6 +265,7 @@ def read_market_history_responses(
         )
 
 
+@log_timing(logger=logger, level=_timing_log_level)
 def read_market_history_responses_by_region(
     connection: Connection, *, region_id: int
 ) -> dict[int, tuple[models.MarketHistoryResponse, ...]]:
