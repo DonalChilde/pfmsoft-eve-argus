@@ -2,12 +2,12 @@
 
 from sqlite3 import Connection
 
-from pfmsoft.eve_argus.helpers.currency import to_cents
+from pfmsoft.eve_argus.helpers.currency import from_cents, to_cents
 from pfmsoft.eve_argus.helpers.package_resource import load_package_resource_text
 from pfmsoft.eve_argus.market.history.db import models
 from pfmsoft.eve_argus.models.esi import esi_response_models as ERM
 
-_table_def_parent = "pfmsoft.eve_argus.market.orders.db"
+_table_def_parent = "pfmsoft.eve_argus.market.history.db"
 _table_def_file = "table_definitions.sql"
 
 
@@ -68,7 +68,31 @@ def read_market_history(
     Returns:
         Market history records ordered by date descending.
     """
-    ...
+    with connection:
+        cursor = connection.execute(
+            """
+            SELECT received_at, region_id, type_id, average, date_, highest,
+                lowest, order_count, volume
+            FROM market_history
+            WHERE region_id = ? AND type_id = ?
+            ORDER BY date_ DESC
+            """,
+            (region_id, type_id),
+        )
+        return tuple(
+            models.MarketHistoryRecord(
+                received_at=row[0],
+                region_id=row[1],
+                type_id=row[2],
+                average=from_cents(row[3]),
+                date=row[4],
+                highest=from_cents(row[5]),
+                lowest=from_cents(row[6]),
+                order_count=row[7],
+                volume=row[8],
+            )
+            for row in cursor
+        )
 
 
 def read_market_history_date_range(

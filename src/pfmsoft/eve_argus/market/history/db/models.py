@@ -22,6 +22,7 @@ class MarketHistoryResponse:
 
 @dataclass(slots=True, kw_only=True, frozen=True)
 class MarketHistoryRecord:
+    received_at: str
     region_id: int
     type_id: int
     average: Decimal
