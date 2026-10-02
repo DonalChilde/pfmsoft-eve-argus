@@ -116,10 +116,12 @@ def make_base_prices() -> dict[int, float | None]:
 
 def test_owned_excludes_copies_and_includes_originals_and_stacks() -> None:
     """Copies (quantity -2) are excluded; originals (-1) and stacks (positive) count."""
-    response = make_blueprints_response([
-        make_blueprint(1000, quantity=-1),  # original -> owned
-        make_blueprint(1000, quantity=-2, item_id=999),  # copy -> excluded
-    ])
+    response = make_blueprints_response(
+        [
+            make_blueprint(1000, quantity=-1),  # original -> owned
+            make_blueprint(1000, quantity=-2, item_id=999),  # copy -> excluded
+        ]
+    )
     report = generate_corp_missing_bpo_report(
         response,
         make_market_groups(),
@@ -136,18 +138,22 @@ def test_owned_excludes_copies_and_includes_originals_and_stacks() -> None:
 
 def test_owned_aggregates_max_me_then_max_te() -> None:
     """Per type, the highest ME wins, with ties broken by the highest TE at that ME."""
-    response = make_blueprints_response([
-        make_blueprint(1000, quantity=-1, material_efficiency=10, time_efficiency=5),
-        make_blueprint(
-            1000, quantity=-1, material_efficiency=10, time_efficiency=18, item_id=1
-        ),
-        make_blueprint(
-            1000, quantity=-1, material_efficiency=2, time_efficiency=20, item_id=2
-        ),
-        make_blueprint(
-            1000, quantity=-1, material_efficiency=0, time_efficiency=0, item_id=3
-        ),
-    ])
+    response = make_blueprints_response(
+        [
+            make_blueprint(
+                1000, quantity=-1, material_efficiency=10, time_efficiency=5
+            ),
+            make_blueprint(
+                1000, quantity=-1, material_efficiency=10, time_efficiency=18, item_id=1
+            ),
+            make_blueprint(
+                1000, quantity=-1, material_efficiency=2, time_efficiency=20, item_id=2
+            ),
+            make_blueprint(
+                1000, quantity=-1, material_efficiency=0, time_efficiency=0, item_id=3
+            ),
+        ]
+    )
     report = generate_corp_missing_bpo_report(
         response,
         make_market_groups(),
@@ -231,10 +237,12 @@ def test_unpublished_types_are_excluded_from_missing() -> None:
 
 def test_all_owned_produces_empty_missing() -> None:
     """When every published BPO is owned, the missing table is empty."""
-    response = make_blueprints_response([
-        make_blueprint(1000, quantity=-1),
-        make_blueprint(1001, quantity=-1, item_id=100100),
-    ])
+    response = make_blueprints_response(
+        [
+            make_blueprint(1000, quantity=-1),
+            make_blueprint(1001, quantity=-1, item_id=100100),
+        ]
+    )
     report = generate_corp_missing_bpo_report(
         response,
         make_market_groups(),
@@ -263,10 +271,12 @@ def test_empty_corporation_reports_everything_missing() -> None:
 
 def test_rows_sorted_by_market_path_then_name() -> None:
     """Owned and missing rows sort by market path, then blueprint name."""
-    response = make_blueprints_response([
-        make_blueprint(1001, quantity=-1, item_id=100100),
-        make_blueprint(1000, quantity=-1),
-    ])
+    response = make_blueprints_response(
+        [
+            make_blueprint(1001, quantity=-1, item_id=100100),
+            make_blueprint(1000, quantity=-1),
+        ]
+    )
     report = generate_corp_missing_bpo_report(
         response,
         make_market_groups(),

@@ -24,54 +24,56 @@ class FakeQuery:
 @pytest.fixture
 def loader_and_query() -> tuple[EsdDatasetsLoader, FakeQuery]:
     """Provide a loader backed by representative raw records."""
-    query = FakeQuery({
-        "blueprints": [
-            (
-                1,
-                {
-                    "blueprintTypeID": 1,
-                    "activities": {"manufacturing": {"time": 1}},
-                },
-            )
-        ],
-        "typeMaterials": [(2, {"materials": []})],
-        "types": [
-            (
-                3,
-                {
-                    "groupID": 1,
-                    "name": {"en": "Published"},
-                    "portionSize": 1,
-                    "published": True,
-                },
-            ),
-            (
-                4,
-                {
-                    "groupID": 1,
-                    "name": {"en": "Unpublished"},
-                    "portionSize": 1,
-                    "published": False,
-                },
-            ),
-        ],
-        "metaGroups": [(5, {"name": {"en": "Tech"}})],
-        "categories": [(6, {"name": {"en": "Ships"}, "published": True})],
-        "groups": [
-            (
-                7,
-                {
-                    "anchorable": False,
-                    "anchored": False,
-                    "categoryID": 6,
-                    "fittableNonSingleton": True,
-                    "name": {"en": "Frigate"},
-                    "published": True,
-                    "useBasePrice": False,
-                },
-            )
-        ],
-    })
+    query = FakeQuery(
+        {
+            "blueprints": [
+                (
+                    1,
+                    {
+                        "blueprintTypeID": 1,
+                        "activities": {"manufacturing": {"time": 1}},
+                    },
+                )
+            ],
+            "typeMaterials": [(2, {"materials": []})],
+            "types": [
+                (
+                    3,
+                    {
+                        "groupID": 1,
+                        "name": {"en": "Published"},
+                        "portionSize": 1,
+                        "published": True,
+                    },
+                ),
+                (
+                    4,
+                    {
+                        "groupID": 1,
+                        "name": {"en": "Unpublished"},
+                        "portionSize": 1,
+                        "published": False,
+                    },
+                ),
+            ],
+            "metaGroups": [(5, {"name": {"en": "Tech"}})],
+            "categories": [(6, {"name": {"en": "Ships"}, "published": True})],
+            "groups": [
+                (
+                    7,
+                    {
+                        "anchorable": False,
+                        "anchored": False,
+                        "categoryID": 6,
+                        "fittableNonSingleton": True,
+                        "name": {"en": "Frigate"},
+                        "published": True,
+                        "useBasePrice": False,
+                    },
+                )
+            ],
+        }
+    )
     return EsdDatasetsLoader(SimpleNamespace(query=query)), query
 
 

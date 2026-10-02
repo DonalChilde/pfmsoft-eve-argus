@@ -144,15 +144,17 @@ def build_reference_rows(
             hub_name: prices.get(input_type_id, {})
             for hub_name, prices in hub_prices.items()
         }
-        rows.append({
-            "role": "Input",
-            "type_id": input_type_id,
-            "name": input_record.name_localized(),
-            "market_path": market_path,
-            "quantity": input_record.portionSize,
-            "prices": input_prices,
-            "status": "complete",
-        })
+        rows.append(
+            {
+                "role": "Input",
+                "type_id": input_type_id,
+                "name": input_record.name_localized(),
+                "market_path": market_path,
+                "quantity": input_record.portionSize,
+                "prices": input_prices,
+                "status": "complete",
+            }
+        )
 
         input_status = "complete"
         for material in materials:
@@ -168,16 +170,18 @@ def build_reference_rows(
             }
             if material_record_type is None:
                 input_status = "incomplete"
-            rows.append({
-                "role": "material",
-                "type_id": material.materialTypeID,
-                "name": material_name,
-                "market_path": market_path,
-                "quantity": recovered_quantity(material.quantity),
-                "prices": material_prices,
-                "status": "complete" if material_record_type else "unclassified",
-                "input_type_id": input_type_id,
-            })
+            rows.append(
+                {
+                    "role": "material",
+                    "type_id": material.materialTypeID,
+                    "name": material_name,
+                    "market_path": market_path,
+                    "quantity": recovered_quantity(material.quantity),
+                    "prices": material_prices,
+                    "status": "complete" if material_record_type else "unclassified",
+                    "input_type_id": input_type_id,
+                }
+            )
 
         rows[-len(materials) - 1]["status"] = input_status
         input_count += 1
@@ -230,48 +234,58 @@ def render_report(
         if market_path != current_market_path:
             lines.extend([f"## Market path: {market_path}", ""])
             current_market_path = market_path
-        lines.extend([
-            f"### {input_row['name']}",
-            "",
-            f"Input type ID: {input_row['type_id']} | Portion size: {input_row['quantity']}",
-            "",
-            "#### Reference prices by hub",
-            "",
-            "| Role | Item | Quantity per portion | "
-            + " | ".join(f"{hub_name} Buy | {hub_name} Sell" for hub_name in hub_names)
-            + " | Market status |",
-            "| --- | --- | ---: | "
-            + " | ".join("---: | ---:" for _ in hub_names)
-            + " | --- |",
-        ])
+        lines.extend(
+            [
+                f"### {input_row['name']}",
+                "",
+                f"Input type ID: {input_row['type_id']} | Portion size: {input_row['quantity']}",
+                "",
+                "#### Reference prices by hub",
+                "",
+                "| Role | Item | Quantity per portion | "
+                + " | ".join(
+                    f"{hub_name} Buy | {hub_name} Sell" for hub_name in hub_names
+                )
+                + " | Market status |",
+                "| --- | --- | ---: | "
+                + " | ".join("---: | ---:" for _ in hub_names)
+                + " | --- |",
+            ]
+        )
         for row in item_rows:
             prices = []
             for hub_name in hub_names:
                 hub_price = row["prices"].get(hub_name, {})
-                prices.extend([
-                    format_decimal(hub_price.get("buy")),
-                    format_decimal(hub_price.get("sell")),
-                ])
+                prices.extend(
+                    [
+                        format_decimal(hub_price.get("buy")),
+                        format_decimal(hub_price.get("sell")),
+                    ]
+                )
             lines.append(
                 "| "
-                + " | ".join([
-                    markdown_cell(row["role"]),
-                    markdown_cell(row["name"]),
-                    format_quantity(row["quantity"]),
-                    *prices,
-                    markdown_cell(row["status"]),
-                ])
+                + " | ".join(
+                    [
+                        markdown_cell(row["role"]),
+                        markdown_cell(row["name"]),
+                        format_quantity(row["quantity"]),
+                        *prices,
+                        markdown_cell(row["status"]),
+                    ]
+                )
                 + " |"
             )
 
-        lines.extend([
-            "",
-            "#### Reprocessed value by hub",
-            "",
-            "| Hub | Input buy price | Input sell price | Reprocessed buy value | "
-            "Reprocessed sell value | Missing data |",
-            "| --- | ---: | ---: | ---: | ---: | --- |",
-        ])
+        lines.extend(
+            [
+                "",
+                "#### Reprocessed value by hub",
+                "",
+                "| Hub | Input buy price | Input sell price | Reprocessed buy value | "
+                "Reprocessed sell value | Missing data |",
+                "| --- | ---: | ---: | ---: | ---: | --- |",
+            ]
+        )
         material_rows = item_rows[1:]
         for hub_name in hub_names:
             input_prices = input_row["prices"].get(hub_name, {})
@@ -375,8 +389,16 @@ def build_deal_rows(
                     missing_data = list(missing)
                     if input_price is None:
                         missing_data.insert(0, f"input {input_price_side} price")
-                    cost = input_price if direction == "buy_input_sell_materials" else recovered_value
-                    revenue = recovered_value if direction == "buy_input_sell_materials" else input_price
+                    cost = (
+                        input_price
+                        if direction == "buy_input_sell_materials"
+                        else recovered_value
+                    )
+                    revenue = (
+                        recovered_value
+                        if direction == "buy_input_sell_materials"
+                        else input_price
+                    )
                     gross_profit = (
                         revenue - cost
                         if cost is not None and revenue is not None
@@ -408,7 +430,9 @@ def build_deal_rows(
                             "revenue": revenue,
                             "gross_profit": gross_profit,
                             "margin_percent": margin_percent,
-                            "market_status": "complete" if not missing_data else "incomplete",
+                            "market_status": "complete"
+                            if not missing_data
+                            else "incomplete",
                             "missing_data": sorted(set(missing_data)),
                         }
                     )
@@ -471,7 +495,9 @@ def render_deals_report(
             "Excluded from ranked opportunities |"
         )
     if len(incomplete_rows) > 25:
-        lines.append(f"| ... | ... | ... | ... | {len(incomplete_rows) - 25} more rows | ... |")
+        lines.append(
+            f"| ... | ... | ... | ... | {len(incomplete_rows) - 25} more rows | ... |"
+        )
     lines.append("")
     return "\n".join(lines)
 

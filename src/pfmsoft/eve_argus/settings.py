@@ -24,7 +24,7 @@ from pfmsoft.eve_argus import (
     __url__,
     __version__,
 )
-from pfmsoft.eve_argus.helpers.package_resource import load_package_resouce_text
+from pfmsoft.eve_argus.helpers.package_resource import load_package_resource_text
 
 logger = logging.getLogger(__name__)
 
@@ -211,7 +211,7 @@ def _ensure_toml_settings_file(application_directory: Path) -> None:
         return
 
     # load the toml-settings-example.toml file as a package resource
-    example_toml = load_package_resouce_text(
+    example_toml = load_package_resource_text(
         "pfmsoft.eve_argus", "toml-settings-example.toml"
     )
     toml_file.write_text(example_toml)

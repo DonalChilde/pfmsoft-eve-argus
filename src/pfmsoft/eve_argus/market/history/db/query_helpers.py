@@ -3,7 +3,7 @@
 import sqlite3
 
 from pfmsoft.eve_argus.helpers.currency import to_cents
-from pfmsoft.eve_argus.helpers.package_resource import load_package_resouce_text
+from pfmsoft.eve_argus.helpers.package_resource import load_package_resource_text
 from pfmsoft.eve_argus.models.esi.esi_response_models import (
     GetMarketsRegionIdHistoryDetail,
 )
@@ -14,7 +14,7 @@ _table_def_file = "table_definitions.sql"
 
 def load_table_definitions() -> str:
     """Load the SQL table definitions for the market orders database."""
-    return load_package_resouce_text(_table_def_parent, _table_def_file)
+    return load_package_resource_text(_table_def_parent, _table_def_file)
 
 
 def write_market_history(

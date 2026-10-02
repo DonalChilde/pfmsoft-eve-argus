@@ -83,18 +83,20 @@ def generate_blueprint_summary_1_report(
                 if product_type is not None:
                     portion_size = product_type.portionSize
 
-        report.append({
-            "blueprint_type_id": blueprint_type_id,
-            "name": type_record.name_localized(language),
-            "market_path": market_path,
-            "meta_group_id": meta_group_id,
-            "meta_group_name": (
-                meta_group.name_localized(language) if meta_group else None
-            ),
-            "base_price": type_record.basePrice,
-            "portion_size": portion_size,
-            "published": type_record.published,
-        })
+        report.append(
+            {
+                "blueprint_type_id": blueprint_type_id,
+                "name": type_record.name_localized(language),
+                "market_path": market_path,
+                "meta_group_id": meta_group_id,
+                "meta_group_name": (
+                    meta_group.name_localized(language) if meta_group else None
+                ),
+                "base_price": type_record.basePrice,
+                "portion_size": portion_size,
+                "published": type_record.published,
+            }
+        )
 
     report.sort(key=lambda item: (item["market_path"], item["name"]))
     return report
