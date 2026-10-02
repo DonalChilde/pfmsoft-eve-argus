@@ -18,9 +18,17 @@ def load_table_definitions() -> str:
 
 def write_market_history(
     connection: Connection,
-    data: ERM.GetMarketsRegionIdHistory,
-):
-    """Write market history data to the database."""
+    *,
+    history: ERM.GetMarketsRegionIdHistory,
+) -> None:
+    """Write market history data to the database.
+
+    Also writes the response metadata.
+
+    Args:
+        connection: Database connection.
+        history: Market history data.
+    """
     with connection:
         # Insert each history detail into the database
         connection.executemany(
@@ -30,9 +38,9 @@ def write_market_history(
             """,
             [
                 (
-                    data.received_at,
-                    data.region_id,
-                    data.type_id,
+                    history.received_at,
+                    history.region_id,
+                    history.type_id,
                     to_cents(detail.average),
                     detail.date,
                     to_cents(detail.highest),
@@ -40,7 +48,7 @@ def write_market_history(
                     detail.order_count,
                     detail.volume,
                 )
-                for detail in data.history
+                for detail in history.history
             ],
         )
         # insert market_history_response
@@ -49,12 +57,18 @@ def write_market_history(
             INSERT INTO market_history_response (received_at,expires_at, region_id, type_id)
             VALUES (?, ?, ?, ?)
             """,
-            (data.received_at, data.expires_at, data.region_id, data.type_id),
+            (
+                history.received_at,
+                history.expires_at,
+                history.region_id,
+                history.type_id,
+            ),
         )
 
 
 def read_market_history(
     connection: Connection,
+    *,
     region_id: int,
     type_id: int,
 ) -> tuple[models.MarketHistoryRecord, ...]:
@@ -97,6 +111,7 @@ def read_market_history(
 
 def read_market_history_date_range(
     connection: Connection,
+    *,
     region_id: int,
     type_id: int,
     start: str | None,
@@ -151,6 +166,7 @@ def read_market_history_date_range(
 
 def read_market_history_latest(
     connection: Connection,
+    *,
     region_id: int,
     type_id: int,
     count: int,
@@ -201,7 +217,10 @@ def read_market_history_latest(
 
 
 def read_market_history_responses(
-    connection: Connection, region_id: int, type_id: int
+    connection: Connection,
+    *,
+    region_id: int,
+    type_id: int,
 ) -> tuple[models.MarketHistoryResponse, ...]:
     """Read response metadata for a region and type, newest first.
 
