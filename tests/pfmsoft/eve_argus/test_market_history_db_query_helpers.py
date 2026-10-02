@@ -3,6 +3,8 @@
 import sqlite3
 from decimal import Decimal
 
+import pytest
+
 from pfmsoft.eve_argus.market.history.db import models, query_helpers
 
 
@@ -80,3 +82,10 @@ def test_read_market_history_filters_and_orders_records() -> None:
             connection, 10, 20, start=None, end=None
         )
     ] == ["2026-09-30", "2026-09-29"]
+
+    assert query_helpers.read_market_history_latest(connection, 10, 20, 1) == (
+        records[0],
+    )
+    assert query_helpers.read_market_history_latest(connection, 10, 20, 0) == ()
+    with pytest.raises(ValueError, match="count must be non-negative"):
+        query_helpers.read_market_history_latest(connection, 10, 20, -1)
