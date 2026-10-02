@@ -32,6 +32,22 @@ class MarketHistoryReader(MarketHistoryReadProtocol):
             connection, region_id=region_id, type_id=type_id
         )
 
+    def read_market_history_responses_by_region(
+        self, connection: Connection, *, region_id: int
+    ) -> dict[int, tuple[models.MarketHistoryResponse, ...]]:
+        """Read responses for a region, grouped by type.
+
+        Args:
+            connection: Database connection.
+            region_id: Region ID.
+
+        Returns:
+            Responses grouped by type.
+        """
+        return QH.read_market_history_responses_by_region(
+            connection, region_id=region_id
+        )
+
     def read_market_history(
         self, connection: Connection, region_id: int, type_id: int
     ) -> tuple[models.MarketHistoryRecord, ...]:

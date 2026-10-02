@@ -28,6 +28,20 @@ class MarketHistoryReadProtocol(Protocol):
         """
         ...
 
+    def read_market_history_responses_by_region(
+        self, connection: Connection, *, region_id: int
+    ) -> dict[int, tuple[models.MarketHistoryResponse, ...]]:
+        """Read responses for a region, grouped by type.
+
+        Args:
+            connection: Database connection.
+            region_id: Region ID.
+
+        Returns:
+            Responses grouped by type.
+        """
+        ...
+
     def read_market_history(
         self, connection: Connection, region_id: int, type_id: int
     ) -> tuple[models.MarketHistoryRecord, ...]:

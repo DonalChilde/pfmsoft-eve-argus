@@ -254,3 +254,43 @@ def read_market_history_responses(
             )
             for row in cursor
         )
+
+
+def read_market_history_responses_by_region(
+    connection: Connection, *, region_id: int
+) -> dict[int, tuple[models.MarketHistoryResponse, ...]]:
+    """Read responses for a region, grouped by type.
+
+    Args:
+        connection: Database connection.
+        region_id: Region ID.
+
+    Returns:
+        Responses grouped by type.
+    """
+    responses_by_type: dict[int, list[models.MarketHistoryResponse]] = {}
+    with connection:
+        cursor = connection.execute(
+            """
+            SELECT id, received_at, expires_at, argus_expires_at, region_id,
+                type_id
+            FROM market_history_response
+            WHERE region_id = ?
+            ORDER BY type_id, received_at DESC, id DESC
+            """,
+            (region_id,),
+        )
+        for row in cursor:
+            response = models.MarketHistoryResponse(
+                response_metadata_id=row[0],
+                received_at=row[1],
+                expires_at=row[2],
+                argus_expires_at=row[3],
+                region_id=row[4],
+                type_id=row[5],
+            )
+            responses_by_type.setdefault(response.type_id, []).append(response)
+
+    return {
+        type_id: tuple(responses) for type_id, responses in responses_by_type.items()
+    }

@@ -28,7 +28,7 @@ def test_read_market_history_filters_and_orders_records() -> None:
         ],
     )
 
-    records = query_helpers.read_market_history(connection, 10, 20)
+    records = query_helpers.read_market_history(connection, region_id=10, type_id=20)
 
     assert records == (
         models.MarketHistoryRecord(
@@ -57,8 +57,8 @@ def test_read_market_history_filters_and_orders_records() -> None:
 
     bounded_records = query_helpers.read_market_history_date_range(
         connection,
-        10,
-        20,
+        region_id=10,
+        type_id=20,
         start="2026-09-30",
         end="2026-09-29",
     )
@@ -67,33 +67,49 @@ def test_read_market_history_filters_and_orders_records() -> None:
     assert [
         record.date
         for record in query_helpers.read_market_history_date_range(
-            connection, 10, 20, start="2026-09-29", end=None
+            connection,
+            region_id=10,
+            type_id=20,
+            start="2026-09-29",
+            end=None,
         )
     ] == ["2026-09-29"]
     assert [
         record.date
         for record in query_helpers.read_market_history_date_range(
-            connection, 10, 20, start=None, end="2026-09-30"
+            connection,
+            region_id=10,
+            type_id=20,
+            start=None,
+            end="2026-09-30",
         )
     ] == ["2026-09-30"]
     assert [
         record.date
         for record in query_helpers.read_market_history_date_range(
-            connection, 10, 20, start=None, end=None
+            connection,
+            region_id=10,
+            type_id=20,
+            start=None,
+            end=None,
         )
     ] == ["2026-09-30", "2026-09-29"]
 
-    assert query_helpers.read_market_history_latest(connection, 10, 20, 1) == (
-        records[0],
-    )
+    assert query_helpers.read_market_history_latest(
+        connection, region_id=10, type_id=20, count=1
+    ) == (records[0],)
     with pytest.raises(ValueError, match="count must be positive"):
-        query_helpers.read_market_history_latest(connection, 10, 20, 0)
+        query_helpers.read_market_history_latest(
+            connection, region_id=10, type_id=20, count=0
+        )
     with pytest.raises(ValueError, match="count must be positive"):
-        query_helpers.read_market_history_latest(connection, 10, 20, -1)
+        query_helpers.read_market_history_latest(
+            connection, region_id=10, type_id=20, count=-1
+        )
 
 
-def test_read_market_history_responses_filters_and_orders_by_received_at() -> None:
-    """Read matching response metadata newest first."""
+def test_read_market_history_responses_filter_order_and_group_by_region() -> None:
+    """Read response metadata newest first and group region data by type."""
     connection = sqlite3.connect(":memory:")
     connection.executescript(query_helpers.load_table_definitions())
     connection.executemany(
@@ -107,10 +123,13 @@ def test_read_market_history_responses_filters_and_orders_by_received_at() -> No
             ("2026-10-01", "2026-10-02", None, 10, 20),
             ("2026-10-02", None, "2026-10-03", 10, 20),
             ("2026-10-03", "2026-10-04", None, 10, 21),
+            ("2026-10-04", None, None, 11, 20),
         ],
     )
 
-    responses = query_helpers.read_market_history_responses(connection, 10, 20)
+    responses = query_helpers.read_market_history_responses(
+        connection, region_id=10, type_id=20
+    )
 
     assert responses == (
         models.MarketHistoryResponse(
@@ -130,3 +149,19 @@ def test_read_market_history_responses_filters_and_orders_by_received_at() -> No
             type_id=20,
         ),
     )
+
+    assert query_helpers.read_market_history_responses_by_region(
+        connection, region_id=10
+    ) == {
+        20: responses,
+        21: (
+            models.MarketHistoryResponse(
+                response_metadata_id=3,
+                received_at="2026-10-03",
+                expires_at="2026-10-04",
+                argus_expires_at=None,
+                region_id=10,
+                type_id=21,
+            ),
+        ),
+    }
