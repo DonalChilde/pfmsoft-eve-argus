@@ -22,7 +22,7 @@ from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import Any, Self
 
-from pydantic import BaseModel
+from pydantic import BaseModel, RootModel
 from whenever import Instant
 
 
@@ -177,6 +177,9 @@ class GetMarketsRegionIdHistory(EsiResponseBase):
     region_id: int
     type_id: int
     history: list[GetMarketsRegionIdHistoryDetail]
+
+
+GetMarketsRegionIdHistoryRoot = RootModel[GetMarketsRegionIdHistory]
 
 
 class GetMarketsRegionIdHistoryCollectedResponse(EsiResponseBaseModel):

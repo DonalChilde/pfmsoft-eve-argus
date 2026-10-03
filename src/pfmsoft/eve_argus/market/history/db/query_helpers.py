@@ -1,15 +1,18 @@
 """Query helpers for the market history database."""
 
-import sqlite3
+import logging
+from sqlite3 import Connection
 
-from pfmsoft.eve_argus.helpers.currency import to_cents
+from pfmsoft.eve_argus.helpers.currency import from_cents, to_cents
 from pfmsoft.eve_argus.helpers.package_resource import load_package_resource_text
-from pfmsoft.eve_argus.models.esi.esi_response_models import (
-    GetMarketsRegionIdHistoryDetail,
-)
+from pfmsoft.eve_argus.helpers.timing import log_timing
+from pfmsoft.eve_argus.market.history.db import models
+from pfmsoft.eve_argus.models.esi import esi_response_models as ERM
 
-_table_def_parent = "pfmsoft.eve_argus.market.orders.db"
+logger = logging.getLogger(__name__)
+_table_def_parent = "pfmsoft.eve_argus.market.history.db"
 _table_def_file = "table_definitions.sql"
+_timing_log_level = logging.INFO
 
 
 def load_table_definitions() -> str:
@@ -17,26 +20,46 @@ def load_table_definitions() -> str:
     return load_package_resource_text(_table_def_parent, _table_def_file)
 
 
+@log_timing(logger=logger, level=_timing_log_level)
 def write_market_history(
-    connection: sqlite3.Connection,
-    region_id: int,
-    type_id: int,
-    data: list[GetMarketsRegionIdHistoryDetail],
-):
-    """Write market history data to the database."""
-    if not data:
-        return
+    connection: Connection,
+    *,
+    history: ERM.GetMarketsRegionIdHistory,
+) -> None:
+    """Write market history data to the database.
 
+    Also writes the response metadata.
+
+    Args:
+        connection: Database connection.
+        history: Market history data.
+    """
     with connection:
+        # insert market_history_response
+        # This should fail early if the response is already in the DB
+        connection.execute(
+            """
+            INSERT INTO market_history_response (received_at,expires_at, region_id, type_id)
+            VALUES (?, ?, ?, ?)
+            """,
+            (
+                history.received_at,
+                history.expires_at,
+                history.region_id,
+                history.type_id,
+            ),
+        )
+        # Insert each history detail into the database
         connection.executemany(
             """
-            INSERT INTO market_history (region_id, type_id, average,date_,highest,lowest,order_count,volume)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO market_history (received_at, region_id, type_id, average,date_,highest,lowest,order_count,volume)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             [
                 (
-                    region_id,
-                    type_id,
+                    history.received_at,
+                    history.region_id,
+                    history.type_id,
                     to_cents(detail.average),
                     detail.date,
                     to_cents(detail.highest),
@@ -44,11 +67,241 @@ def write_market_history(
                     detail.order_count,
                     detail.volume,
                 )
-                for detail in data
+                for detail in history.history
             ],
         )
 
 
-def get_market_history(
-    connection: sqlite3.Connection, region_id: int, type_id: int
-) -> list[GetMarketsRegionIdHistoryDetail]: ...
+@log_timing(logger=logger, level=_timing_log_level)
+def read_market_history(
+    connection: Connection,
+    *,
+    region_id: int,
+    type_id: int,
+) -> tuple[models.MarketHistoryRecord, ...]:
+    """Read all market history for a region and type.
+
+    Args:
+        connection: Database connection.
+        region_id: Region ID.
+        type_id: Type ID.
+
+    Returns:
+        Market history records ordered by date descending.
+    """
+    with connection:
+        cursor = connection.execute(
+            """
+            SELECT received_at, region_id, type_id, average, date_, highest,
+                lowest, order_count, volume
+            FROM market_history
+            WHERE region_id = ? AND type_id = ?
+            ORDER BY date_ DESC
+            """,
+            (region_id, type_id),
+        )
+        return tuple(
+            models.MarketHistoryRecord(
+                received_at=row[0],
+                region_id=row[1],
+                type_id=row[2],
+                average=from_cents(row[3]),
+                date=row[4],
+                highest=from_cents(row[5]),
+                lowest=from_cents(row[6]),
+                order_count=row[7],
+                volume=row[8],
+            )
+            for row in cursor
+        )
+
+
+@log_timing(logger=logger, level=_timing_log_level)
+def read_market_history_date_range(
+    connection: Connection,
+    *,
+    region_id: int,
+    type_id: int,
+    start: str | None,
+    end: str | None,
+) -> tuple[models.MarketHistoryRecord, ...]:
+    """Read market history between date bounds, ordered newest first.
+
+    Args:
+        connection: Database connection.
+        region_id: Region ID for the market history.
+        type_id: Type ID for the market history.
+        start: Inclusive ISO date bound for the most recent date, or None to
+            start at the beginning of available history.
+        end: Inclusive ISO date bound for the oldest date, or None to continue
+            through the end of available history.
+
+    Returns:
+        Market history records ordered by date descending, most recent first.
+    """
+    query = """
+        SELECT received_at, region_id, type_id, average, date_, highest,
+            lowest, order_count, volume
+        FROM market_history
+        WHERE region_id = ? AND type_id = ?
+    """
+    parameters: list[int | str] = [region_id, type_id]
+    if start is not None:
+        query += " AND date_ <= ?"
+        parameters.append(start)
+    if end is not None:
+        query += " AND date_ >= ?"
+        parameters.append(end)
+    query += " ORDER BY date_ DESC"
+
+    with connection:
+        cursor = connection.execute(query, tuple(parameters))
+        return tuple(
+            models.MarketHistoryRecord(
+                received_at=row[0],
+                region_id=row[1],
+                type_id=row[2],
+                average=from_cents(row[3]),
+                date=row[4],
+                highest=from_cents(row[5]),
+                lowest=from_cents(row[6]),
+                order_count=row[7],
+                volume=row[8],
+            )
+            for row in cursor
+        )
+
+
+@log_timing(logger=logger, level=_timing_log_level)
+def read_market_history_latest(
+    connection: Connection,
+    *,
+    region_id: int,
+    type_id: int,
+    count: int,
+) -> tuple[models.MarketHistoryRecord, ...]:
+    """Read the latest market history records.
+
+    Args:
+        connection: Database connection.
+        region_id: Region ID.
+        type_id: Type ID.
+        count: Number of records to fetch. Must be > 0.
+
+    Returns:
+        Latest market history records ordered by date descending.
+
+    Raises:
+        ValueError: If count is negative or zero.
+    """
+    if count <= 0:
+        raise ValueError("count must be positive")
+
+    with connection:
+        cursor = connection.execute(
+            """
+            SELECT received_at, region_id, type_id, average, date_, highest,
+                lowest, order_count, volume
+            FROM market_history
+            WHERE region_id = ? AND type_id = ?
+            ORDER BY date_ DESC
+            LIMIT ?
+            """,
+            (region_id, type_id, count),
+        )
+        return tuple(
+            models.MarketHistoryRecord(
+                received_at=row[0],
+                region_id=row[1],
+                type_id=row[2],
+                average=from_cents(row[3]),
+                date=row[4],
+                highest=from_cents(row[5]),
+                lowest=from_cents(row[6]),
+                order_count=row[7],
+                volume=row[8],
+            )
+            for row in cursor
+        )
+
+
+@log_timing(logger=logger, level=_timing_log_level)
+def read_market_history_responses(
+    connection: Connection,
+    *,
+    region_id: int,
+    type_id: int,
+) -> tuple[models.MarketHistoryResponse, ...]:
+    """Read response metadata for a region and type, newest first.
+
+    Args:
+        connection: Database connection.
+        region_id: Region ID for the market history.
+        type_id: Type ID for the market history.
+
+    Returns:
+        Response metadata ordered by received time descending.
+    """
+    with connection:
+        cursor = connection.execute(
+            """
+            SELECT id, received_at, expires_at, argus_expires_at, region_id,
+                type_id
+            FROM market_history_response
+            WHERE region_id = ? AND type_id = ?
+            ORDER BY received_at DESC, id DESC
+            """,
+            (region_id, type_id),
+        )
+        return tuple(
+            models.MarketHistoryResponse(
+                response_metadata_id=row[0],
+                received_at=row[1],
+                expires_at=row[2],
+                argus_expires_at=row[3],
+                region_id=row[4],
+                type_id=row[5],
+            )
+            for row in cursor
+        )
+
+
+@log_timing(logger=logger, level=_timing_log_level)
+def read_market_history_responses_by_region(
+    connection: Connection, *, region_id: int
+) -> dict[int, tuple[models.MarketHistoryResponse, ...]]:
+    """Read responses for a region, grouped by type.
+
+    Args:
+        connection: Database connection.
+        region_id: Region ID.
+
+    Returns:
+        Responses grouped by type.
+    """
+    responses_by_type: dict[int, list[models.MarketHistoryResponse]] = {}
+    with connection:
+        cursor = connection.execute(
+            """
+            SELECT id, received_at, expires_at, argus_expires_at, region_id,
+                type_id
+            FROM market_history_response
+            WHERE region_id = ?
+            ORDER BY type_id, received_at DESC, id DESC
+            """,
+            (region_id,),
+        )
+        for row in cursor:
+            response = models.MarketHistoryResponse(
+                response_metadata_id=row[0],
+                received_at=row[1],
+                expires_at=row[2],
+                argus_expires_at=row[3],
+                region_id=row[4],
+                type_id=row[5],
+            )
+            responses_by_type.setdefault(response.type_id, []).append(response)
+
+    return {
+        type_id: tuple(responses) for type_id, responses in responses_by_type.items()
+    }
