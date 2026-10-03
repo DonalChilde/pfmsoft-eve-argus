@@ -2,25 +2,21 @@
 
 import asyncio
 import logging
-import re
 from dataclasses import dataclass
 from sqlite3 import Connection
-from typing import Any
 
 from pfmsoft.eve_link import (
     EsiLink,
-    EsiRequest,
-    EsiRequestGroup,
-    EsiResponse,
     EsiSchema,
     FailedEsiResponse,
 )
+from whenever import Instant
 
+from pfmsoft.eve_argus.data_loaders import esi as LoadEsi
 from pfmsoft.eve_argus.market.history.access import (
     MarketHistoryReader,
     MarketHistoryWrite,
 )
-from pfmsoft.eve_argus.models.esi import esi_response_models as ERM
 
 logger = logging.getLogger(__name__)
 _writer = MarketHistoryWrite()
@@ -49,7 +45,7 @@ class MarketHistoryUpdateStatus:
     # placeholder dataclass, fields to be updated as flow develops
     market_history_id: MarketHistoryID
     update_successful: bool
-    db_was_current: bool
+    update_not_required: bool
     failure_message: str
 
 
@@ -58,6 +54,7 @@ class MarketHistoryDBStatus:
     """Database status for market history."""
 
     market_history_id: MarketHistoryID
+    exists: bool
     expired: bool
 
 
@@ -72,7 +69,7 @@ async def _update_history(
     Checks if history is expired and updates it.
 
     This function does not check to see if the current database data is eligible for update.
-    It only makes the request andupdates the data.
+    It only makes the request and updates the data.
 
     Args:
         esi_link: The ESI link instance.
@@ -81,50 +78,35 @@ async def _update_history(
         market_history_id: MarketHistoryID.
 
     Returns:
-        UpdateStatus indicating success or failure.
+        MarketHistoryUpdateStatus indicating success or failure.
     """
-    request = EsiRequest(
-        operation_id="GetMarketsRegionIdHistory",
-        path_parameters={"region_id": market_history_id.region_id},
-        query_parameters={"type_id": market_history_id.type_id},
+    response = await LoadEsi.fetch_market_history(
+        esi_link,
+        esi_schema,
+        region_id=market_history_id.region_id,
+        type_id=market_history_id.type_id,
     )
-    response = await esi_link.make_request(esi_request=request, schema=esi_schema)
     if isinstance(response, FailedEsiResponse):
         return MarketHistoryUpdateStatus(
             market_history_id=market_history_id,
             update_successful=False,
-            db_was_current=False,
+            update_not_required=False,
             failure_message=str(response.failed_response.error_messages),
         )
-    response_dict: dict[str, Any] = {
-        "received_at": _received_at_from_response(response),
-        "expires_at": _expires_at_from_response(response),
-        "region_id": response.esi_request.path_parameters["region_id"],
-        "type_id": response.esi_request.query_parameters["type_id"],
-        "history": response.response_data,
-    }
     try:
-        history = ERM.GetMarketsRegionIdHistoryRoot.model_validate(response_dict).root
-    except Exception as e:
-        return MarketHistoryUpdateStatus(
-            market_history_id=market_history_id,
-            update_successful=False,
-            db_was_current=False,
-            failure_message=str(e),
-        )
-    try:
+        history = LoadEsi.validate_market_history(response)
         _writer.write_market_history(connection, history)
     except Exception as e:
         return MarketHistoryUpdateStatus(
             market_history_id=market_history_id,
             update_successful=False,
-            db_was_current=False,
+            update_not_required=False,
             failure_message=str(e),
         )
     return MarketHistoryUpdateStatus(
         market_history_id=market_history_id,
         update_successful=True,
-        db_was_current=False,
+        update_not_required=False,
         failure_message="",
     )
 
@@ -133,11 +115,36 @@ def _check_db_status(
     connection: Connection, items: set[MarketHistoryID]
 ) -> dict[MarketHistoryID, MarketHistoryDBStatus]:
     """Check expiration status in DB."""
-    # collect unique region ids
-    # get response records for those regions
-    # check each item against the response
-    # return set of MarketHistoryStatus
-    ...
+    responses_by_region = {
+        region_id: _reader.read_market_history_responses_by_region(
+            connection, region_id=region_id
+        )
+        for region_id in {item.region_id for item in items}
+    }
+    now = Instant.now()
+    statuses: dict[MarketHistoryID, MarketHistoryDBStatus] = {}
+
+    for market_history_id in items:
+        responses = responses_by_region[market_history_id.region_id].get(
+            market_history_id.type_id, ()
+        )
+        latest_response = responses[0] if responses else None
+        exists = latest_response is not None
+        expiration = (
+            (latest_response.argus_expires_at or latest_response.expires_at)
+            if exists
+            else None
+        )
+        expired = (
+            not exists or expiration is None or Instant.parse_iso(expiration) <= now
+        )
+        statuses[market_history_id] = MarketHistoryDBStatus(
+            market_history_id=market_history_id,
+            exists=exists,
+            expired=expired,
+        )
+
+    return statuses
 
 
 async def update_histories(
@@ -163,11 +170,11 @@ async def update_histories(
 
     for market_history_id in items:
         status = db_status.get(market_history_id)
-        if status is not None and not status.expired:
+        if status is not None and status.exists and not status.expired:
             update_statuses[market_history_id] = MarketHistoryUpdateStatus(
                 market_history_id=market_history_id,
                 update_successful=True,
-                db_was_current=True,
+                update_not_required=True,
                 failure_message="",
             )
         else:
@@ -194,16 +201,3 @@ async def update_histories(
         logger.error("Market History update failed: %s", e)
 
     return update_statuses
-
-
-def _expires_at_from_response(response: EsiResponse) -> str | None:
-    """Extracts the expires_at timestamp from an ESI response."""
-    expires_at = response.response.metadata.expires_at_instant
-    if expires_at:
-        return expires_at.format_iso()
-    return None
-
-
-def _received_at_from_response(response: EsiResponse) -> str:
-    """Extracts the received_at timestamp from an ESI response."""
-    return response.response.metadata.received_at
