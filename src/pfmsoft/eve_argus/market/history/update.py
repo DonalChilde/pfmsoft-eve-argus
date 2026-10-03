@@ -1,7 +1,11 @@
 """Update market history data for items."""
 
+import asyncio
+import logging
+import re
 from dataclasses import dataclass
 from sqlite3 import Connection
+from typing import Any
 
 from pfmsoft.eve_link import (
     EsiLink,
@@ -12,6 +16,15 @@ from pfmsoft.eve_link import (
     FailedEsiResponse,
 )
 
+from pfmsoft.eve_argus.market.history.access import (
+    MarketHistoryReader,
+    MarketHistoryWrite,
+)
+from pfmsoft.eve_argus.models.esi import esi_response_models as ERM
+
+logger = logging.getLogger(__name__)
+_writer = MarketHistoryWrite()
+_reader = MarketHistoryReader()
 # Flow for updating item history
 # - Check that the latest history data in the database is expired before making an esi-link request.
 #   - Even though esi-link should cache responses, we still check expiration at this level. This allows us the most granular control.
@@ -70,7 +83,50 @@ async def _update_history(
     Returns:
         UpdateStatus indicating success or failure.
     """
-    ...
+    request = EsiRequest(
+        operation_id="GetMarketsRegionIdHistory",
+        path_parameters={"region_id": market_history_id.region_id},
+        query_parameters={"type_id": market_history_id.type_id},
+    )
+    response = await esi_link.make_request(esi_request=request, schema=esi_schema)
+    if isinstance(response, FailedEsiResponse):
+        return MarketHistoryUpdateStatus(
+            market_history_id=market_history_id,
+            update_successful=False,
+            db_was_current=False,
+            failure_message=str(response.failed_response.error_messages),
+        )
+    response_dict: dict[str, Any] = {
+        "received_at": _received_at_from_response(response),
+        "expires_at": _expires_at_from_response(response),
+        "region_id": response.esi_request.path_parameters["region_id"],
+        "type_id": response.esi_request.query_parameters["type_id"],
+        "history": response.response_data,
+    }
+    try:
+        history = ERM.GetMarketsRegionIdHistoryRoot.model_validate(response_dict).root
+    except Exception as e:
+        return MarketHistoryUpdateStatus(
+            market_history_id=market_history_id,
+            update_successful=False,
+            db_was_current=False,
+            failure_message=str(e),
+        )
+    try:
+        _writer.write_market_history(connection, history)
+    except Exception as e:
+        return MarketHistoryUpdateStatus(
+            market_history_id=market_history_id,
+            update_successful=False,
+            db_was_current=False,
+            failure_message=str(e),
+        )
+    return MarketHistoryUpdateStatus(
+        market_history_id=market_history_id,
+        update_successful=True,
+        db_was_current=False,
+        failure_message="",
+    )
 
 
 def _check_db_status(
@@ -90,7 +146,7 @@ async def update_histories(
     connection: Connection,
     items: set[MarketHistoryID],
 ) -> dict[MarketHistoryID, MarketHistoryUpdateStatus]:
-    """Update expired market histories.
+    """Update database for expired market histories.
 
     Args:
         esi_link: The ESI link instance.
@@ -101,13 +157,53 @@ async def update_histories(
     Returns:
         Dict of MarketHistoryID to MarketHistoryUpdateStatus for all items.
     """
-    # check db status first
     db_status = _check_db_status(connection, items)
-    # collect unexpired items
+    update_statuses: dict[MarketHistoryID, MarketHistoryUpdateStatus] = {}
+    items_to_update: set[MarketHistoryID] = set()
 
-    # collect expired items
+    for market_history_id in items:
+        status = db_status.get(market_history_id)
+        if status is not None and not status.expired:
+            update_statuses[market_history_id] = MarketHistoryUpdateStatus(
+                market_history_id=market_history_id,
+                update_successful=True,
+                db_was_current=True,
+                failure_message="",
+            )
+        else:
+            items_to_update.add(market_history_id)
+    try:
+        async with asyncio.TaskGroup() as task_group:
+            update_tasks = {
+                market_history_id: task_group.create_task(
+                    _update_history(
+                        esi_link,
+                        esi_schema,
+                        connection,
+                        market_history_id,
+                    )
+                )
+                for market_history_id in items_to_update
+            }
+        update_statuses.update({
+            market_history_id: task.result()
+            for market_history_id, task in update_tasks.items()
+        })
+    except* Exception as e:
+        # TODO Probably need a more robust handling of errors and error types here.
+        logger.error("Market History update failed: %s", e)
 
-    # only update expired items
-    # use task group here? Prefer newer python language features and idioms.
+    return update_statuses
 
-    # return the update status for all items.
+
+def _expires_at_from_response(response: EsiResponse) -> str | None:
+    """Extracts the expires_at timestamp from an ESI response."""
+    expires_at = response.response.metadata.expires_at_instant
+    if expires_at:
+        return expires_at.format_iso()
+    return None
+
+
+def _received_at_from_response(response: EsiResponse) -> str:
+    """Extracts the received_at timestamp from an ESI response."""
+    return response.response.metadata.received_at
