@@ -151,5 +151,14 @@ class EveArgusResources:
             )
         return self._argus_dynamic_db_connection
 
+    @property
+    def market_history_db_connection(self) -> sqlite3.Connection:
+        """Get the market history database connection."""
+        if self._history_db_connection is None:
+            raise RuntimeError(
+                "EveArgusResources is not initialized. Use 'async with' to initialize."
+            )
+        return self._history_db_connection
+
 
 __all__ = ["EveArgusResources"]
