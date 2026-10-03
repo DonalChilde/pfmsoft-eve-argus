@@ -30,7 +30,7 @@ class MarketHistoryID:
 
 
 @dataclass(slots=True, kw_only=True)
-class UpdateStatus:
+class MarketHistoryUpdateStatus:
     """Status of an update."""
 
     # placeholder dataclass, fields to be updated as flow develops
@@ -41,7 +41,7 @@ class UpdateStatus:
 
 
 @dataclass(slots=True, kw_only=True, frozen=True)
-class MarketHistoryStatus:
+class MarketHistoryDBStatus:
     """Database status for market history."""
 
     market_history_id: MarketHistoryID
@@ -53,7 +53,7 @@ async def _update_history(
     esi_schema: EsiSchema,
     connection: Connection,
     market_history_id: MarketHistoryID,
-) -> UpdateStatus:
+) -> MarketHistoryUpdateStatus:
     """Update market history for an item.
 
     Checks if history is expired and updates it.
@@ -75,7 +75,7 @@ async def _update_history(
 
 def _check_db_status(
     connection: Connection, items: set[MarketHistoryID]
-) -> set[MarketHistoryStatus]:
+) -> dict[MarketHistoryID, MarketHistoryDBStatus]:
     """Check expiration status in DB."""
     # collect unique region ids
     # get response records for those regions
@@ -89,7 +89,7 @@ async def update_histories(
     esi_schema: EsiSchema,
     connection: Connection,
     items: set[MarketHistoryID],
-) -> list[UpdateStatus]:
+) -> dict[MarketHistoryID, MarketHistoryUpdateStatus]:
     """Update expired market histories.
 
     Args:
@@ -99,12 +99,14 @@ async def update_histories(
         items: Set of MarketHistoryID to check and update.
 
     Returns:
-        List of UpdateStatus for all items.
+        Dict of MarketHistoryID to MarketHistoryUpdateStatus for all items.
     """
     # check db status first
     db_status = _check_db_status(connection, items)
+    # collect unexpired items
+
     # collect expired items
-    expired_items = {s.market_history_id for s in db_status if s.expired}
+
     # only update expired items
     # use task group here? Prefer newer python language features and idioms.
 
