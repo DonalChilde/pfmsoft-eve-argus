@@ -11,7 +11,8 @@ CREATE TABLE IF NOT EXISTS market_history_response (
     expires_at TEXT,
     argus_expires_at TEXT, -- included to allow custom expiration handling
     region_id INTEGER NOT NULL,
-    type_id INTEGER NOT NULL
+    type_id INTEGER NOT NULL,
+    UNIQUE(received_at, region_id, type_id)
 ) STRICT;
 
 CREATE TABLE IF NOT EXISTS market_history (

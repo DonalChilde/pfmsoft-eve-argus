@@ -35,6 +35,20 @@ def write_market_history(
         history: Market history data.
     """
     with connection:
+        # insert market_history_response
+        # This should fail early if the response is already in the DB
+        connection.execute(
+            """
+            INSERT INTO market_history_response (received_at,expires_at, region_id, type_id)
+            VALUES (?, ?, ?, ?)
+            """,
+            (
+                history.received_at,
+                history.expires_at,
+                history.region_id,
+                history.type_id,
+            ),
+        )
         # Insert each history detail into the database
         connection.executemany(
             """
@@ -55,19 +69,6 @@ def write_market_history(
                 )
                 for detail in history.history
             ],
-        )
-        # insert market_history_response
-        connection.execute(
-            """
-            INSERT INTO market_history_response (received_at,expires_at, region_id, type_id)
-            VALUES (?, ?, ?, ?)
-            """,
-            (
-                history.received_at,
-                history.expires_at,
-                history.region_id,
-                history.type_id,
-            ),
         )
 
 
