@@ -17,6 +17,7 @@ from pfmsoft.eve_argus.market.history.access import (
     MarketHistoryReader,
     MarketHistoryWrite,
 )
+from pfmsoft.eve_argus.market.history.db.models import MarketHistoryResponse
 
 logger = logging.getLogger(__name__)
 _writer = MarketHistoryWrite()
@@ -39,14 +40,16 @@ class MarketHistoryID:
 
 
 @dataclass(slots=True, kw_only=True)
-class MarketHistoryUpdateStatus:
-    """Status of an update."""
+class MarketHistoryUpdateResult:
+    """Result of an update."""
 
     # placeholder dataclass, fields to be updated as flow develops
     market_history_id: MarketHistoryID
     update_successful: bool
     update_not_required: bool
-    failure_message: str
+    failure_message: str | None
+    previous_state: MarketHistoryResponse | None
+    new_state: MarketHistoryResponse | None
 
 
 @dataclass(slots=True, kw_only=True, frozen=True)
@@ -56,6 +59,7 @@ class MarketHistoryDBStatus:
     market_history_id: MarketHistoryID
     exists: bool
     expired: bool
+    current_state: MarketHistoryResponse | None
 
 
 async def _update_history(
@@ -63,7 +67,8 @@ async def _update_history(
     esi_schema: EsiSchema,
     connection: Connection,
     market_history_id: MarketHistoryID,
-) -> MarketHistoryUpdateStatus:
+    current_state: MarketHistoryResponse | None,
+) -> MarketHistoryUpdateResult:
     """Update market history for an item.
 
     Checks if history is expired and updates it.
@@ -78,7 +83,7 @@ async def _update_history(
         market_history_id: MarketHistoryID.
 
     Returns:
-        MarketHistoryUpdateStatus indicating success or failure.
+        MarketHistoryUpdateResult indicating success or failure.
     """
     response = await LoadEsi.fetch_market_history(
         esi_link,
@@ -87,27 +92,38 @@ async def _update_history(
         type_id=market_history_id.type_id,
     )
     if isinstance(response, FailedEsiResponse):
-        return MarketHistoryUpdateStatus(
+        return MarketHistoryUpdateResult(
             market_history_id=market_history_id,
             update_successful=False,
             update_not_required=False,
             failure_message=str(response.failed_response.error_messages),
+            previous_state=current_state,
+            new_state=None,
         )
     try:
         history = LoadEsi.validate_market_history(response)
         _writer.write_market_history(connection, history)
+        states = _reader.read_market_history_responses(
+            connection,
+            region_id=market_history_id.region_id,
+            type_id=market_history_id.type_id,
+        )
     except Exception as e:
-        return MarketHistoryUpdateStatus(
+        return MarketHistoryUpdateResult(
             market_history_id=market_history_id,
             update_successful=False,
             update_not_required=False,
             failure_message=str(e),
+            previous_state=current_state,
+            new_state=None,
         )
-    return MarketHistoryUpdateStatus(
+    return MarketHistoryUpdateResult(
         market_history_id=market_history_id,
         update_successful=True,
         update_not_required=False,
-        failure_message="",
+        failure_message=None,
+        previous_state=current_state,
+        new_state=states[0] if states else None,
     )
 
 
@@ -142,6 +158,7 @@ def _check_db_status(
             market_history_id=market_history_id,
             exists=exists,
             expired=expired,
+            current_state=latest_response,
         )
 
     return statuses
@@ -152,7 +169,7 @@ async def update_histories(
     esi_schema: EsiSchema,
     connection: Connection,
     items: set[MarketHistoryID],
-) -> dict[MarketHistoryID, MarketHistoryUpdateStatus]:
+) -> dict[MarketHistoryID, MarketHistoryUpdateResult]:
     """Update database for expired market histories.
 
     Args:
@@ -165,17 +182,19 @@ async def update_histories(
         Dict of MarketHistoryID to MarketHistoryUpdateStatus for all items.
     """
     db_status = _check_db_status(connection, items)
-    update_statuses: dict[MarketHistoryID, MarketHistoryUpdateStatus] = {}
+    update_statuses: dict[MarketHistoryID, MarketHistoryUpdateResult] = {}
     items_to_update: set[MarketHistoryID] = set()
 
     for market_history_id in items:
         status = db_status.get(market_history_id)
         if status is not None and status.exists and not status.expired:
-            update_statuses[market_history_id] = MarketHistoryUpdateStatus(
+            update_statuses[market_history_id] = MarketHistoryUpdateResult(
                 market_history_id=market_history_id,
                 update_successful=True,
                 update_not_required=True,
                 failure_message="",
+                previous_state=status.current_state,
+                new_state=None,
             )
         else:
             items_to_update.add(market_history_id)
@@ -188,6 +207,9 @@ async def update_histories(
                         esi_schema,
                         connection,
                         market_history_id,
+                        current_state=db_status.get(market_history_id).current_state
+                        if db_status.get(market_history_id)
+                        else None,
                     )
                 )
                 for market_history_id in items_to_update
