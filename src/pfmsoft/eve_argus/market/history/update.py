@@ -29,13 +29,15 @@ class MarketHistoryID:
     type_id: int
 
 
-@dataclass
+@dataclass(slots=True, kw_only=True)
 class UpdateStatus:
     """Status of an update."""
 
     # placeholder dataclass, fields to be updated as flow develops
-    success: bool
-    message: str
+    market_history_id: MarketHistoryID
+    update_successful: bool
+    db_was_current: bool
+    failure_message: str
 
 
 @dataclass(slots=True, kw_only=True, frozen=True)
@@ -88,6 +90,17 @@ async def update_histories(
     connection: Connection,
     items: set[MarketHistoryID],
 ) -> list[UpdateStatus]:
+    """Update expired market histories.
+
+    Args:
+        esi_link: The ESI link instance.
+        esi_schema: The ESI schema.
+        connection: Market history database connection.
+        items: Set of MarketHistoryID to check and update.
+
+    Returns:
+        List of UpdateStatus for all items.
+    """
     # check db status first
     db_status = _check_db_status(connection, items)
     # collect expired items
