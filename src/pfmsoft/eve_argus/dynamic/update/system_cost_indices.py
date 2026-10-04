@@ -26,12 +26,21 @@ class SystemCostIndicesStatus:
     current_state: SystemCostIndicesResponse | None
 
 
+@dataclass(slots=True, kw_only=True)
+class SystemCostIndicesUpdateResult:
+    update_successful: bool
+    update_not_required: bool
+    failure_message: str | None
+    previous_state: SystemCostIndicesResponse | None
+    new_state: SystemCostIndicesResponse | None
+
+
 async def _fetch_and_update_system_cost_indices(
     esi_link: EsiLink,
     schema: EsiSchema,
     connection: Connection,
     current_state: SystemCostIndicesResponse | None,
-): ...
+) -> SystemCostIndicesUpdateResult: ...
 
 
 def _current_state(conn: Connection) -> SystemCostIndicesResponse | None:
@@ -54,10 +63,7 @@ def _check_db_status(conn: Connection) -> SystemCostIndicesStatus:
 
 
 async def update_system_cost_indices(
-    esi_link: EsiLink, schema: EsiSchema, conn: Connection
-):
-    response = await FetchEsi.fetch_system_cost_indices(esi_link, schema)
-    if isinstance(response, FailedEsiResponse):
-        return
-    data = FetchEsi.validate_system_cost_indices(response)
-    _writer.write_system_cost_indices(conn, SystemCostIndicesResponse(data=data))
+    esi_link: EsiLink,
+    schema: EsiSchema,
+    connection: Connection,
+) -> SystemCostIndicesUpdateResult: ...
