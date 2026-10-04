@@ -35,3 +35,11 @@ class TimeStamped:
     def received_at_instant(self) -> Instant:
         """Return the timestamp when the ESI data was fetched."""
         return Instant.parse_iso(self.received_at)
+
+
+@dataclass(slots=True, kw_only=True, frozen=True)
+class ResponseMetadata:
+    response_metadata_id: int
+    received_at: str
+    expires_at: str | None
+    argus_expires_at: str | None
