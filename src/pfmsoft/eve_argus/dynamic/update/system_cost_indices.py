@@ -1,4 +1,5 @@
-import asyncio
+"""Fetch and update system cost indices when stored data expires."""
+
 import logging
 from dataclasses import dataclass
 from sqlite3 import Connection
@@ -40,7 +41,40 @@ async def _fetch_and_update_system_cost_indices(
     schema: EsiSchema,
     connection: Connection,
     current_state: SystemCostIndicesResponse | None,
-) -> SystemCostIndicesUpdateResult: ...
+) -> SystemCostIndicesUpdateResult:
+    """Fetch and persist system cost indices, preserving the previous state."""
+    response = await FetchEsi.fetch_system_cost_indices(esi_link, schema)
+    if isinstance(response, FailedEsiResponse):
+        return SystemCostIndicesUpdateResult(
+            update_successful=False,
+            update_not_required=False,
+            failure_message=str(response.failed_response.error_messages),
+            previous_state=current_state,
+            new_state=None,
+        )
+
+    try:
+        system_cost_indices = FetchEsi.validate_system_cost_indices(response)
+        _writer.write_system_cost_indices(
+            connection, system_cost_indices=system_cost_indices
+        )
+        new_state = _current_state(connection)
+    except Exception as error:
+        return SystemCostIndicesUpdateResult(
+            update_successful=False,
+            update_not_required=False,
+            failure_message=str(error),
+            previous_state=current_state,
+            new_state=None,
+        )
+
+    return SystemCostIndicesUpdateResult(
+        update_successful=True,
+        update_not_required=False,
+        failure_message=None,
+        previous_state=current_state,
+        new_state=new_state,
+    )
 
 
 def _current_state(conn: Connection) -> SystemCostIndicesResponse | None:
@@ -66,4 +100,21 @@ async def update_system_cost_indices(
     esi_link: EsiLink,
     schema: EsiSchema,
     connection: Connection,
-) -> SystemCostIndicesUpdateResult: ...
+) -> SystemCostIndicesUpdateResult:
+    """Update system cost indices when the stored response has expired."""
+    status = _check_db_status(connection)
+    if status.exists and not status.expired:
+        return SystemCostIndicesUpdateResult(
+            update_successful=True,
+            update_not_required=True,
+            failure_message=None,
+            previous_state=status.current_state,
+            new_state=None,
+        )
+
+    return await _fetch_and_update_system_cost_indices(
+        esi_link,
+        schema,
+        connection,
+        current_state=status.current_state,
+    )

@@ -65,6 +65,17 @@ class MarketHistoryDBStatus:
     current_state: MarketHistoryResponse | None
 
 
+def _current_state(
+    connection: Connection, market_history_id: MarketHistoryID
+) -> MarketHistoryResponse | None:
+    states = _reader.read_market_history_responses(
+        connection,
+        region_id=market_history_id.region_id,
+        type_id=market_history_id.type_id,
+    )
+    return states[0] if states else None
+
+
 async def _fetch_and_update_history(
     esi_link: EsiLink,
     esi_schema: EsiSchema,
@@ -107,11 +118,7 @@ async def _fetch_and_update_history(
     try:
         history = FetchEsi.validate_market_history(response)
         _writer.write_market_history(connection, history)
-        states = _reader.read_market_history_responses(
-            connection,
-            region_id=market_history_id.region_id,
-            type_id=market_history_id.type_id,
-        )
+        new_state = _current_state(connection, market_history_id)
     except Exception as e:
         return MarketHistoryUpdateResult(
             market_history_id=market_history_id,
@@ -127,12 +134,12 @@ async def _fetch_and_update_history(
         update_not_required=False,
         failure_message=None,
         previous_state=current_state,
-        new_state=states[0] if states else None,
+        new_state=new_state,
     )
 
 
 @log_timing(logger=logger, level=_timing_log_level)
-def _current_state(
+def _current_state_bulk(
     connection: Connection, items: set[MarketHistoryID]
 ) -> dict[int, dict[int, MarketHistoryResponse | None]]:
     """Get the latest stored response for each requested region and type."""
@@ -156,7 +163,7 @@ def _check_db_status(
     connection: Connection, items: set[MarketHistoryID]
 ) -> dict[MarketHistoryID, MarketHistoryDBStatus]:
     """Check expiration status in DB."""
-    current_states = _current_state(connection, items)
+    current_states = _current_state_bulk(connection, items)
     now = Instant.now()
     statuses: dict[MarketHistoryID, MarketHistoryDBStatus] = {}
 
