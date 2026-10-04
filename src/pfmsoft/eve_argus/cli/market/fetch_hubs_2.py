@@ -2,18 +2,19 @@
 
 import asyncio
 import sqlite3
+from math import ceil
 from typing import Annotated
 
 import typer
+from pfmsoft.eve_link import EsiLink, EsiSchema
 from rich.console import Console
 from whenever import Instant
 
 from pfmsoft.eve_argus.cli.helpers import get_eve_argus_settings_from_context
-from pfmsoft.eve_argus.data_loaders.esi_responses import EsiResponseLoader
 from pfmsoft.eve_argus.dynamic.access import DynamicDBReader, DynamicDBWriter
 from pfmsoft.eve_argus.dynamic.db.order_summary import calculate_summaries
+from pfmsoft.eve_argus.dynamic.update.market_orders import update_market_orders
 from pfmsoft.eve_argus.eve_argus import EveArgusResources
-from pfmsoft.eve_argus.models.esi import esi_response_models as ERM
 from pfmsoft.eve_argus.models.market_hubs import MARKET_HUBS, MarketHub
 from pfmsoft.eve_argus.settings import EveArgusSettings
 
@@ -48,16 +49,14 @@ async def _fetch_hubs_2(*, settings: EveArgusSettings, messenger: Console) -> li
     """Fetch and summarize orders for each configured market hub."""
     failed_hubs: list[str] = []
     async with EveArgusResources(settings) as resources:
-        loader = EsiResponseLoader(
-            esi_link=resources.esi_link, schema=resources.esi_schema
-        )
         reader = DynamicDBReader()
         writer = DynamicDBWriter()
         for hub in MARKET_HUBS:
             try:
                 await _fetch_hub_2(
                     hub=hub,
-                    loader=loader,
+                    esi_link=resources.esi_link,
+                    schema=resources.esi_schema,
                     connection=resources.argus_dynamic_db_connection,
                     reader=reader,
                     writer=writer,
@@ -74,68 +73,56 @@ async def _fetch_hubs_2(*, settings: EveArgusSettings, messenger: Console) -> li
 async def _fetch_hub_2(
     *,
     hub: MarketHub,
-    loader: EsiResponseLoader,
+    esi_link: EsiLink,
+    schema: EsiSchema,
     connection: sqlite3.Connection,
     reader: DynamicDBReader,
     writer: DynamicDBWriter,
     messenger: Console,
 ) -> None:
     """Fetch, store, and summarize one market hub in the dynamic database."""
-    stored_responses = reader.read_market_orders_responses(
-        connection, region_id=hub.region_id
+    messenger.print(f"Checking market data for {hub.system_name}...")
+    result = await update_market_orders(
+        esi_link,
+        schema,
+        connection,
+        region_id=hub.region_id,
     )
-    latest = stored_responses[-1] if stored_responses else None
-    expires_at = (latest.argus_expires_at or latest.expires_at) if latest else None
-    if (
-        latest is not None
-        and expires_at
-        and Instant.parse_iso(expires_at) > Instant.now()
-    ):
+    if not result.update_successful:
+        raise RuntimeError(result.failure_message or "Market orders update failed.")
+
+    if result.update_not_required:
         messenger.print(f"Using cached market data for {hub.system_name}...")
-        order_response = latest
+        order_response = result.previous_state
         messenger.print("\tOrders already in database.")
     else:
-        messenger.print(f"Fetching market data for {hub.system_name}...")
-        response: ERM.GetMarketsRegionIdOrdersResponse = (
-            await loader.region_market_orders(region_id=hub.region_id)
-        )
-        messenger.print(f"\tFetched {len(response.response_data.orders)} orders.")
-        order_response = next(
-            (
-                stored
-                for stored in stored_responses
-                if stored.received_at == response.response_data.received_at
-            ),
-            None,
-        )
-        if (
-            order_response is not None
-            and expires_at
-            and Instant.parse_iso(expires_at) <= Instant.now()
-        ):
-            raise ValueError(
-                "ESI returned an expired order set without a new received_at."
-            )
-        if order_response is None:
-            writer.write_market_orders(connection, market_orders=response.response_data)
-            messenger.print("\tWrote orders to database.")
-            order_response = next(
-                (
-                    stored
-                    for stored in reader.read_market_orders_responses(
-                        connection, region_id=hub.region_id
-                    )
-                    if stored.received_at == response.response_data.received_at
-                ),
-                None,
-            )
-        else:
-            messenger.print("\tOrders already in database.")
+        order_response = result.new_state
     if order_response is None:
         raise ValueError("No matching market orders response found after writing.")
+    expiration = order_response.argus_expires_at or order_response.expires_at
+    if expiration is None:
+        messenger.print("\tDataset expiration is unavailable.")
+    else:
+        seconds_until_expiration = (
+            Instant.parse_iso(expiration) - Instant.now()
+        ).total("seconds")
+        if seconds_until_expiration >= 0:
+            messenger.print(
+                f"\tDataset expires in {ceil(seconds_until_expiration)} seconds."
+            )
+        else:
+            messenger.print(
+                f"\tDataset expired {ceil(-seconds_until_expiration)} seconds ago."
+            )
     region_orders = reader.read_market_orders(
         connection, response_metadata_id=order_response.response_metadata_id
     )
+    if not result.update_not_required:
+        order_count = sum(
+            len(orders.buy_orders) + len(orders.sell_orders)
+            for orders in region_orders.records.values()
+        )
+        messenger.print(f"\tFetched and stored {order_count} orders.")
     report = calculate_summaries(region_orders, system_id=hub.system_id)
     messenger.print(
         f"\tCalculated order summaries for {len(report.records.keys())} types."

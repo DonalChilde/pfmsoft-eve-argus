@@ -126,7 +126,8 @@ CREATE TABLE IF NOT EXISTS get_industry_systems_response(
 -- This table stores the records from the GetIndustrySystems API response
 -- The table name is different to more clearly reflect the data stored.
 CREATE TABLE IF NOT EXISTS system_cost_indices(
-    system_id INTEGER PRIMARY KEY,
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    system_id INTEGER,
     copying INTEGER, -- stored as an integer for precision. Values are assumed to be 0.0000 format
     manufacturing INTEGER, -- stored as an integer for precision. Values are assumed to be 0.0000 format
     invention INTEGER, -- stored as an integer for precision. Values are assumed to be 0.0000 format
