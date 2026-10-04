@@ -6,7 +6,8 @@ Write functions that insert primary records from a response need to:
 - use the returned id to write to the specific record table.
 """
 
-# FIXME change get_ to read_
+# Pending naming cleanup: rename get_ functions to read_.
+# All *_responses readers return newest received_at first; IDs break timestamp ties.
 # The definition for this database lives at src/pfmsoft/eve_argus/dynamic/db/table_definitions.sql
 import logging
 from dataclasses import astuple, dataclass
@@ -400,7 +401,7 @@ def get_order_summary_responses(
     if region_id is not None:
         query += " WHERE response.region_id = ?"
         parameters = (region_id,)
-    query += " ORDER BY response.id"
+    query += " ORDER BY metadata.received_at DESC, response.id DESC"
 
     return [
         models.OrderSummaryResponse(
@@ -721,7 +722,7 @@ def get_markets_prices_responses(
             FROM get_markets_prices_response AS response
             JOIN response_metadata AS metadata
                 ON metadata.id = response.response_metadata_id
-            ORDER BY metadata.id
+            ORDER BY metadata.received_at DESC, metadata.id DESC
             """
         )
     ]
@@ -803,7 +804,7 @@ def get_market_orders_responses(
     if region_id is not None:
         query += " WHERE response.region_id = ?"
         parameters.append(region_id)
-    query += " ORDER BY metadata.id"
+    query += " ORDER BY metadata.received_at DESC, metadata.id DESC"
 
     return [
         models.MarketOrdersResponse(
@@ -908,7 +909,7 @@ def get_system_cost_indices_responses(
             FROM get_industry_systems_response AS response
             JOIN response_metadata AS metadata
                 ON metadata.id = response.response_metadata_id
-            ORDER BY metadata.id
+            ORDER BY metadata.received_at DESC, metadata.id DESC
             """
         )
     ]
@@ -989,7 +990,7 @@ def get_corporation_industry_jobs_responses(
     if corporation_id is not None:
         query += " WHERE response.corporation_id = ?"
         parameters.append(corporation_id)
-    query += " ORDER BY metadata.id"
+    query += " ORDER BY metadata.received_at DESC, metadata.id DESC"
 
     return [
         models.CorporationIndustryJobsResponse(
@@ -1095,7 +1096,7 @@ def get_corporation_blueprints_responses(
     if corporation_id is not None:
         query += " WHERE response.corporation_id = ?"
         parameters.append(corporation_id)
-    query += " ORDER BY metadata.id"
+    query += " ORDER BY metadata.received_at DESC, metadata.id DESC"
 
     return [
         models.CorporationBlueprintsResponse(

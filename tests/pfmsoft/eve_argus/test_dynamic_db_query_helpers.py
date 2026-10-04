@@ -290,9 +290,9 @@ def test_order_summary_responses_discover_independent_scopes() -> None:
             location_id=scope_location_id,
         )
         for batch_id, scope_system_id, scope_location_id in (
-            (region_id, None, None),
-            (system_id, 30000142, None),
             (location_id, None, 60003760),
+            (system_id, 30000142, None),
+            (region_id, None, None),
         )
     ]
     assert len(query_helpers.get_order_summary_responses(connection)) == 3
@@ -471,23 +471,30 @@ def test_get_markets_prices_responses_returns_linked_metadata() -> None:
         [
             ("2026-09-01T00:00:00Z", "2026-09-02T00:00:00Z", None),
             ("2026-09-03T00:00:00Z", None, "2026-09-04T00:00:00Z"),
+            ("2026-09-05T00:00:00Z", None, "2026-09-06T00:00:00Z"),
         ],
     )
-    connection.execute(
+    connection.executemany(
         """
         INSERT INTO get_markets_prices_response (response_metadata_id)
         VALUES (?)
         """,
-        (1,),
+        [(1,), (3,)],
     )
 
     assert query_helpers.get_markets_prices_responses(connection) == [
+        MarketsPricesResponse(
+            response_metadata_id=3,
+            received_at="2026-09-05T00:00:00Z",
+            expires_at=None,
+            argus_expires_at="2026-09-06T00:00:00Z",
+        ),
         MarketsPricesResponse(
             response_metadata_id=1,
             received_at="2026-09-01T00:00:00Z",
             expires_at="2026-09-02T00:00:00Z",
             argus_expires_at=None,
-        )
+        ),
     ]
 
 
@@ -625,18 +632,18 @@ def test_get_market_orders_returns_grouped_buy_and_sell_order_records() -> None:
 
     assert query_helpers.get_market_orders_responses(connection, None) == [
         MarketOrdersResponse(
-            response_metadata_id=1,
-            received_at="2026-09-01T00:00:00Z",
-            expires_at="2026-09-02T00:00:00Z",
-            argus_expires_at=None,
-            region_id=10000002,
-        ),
-        MarketOrdersResponse(
             response_metadata_id=2,
             received_at="2026-09-03T00:00:00Z",
             expires_at=None,
             argus_expires_at="2026-09-04T00:00:00Z",
             region_id=10000005,
+        ),
+        MarketOrdersResponse(
+            response_metadata_id=1,
+            received_at="2026-09-01T00:00:00Z",
+            expires_at="2026-09-02T00:00:00Z",
+            argus_expires_at=None,
+            region_id=10000002,
         ),
     ]
     assert query_helpers.get_market_orders(connection, 1) == MarketOrdersDataset(
@@ -848,18 +855,18 @@ def test_get_corporation_industry_jobs_returns_dataset_and_converts_cost() -> No
 
     assert query_helpers.get_corporation_industry_jobs_responses(connection, None) == [
         CorporationIndustryJobsResponse(
-            response_metadata_id=1,
-            received_at="2026-09-01T00:00:00Z",
-            expires_at="2026-09-02T00:00:00Z",
-            argus_expires_at=None,
-            corporation_id=98000001,
-        ),
-        CorporationIndustryJobsResponse(
             response_metadata_id=2,
             received_at="2026-09-03T00:00:00Z",
             expires_at=None,
             argus_expires_at="2026-09-04T00:00:00Z",
             corporation_id=98000002,
+        ),
+        CorporationIndustryJobsResponse(
+            response_metadata_id=1,
+            received_at="2026-09-01T00:00:00Z",
+            expires_at="2026-09-02T00:00:00Z",
+            argus_expires_at=None,
+            corporation_id=98000001,
         ),
     ]
     assert query_helpers.get_corporation_industry_jobs(
@@ -938,18 +945,18 @@ def test_get_corporation_blueprints_returns_dataset() -> None:
 
     assert query_helpers.get_corporation_blueprints_responses(connection, None) == [
         CorporationBlueprintsResponse(
-            response_metadata_id=1,
-            received_at="2026-09-01T00:00:00Z",
-            expires_at="2026-09-02T00:00:00Z",
-            argus_expires_at=None,
-            corporation_id=98000001,
-        ),
-        CorporationBlueprintsResponse(
             response_metadata_id=2,
             received_at="2026-09-03T00:00:00Z",
             expires_at=None,
             argus_expires_at="2026-09-04T00:00:00Z",
             corporation_id=98000002,
+        ),
+        CorporationBlueprintsResponse(
+            response_metadata_id=1,
+            received_at="2026-09-01T00:00:00Z",
+            expires_at="2026-09-02T00:00:00Z",
+            argus_expires_at=None,
+            corporation_id=98000001,
         ),
     ]
     assert query_helpers.get_corporation_blueprints(

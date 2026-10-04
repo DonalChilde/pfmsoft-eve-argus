@@ -23,7 +23,7 @@ from pfmsoft.eve_argus.market.history.access import (
 from pfmsoft.eve_argus.market.history.db.models import MarketHistoryRecord
 from pfmsoft.eve_argus.market.history.update import (
     MarketHistoryID,
-    MarketHistoryUpdateStatus,
+    MarketHistoryUpdateResult,
     update_histories,
 )
 from pfmsoft.eve_argus.models.argus.static import MarketGroupsDataset
@@ -63,8 +63,8 @@ class PairReport:
     before_first_update: RowCounts
     after_first_update: RowCounts
     after_repeat_update: RowCounts
-    first_update: MarketHistoryUpdateStatus
-    repeat_update: MarketHistoryUpdateStatus
+    first_update: MarketHistoryUpdateResult
+    repeat_update: MarketHistoryUpdateResult
     latest_records: list[MarketHistoryRecord] = field(
         default_factory=list[MarketHistoryRecord]
     )
@@ -279,7 +279,7 @@ def exercise_reader(
 
 
 def check_update_statuses(
-    statuses: dict[MarketHistoryID, MarketHistoryUpdateStatus],
+    statuses: dict[MarketHistoryID, MarketHistoryUpdateResult],
     items: set[MarketHistoryID],
     *,
     expect_skipped: bool,

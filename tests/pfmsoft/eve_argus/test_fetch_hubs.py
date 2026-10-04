@@ -3,7 +3,7 @@
 import sqlite3
 from io import StringIO
 from types import SimpleNamespace
-from unittest.mock import Mock
+from unittest.mock import AsyncMock, Mock
 
 import pytest
 from rich.console import Console
@@ -62,6 +62,47 @@ def _response(region_id: int) -> SimpleNamespace:
     return SimpleNamespace(
         response_data=SimpleNamespace(region_id=region_id, orders=[])
     )
+
+
+def _update_result(
+    *,
+    previous_state: object | None = None,
+    new_state: object | None = None,
+    update_not_required: bool = False,
+    failure_message: str | None = None,
+) -> SimpleNamespace:
+    return SimpleNamespace(
+        update_successful=failure_message is None,
+        update_not_required=update_not_required,
+        failure_message=failure_message,
+        previous_state=previous_state,
+        new_state=new_state,
+    )
+
+
+def _patch_order_update(
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    response: ERM.GetMarketsRegionIdOrders | None = None,
+    failure_message: str | None = None,
+) -> None:
+    async def update(
+        esi_link: object,
+        schema: object,
+        connection: sqlite3.Connection,
+        *,
+        region_id: int,
+    ) -> SimpleNamespace:
+        if failure_message is not None:
+            return _update_result(failure_message=failure_message)
+        if response is not None:
+            query_helpers.write_market_orders(connection, response)
+            state = query_helpers.get_market_orders_responses(connection, region_id)[0]
+            return _update_result(new_state=state)
+        state = query_helpers.get_market_orders_responses(connection, region_id)[0]
+        return _update_result(previous_state=state, update_not_required=True)
+
+    monkeypatch.setattr(fetch_hubs_2_module, "update_market_orders", update)
 
 
 def test_fetch_hubs_processes_each_hub_and_scopes_summaries(
@@ -206,52 +247,28 @@ def test_fetch_hubs_2_writes_and_summarizes_the_matching_order_set(
 ) -> None:
     """Each fetched hub uses the dynamic DB and its own response metadata ID."""
     hub = _hub(1, 11, "Alpha")
-    response = SimpleNamespace(
-        response_data=SimpleNamespace(
-            region_id=1, received_at="2026-09-01T00:00:00Z", orders=[]
-        )
+    order_response = SimpleNamespace(
+        response_metadata_id=7,
+        argus_expires_at=None,
+        expires_at="2999-01-01T00:00:00Z",
     )
+    update = AsyncMock(return_value=_update_result(new_state=order_response))
     resources = FakeResources()
     resources.argus_dynamic_db_connection = object()
     reader = Mock()
     writer = Mock()
     monkeypatch.setattr(fetch_hubs_2_module, "DynamicDBReader", lambda: reader)
     monkeypatch.setattr(fetch_hubs_2_module, "DynamicDBWriter", lambda: writer)
-    write_orders = Mock()
-    reader.read_market_orders_responses.side_effect = [
-        [
-            SimpleNamespace(
-                received_at="2026-08-01T00:00:00Z",
-                response_metadata_id=4,
-                expires_at="2026-08-02T00:00:00Z",
-                argus_expires_at=None,
-            )
-        ],
-        [
-            SimpleNamespace(
-                received_at="2026-08-01T00:00:00Z",
-                response_metadata_id=4,
-                expires_at="2026-08-02T00:00:00Z",
-                argus_expires_at=None,
-            ),
-            SimpleNamespace(received_at="2026-09-01T00:00:00Z", response_metadata_id=7),
-        ],
-    ]
-    reader.read_market_orders.return_value = Mock(records={34: Mock()})
+    reader.read_market_orders.return_value = Mock(records={})
     summary = Mock(records={34: Mock()})
     calculate = Mock(return_value=summary)
-    writer.write_market_orders = write_orders
     writer.write_order_summaries = Mock()
 
     monkeypatch.setattr(fetch_hubs_2_module, "MARKET_HUBS", [hub])
     monkeypatch.setattr(
         fetch_hubs_2_module, "EveArgusResources", lambda settings: resources
     )
-    monkeypatch.setattr(
-        fetch_hubs_2_module,
-        "EsiResponseLoader",
-        lambda esi_link, schema: FakeLoader({1: response}),
-    )
+    monkeypatch.setattr(fetch_hubs_2_module, "update_market_orders", update)
     monkeypatch.setattr(fetch_hubs_2_module, "calculate_summaries", calculate)
 
     output = StringIO()
@@ -262,13 +279,12 @@ def test_fetch_hubs_2_writes_and_summarizes_the_matching_order_set(
     )
 
     assert failures == []
-    write_orders.assert_called_once_with(
-        resources.argus_dynamic_db_connection, market_orders=response.response_data
+    update.assert_awaited_once_with(
+        resources.esi_link,
+        resources.esi_schema,
+        resources.argus_dynamic_db_connection,
+        region_id=hub.region_id,
     )
-    assert reader.read_market_orders_responses.call_count == 2
-    for call in reader.read_market_orders_responses.call_args_list:
-        assert call.args == (resources.argus_dynamic_db_connection,)
-        assert call.kwargs == {"region_id": hub.region_id}
     reader.read_market_orders.assert_called_once_with(
         resources.argus_dynamic_db_connection, response_metadata_id=7
     )
@@ -278,8 +294,9 @@ def test_fetch_hubs_2_writes_and_summarizes_the_matching_order_set(
     writer.write_order_summaries.assert_called_once_with(
         resources.argus_dynamic_db_connection, order_summaries=summary
     )
-    assert "Fetching market data for Alpha..." in output.getvalue()
-    assert "Fetched 0 orders." in output.getvalue()
+    assert "Checking market data for Alpha..." in output.getvalue()
+    assert "Fetched and stored 0 orders." in output.getvalue()
+    assert "Dataset expires in" in output.getvalue()
     assert "Calculated order summaries for 1 types." in output.getvalue()
     assert output.getvalue().count("Wrote order summaries to database.") == 1
 
@@ -296,9 +313,6 @@ def test_fetch_hubs_2_continues_after_a_failed_hub(
     monkeypatch.setattr(fetch_hubs_2_module, "MARKET_HUBS", hubs)
     monkeypatch.setattr(
         fetch_hubs_2_module, "EveArgusResources", lambda settings: resources
-    )
-    monkeypatch.setattr(
-        fetch_hubs_2_module, "EsiResponseLoader", lambda esi_link, schema: loader
     )
     processed = Mock()
 
@@ -353,13 +367,7 @@ def test_fetch_hubs_2_persists_summary_in_dynamic_database(
     monkeypatch.setattr(
         fetch_hubs_2_module, "EveArgusResources", lambda settings: resources
     )
-    monkeypatch.setattr(
-        fetch_hubs_2_module,
-        "EsiResponseLoader",
-        lambda esi_link, schema: FakeLoader({
-            1: SimpleNamespace(response_data=response)
-        }),
-    )
+    _patch_order_update(monkeypatch, response=response)
 
     failures = fetch_hubs_2_module.asyncio.run(
         fetch_hubs_2_module._fetch_hubs_2(
@@ -385,7 +393,7 @@ def test_fetch_hubs_2_persists_summary_in_dynamic_database(
 def test_fetch_hubs_2_can_resume_a_previous_response(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """A retry can finish summaries for orders already saved at the same timestamp."""
+    """Cached orders can be summarized repeatedly without another response row."""
     connection = sqlite3.connect(":memory:")
     connection.executescript(load_table_definitions())
     connection.row_factory = sqlite3.Row
@@ -394,22 +402,15 @@ def test_fetch_hubs_2_can_resume_a_previous_response(
     hub = _hub(1, 11, "Alpha")
     response = ERM.GetMarketsRegionIdOrders(
         received_at="2026-09-01T00:00:00Z",
-        expires_at=None,
+        expires_at="2999-01-01T00:00:00Z",
         region_id=1,
         orders=[],
     )
+    query_helpers.write_market_orders(connection, response)
     monkeypatch.setattr(fetch_hubs_2_module, "MARKET_HUBS", [hub])
     monkeypatch.setattr(
         fetch_hubs_2_module, "EveArgusResources", lambda settings: resources
     )
-    monkeypatch.setattr(
-        fetch_hubs_2_module,
-        "EsiResponseLoader",
-        lambda esi_link, schema: FakeLoader({
-            1: SimpleNamespace(response_data=response)
-        }),
-    )
-
     for _ in range(2):
         failures = fetch_hubs_2_module.asyncio.run(
             fetch_hubs_2_module._fetch_hubs_2(
@@ -445,14 +446,6 @@ def test_fetch_hubs_2_uses_unexpired_orders_without_network_request(
     monkeypatch.setattr(
         fetch_hubs_2_module, "EveArgusResources", lambda settings: resources
     )
-    monkeypatch.setattr(
-        fetch_hubs_2_module,
-        "EsiResponseLoader",
-        lambda esi_link, schema: FakeLoader({
-            hub.region_id: RuntimeError("unexpected ESI request")
-        }),
-    )
-
     output = StringIO()
     failures = fetch_hubs_2_module.asyncio.run(
         fetch_hubs_2_module._fetch_hubs_2(
@@ -462,6 +455,7 @@ def test_fetch_hubs_2_uses_unexpired_orders_without_network_request(
 
     assert failures == []
     assert "Orders already in database." in output.getvalue()
+    assert "Dataset expires in" in output.getvalue()
     assert (
         len(query_helpers.get_market_orders_responses(connection, hub.region_id)) == 1
     )
@@ -512,13 +506,7 @@ def test_fetch_hubs_2_refreshes_expired_orders(
     monkeypatch.setattr(
         fetch_hubs_2_module, "EveArgusResources", lambda settings: resources
     )
-    monkeypatch.setattr(
-        fetch_hubs_2_module,
-        "EsiResponseLoader",
-        lambda esi_link, schema: FakeLoader({
-            hub.region_id: SimpleNamespace(response_data=fetched)
-        }),
-    )
+    _patch_order_update(monkeypatch, response=fetched)
 
     failures = fetch_hubs_2_module.asyncio.run(
         fetch_hubs_2_module._fetch_hubs_2(
@@ -529,8 +517,8 @@ def test_fetch_hubs_2_refreshes_expired_orders(
     assert failures == []
     responses = query_helpers.get_market_orders_responses(connection, hub.region_id)
     assert [item.received_at for item in responses] == [
-        "2026-09-01T00:00:00Z",
         "2026-10-01T00:00:00Z",
+        "2026-09-01T00:00:00Z",
     ]
     summaries = query_helpers.get_order_summary_responses(
         connection, region_id=hub.region_id
@@ -559,12 +547,9 @@ def test_fetch_hubs_2_rejects_expired_response_without_new_timestamp(
     monkeypatch.setattr(
         fetch_hubs_2_module, "EveArgusResources", lambda settings: resources
     )
-    monkeypatch.setattr(
-        fetch_hubs_2_module,
-        "EsiResponseLoader",
-        lambda esi_link, schema: FakeLoader({
-            hub.region_id: SimpleNamespace(response_data=response)
-        }),
+    _patch_order_update(
+        monkeypatch,
+        failure_message="ESI returned an expired response without a new timestamp.",
     )
 
     output = StringIO()
