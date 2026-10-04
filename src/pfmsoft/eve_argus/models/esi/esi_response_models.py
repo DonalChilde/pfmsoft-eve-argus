@@ -92,6 +92,9 @@ class GetMarketsRegionIdOrders(EsiResponseBase):
     orders: list[GetMarketsRegionIdOrdersDetail]
 
 
+GetMarketsRegionIdOrdersRoot = RootModel[GetMarketsRegionIdOrders]
+
+
 class GetMarketsRegionIdOrdersResponse(EsiResponseBaseModel):
     """Pydantic BaseModel for GetMarketsRegionIdOrders response."""
 
@@ -150,6 +153,9 @@ class GetMarketsPrices(EsiResponseBase):
     """Response model for market prices."""
 
     markets_prices: list[GetMarketsPricesDetail]
+
+
+GetMarketsPricesRoot = RootModel[GetMarketsPrices]
 
 
 class GetMarketsPricesResponse(EsiResponseBaseModel):
@@ -226,6 +232,9 @@ class GetIndustrySystems(EsiResponseBase):
     industry_systems: list[GetIndustrySystemsDetail]
 
 
+GetIndustrySystemsRoot = RootModel[GetIndustrySystems]
+
+
 class GetIndustrySystemsResponse(EsiResponseBaseModel):
     """Pydantic BaseModel for GetIndustrySystems response."""
 
@@ -260,6 +269,9 @@ class PostUniverseNames(EsiResponseBase):
     """Response model for universe names."""
 
     names: list[PostUniverseNamesDetail]
+
+
+PostUniverseNamesRoot = RootModel[PostUniverseNames]
 
 
 class PostUniverseNamesResponse(EsiResponseBaseModel):
@@ -314,6 +326,11 @@ class GetCorporationsCorporationIdIndustryJobs(EsiResponseBase):
     corporation_id: int
     """The corporation ID for which the industry jobs were fetched."""
     industry_jobs: list[GetCorporationsCorporationIdIndustryJobsDetail]
+
+
+GetCorporationsCorporationIdIndustryJobsRoot = RootModel[
+    GetCorporationsCorporationIdIndustryJobs
+]
 
 
 class GetCorporationsCorporationIdIndustryJobsResponse(EsiResponseBaseModel):
@@ -481,6 +498,11 @@ class GetCorporationsCorporationIdBlueprints(EsiResponseBase):
     blueprints: list[GetCorporationsCorporationIdBlueprintsDetail]
 
 
+GetCorporationsCorporationIdBlueprintsRoot = RootModel[
+    GetCorporationsCorporationIdBlueprints
+]
+
+
 class GetCorporationsCorporationIdBlueprintsResponse(EsiResponseBaseModel):
     """Pydantic BaseModel for GetCorporationsCorporationIdBlueprints response."""
 
@@ -492,6 +514,9 @@ class GetUniverseTypes(EsiResponseBase):
     """Response model for universe types."""
 
     type_ids: list[int]
+
+
+GetUniverseTypesRoot = RootModel[GetUniverseTypes]
 
 
 class GetUniverseTypesResponse(EsiResponseBaseModel):

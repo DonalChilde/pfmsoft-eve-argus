@@ -3,14 +3,6 @@ from decimal import Decimal
 
 
 @dataclass(slots=True, kw_only=True, frozen=True)
-class ResponseMetadata:
-    response_metadata_id: int
-    received_at: str
-    expires_at: str | None
-    argus_expires_at: str | None
-
-
-@dataclass(slots=True, kw_only=True, frozen=True)
 class MarketHistoryResponse:
     response_metadata_id: int
     received_at: str

@@ -10,13 +10,7 @@ from dataclasses import dataclass
 from decimal import Decimal
 from typing import Any
 
-
-@dataclass(slots=True, kw_only=True, frozen=True)
-class ResponseMetadata:
-    response_metadata_id: int
-    received_at: str
-    expires_at: str | None
-    argus_expires_at: str | None
+from pfmsoft.eve_argus.models.common import ResponseMetadata
 
 
 @dataclass(slots=True, kw_only=True, frozen=True)
