@@ -6,10 +6,10 @@ import sqlite3
 from dataclasses import asdict
 from typing import cast
 
+from pfmsoft.eve_argus.esd import models as EsdModels
 from pfmsoft.eve_argus.helpers.package_resource import load_package_resource_text
 from pfmsoft.eve_argus.helpers.timing import log_timing
 from pfmsoft.eve_argus.models.argus import static as ASM
-from pfmsoft.eve_argus.models.esd import esd_datasets as ESD
 from pfmsoft.eve_argus.models.types import LanguageEnum
 
 logger = logging.getLogger(__name__)
@@ -30,7 +30,7 @@ def load_table_definitions() -> str:
 @log_timing(logger=logger, level=_timing_log_level)
 def write_types(
     connection: sqlite3.Connection,
-    types: ESD.TypesDataset,
+    types: EsdModels.TypesDataset,
     language: LanguageEnum = LanguageEnum.EN,
 ) -> None:
     """Write the types dataset to the database."""
@@ -81,7 +81,7 @@ def write_types(
 @log_timing(logger=logger, level=_timing_log_level)
 def write_meta_groups(
     connection: sqlite3.Connection,
-    meta_groups: ESD.MetaGroupsDataset,
+    meta_groups: EsdModels.MetaGroupsDataset,
     language: LanguageEnum = LanguageEnum.EN,
 ) -> None:
     """Write the meta groups dataset to the database."""
@@ -113,7 +113,7 @@ def write_meta_groups(
 @log_timing(logger=logger, level=_timing_log_level)
 def write_type_materials(
     connection: sqlite3.Connection,
-    type_materials: ESD.TypeMaterialsDataset,
+    type_materials: EsdModels.TypeMaterialsDataset,
 ) -> None:
     """Write the type materials dataset to the database."""
     with connection:
@@ -170,7 +170,7 @@ def write_type_materials(
 @log_timing(logger=logger, level=_timing_log_level)
 def write_categories(
     connection: sqlite3.Connection,
-    categories: ESD.CategoriesDataset,
+    categories: EsdModels.CategoriesDataset,
     language: LanguageEnum = LanguageEnum.EN,
 ) -> None:
     """Write the categories dataset to the database."""
@@ -196,7 +196,7 @@ def write_categories(
 @log_timing(logger=logger, level=_timing_log_level)
 def write_groups(
     connection: sqlite3.Connection,
-    groups: ESD.GroupsDataset,
+    groups: EsdModels.GroupsDataset,
     language: LanguageEnum = LanguageEnum.EN,
 ) -> None:
     """Write the groups dataset to the database."""
@@ -230,7 +230,7 @@ def write_groups(
 @log_timing(logger=logger, level=_timing_log_level)
 def write_market_groups(
     connection: sqlite3.Connection,
-    market_groups: ESD.MarketGroupsDataset,
+    market_groups: EsdModels.MarketGroupsDataset,
     language: LanguageEnum = LanguageEnum.EN,
 ) -> None:
     """Write the market groups dataset to the database."""
@@ -305,7 +305,7 @@ def _get_published_type_ids_by_market_group_id(
 
 
 def _get_market_path_rows(
-    market_groups: ESD.MarketGroupsDataset,
+    market_groups: EsdModels.MarketGroupsDataset,
     sorted_group_ids: list[int],
     language: LanguageEnum,
 ) -> list[tuple[int, str, str]]:
@@ -337,7 +337,7 @@ def _get_market_path_rows(
 
 def _get_valid_blueprint_ids(
     connection: sqlite3.Connection,
-    blueprints: ESD.BlueprintsDataset,
+    blueprints: EsdModels.BlueprintsDataset,
 ) -> set[int]:
     """Return blueprint IDs whose records satisfy the database constraints.
 
@@ -372,7 +372,7 @@ def _get_valid_blueprint_ids(
             activity = getattr(record.activities, activity_name)
             if activity is None:
                 continue
-            activity = cast(ESD.Blueprint_Activity, activity)
+            activity = cast(EsdModels.Blueprint_Activity, activity)
             if any(
                 material.typeID not in type_ids for material in activity.materials or []
             ):
@@ -405,7 +405,7 @@ def _get_valid_blueprint_ids(
 @log_timing(logger=logger, level=_timing_log_level)
 def write_blueprints(
     connection: sqlite3.Connection,
-    blueprints: ESD.BlueprintsDataset,
+    blueprints: EsdModels.BlueprintsDataset,
 ) -> None:
     """Write the blueprints dataset to the database."""
     with connection:
@@ -460,16 +460,14 @@ def write_blueprints(
                 activity = getattr(record.activities, activity_name)
                 if activity is None:
                     continue
-                activity = cast(ESD.Blueprint_Activity, activity)
+                activity = cast(EsdModels.Blueprint_Activity, activity)
                 for material in activity.materials or []:
-                    material_rows.append(
-                        (
-                            blueprint_type_id,
-                            activity_name,
-                            material.typeID,
-                            material.quantity,
-                        )
-                    )
+                    material_rows.append((
+                        blueprint_type_id,
+                        activity_name,
+                        material.typeID,
+                        material.quantity,
+                    ))
 
         connection.executemany(
             """
@@ -494,7 +492,7 @@ def write_blueprints(
                 activity = getattr(record.activities, activity_name)
                 if activity is None:
                     continue
-                activity = cast(ESD.Blueprint_Activity, activity)
+                activity = cast(EsdModels.Blueprint_Activity, activity)
                 for skill in activity.skills or []:
                     skill_key = (blueprint_type_id, activity_name, skill.typeID)
                     skill_rows[skill_key] = (
@@ -517,17 +515,15 @@ def write_blueprints(
                 activity = getattr(record.activities, activity_name)
                 if activity is None:
                     continue
-                activity = cast(ESD.Blueprint_Activity, activity)
+                activity = cast(EsdModels.Blueprint_Activity, activity)
                 for product in activity.products or []:
-                    product_rows.append(
-                        (
-                            blueprint_type_id,
-                            activity_name,
-                            product.typeID,
-                            product.quantity,
-                            product.probability,
-                        )
-                    )
+                    product_rows.append((
+                        blueprint_type_id,
+                        activity_name,
+                        product.typeID,
+                        product.quantity,
+                        product.probability,
+                    ))
 
         connection.executemany(
             """
@@ -554,7 +550,7 @@ def write_blueprints(
 @log_timing(logger=logger, level=_timing_log_level)
 def write_map_regions(
     connection: sqlite3.Connection,
-    map_regions: ESD.MapRegionsDataset,
+    map_regions: EsdModels.MapRegionsDataset,
     language: LanguageEnum = LanguageEnum.EN,
 ) -> None:
     """Write the map regions dataset to the database."""
@@ -599,7 +595,7 @@ def write_map_regions(
 @log_timing(logger=logger, level=_timing_log_level)
 def write_map_constellations(
     connection: sqlite3.Connection,
-    map_constellations: ESD.MapConstellationsDataset,
+    map_constellations: EsdModels.MapConstellationsDataset,
     language: LanguageEnum = LanguageEnum.EN,
 ) -> None:
     """Write the map constellations dataset to the database."""
@@ -647,7 +643,7 @@ def write_map_constellations(
 @log_timing(logger=logger, level=_timing_log_level)
 def write_map_solar_systems(
     connection: sqlite3.Connection,
-    map_solar_systems: ESD.MapSolarSystemsDataset,
+    map_solar_systems: EsdModels.MapSolarSystemsDataset,
     language: LanguageEnum = LanguageEnum.EN,
 ) -> None:
     """Write the map solar systems dataset to the database."""
@@ -748,7 +744,7 @@ def write_map_solar_systems(
 @log_timing(logger=logger, level=_timing_log_level)
 def write_industry_activities(
     connection: sqlite3.Connection,
-    industrial_activities: ESD.IndustryActivitiesDataset,
+    industrial_activities: EsdModels.IndustryActivitiesDataset,
 ) -> None:
     """Write the industrial activities dataset to the database."""
     with connection:
