@@ -32,7 +32,7 @@ async def system_cost_indices(
 ) -> EsiResponse | FailedEsiResponse:
     """Fetches system cost indices from ESI."""
     request = EsiRequest(
-        operation_id="GetUniverseSystemCostIndices",
+        operation_id="GetIndustrySystems",
     )
     response = await esi_link.make_request(esi_request=request, schema=schema)
     return response
