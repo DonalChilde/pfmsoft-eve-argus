@@ -7,9 +7,10 @@ from uuid import UUID
 from pfmsoft.eve_link import EsiLink, EsiSchema, FailedEsiResponse
 from whenever import Instant
 
-from pfmsoft.eve_argus.data_loaders import esi as FetchEsi
 from pfmsoft.eve_argus.dynamic.access import DynamicDBReader, DynamicDBWriter
 from pfmsoft.eve_argus.dynamic.db.models import CorporationIndustryJobsResponse
+from pfmsoft.eve_argus.esi import fetch as EsiFetch
+from pfmsoft.eve_argus.esi import validate as EsiValidate
 
 _writer = DynamicDBWriter()
 _reader = DynamicDBReader()
@@ -66,7 +67,7 @@ async def _fetch_and_update_corporation_industry_jobs(
     current_state: CorporationIndustryJobsResponse | None,
 ) -> CorporationIndustryJobsUpdateResult:
     """Fetch and persist corporation jobs, preserving the previous state."""
-    response = await FetchEsi.fetch_corporation_industry_jobs(
+    response = await EsiFetch.corporation_industry_jobs(
         esi_link,
         schema,
         corporation_id=corporation_id,
@@ -83,7 +84,7 @@ async def _fetch_and_update_corporation_industry_jobs(
         )
 
     try:
-        jobs = FetchEsi.validate_corporation_industry_jobs(response)
+        jobs = EsiValidate.corporation_industry_jobs(response)
         _writer.write_corporation_industry_jobs(connection, jobs=jobs)
         new_state = _current_state(connection, corporation_id=corporation_id)
     except Exception as error:

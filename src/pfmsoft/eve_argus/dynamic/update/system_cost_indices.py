@@ -11,9 +11,10 @@ from pfmsoft.eve_link import (
 )
 from whenever import Instant
 
-from pfmsoft.eve_argus.data_loaders import esi as FetchEsi
 from pfmsoft.eve_argus.dynamic.access import DynamicDBReader, DynamicDBWriter
 from pfmsoft.eve_argus.dynamic.db.models import SystemCostIndicesResponse
+from pfmsoft.eve_argus.esi import fetch as EsiFetch
+from pfmsoft.eve_argus.esi import validate as EsiValidate
 
 logger = logging.getLogger(__name__)
 _writer = DynamicDBWriter()
@@ -43,7 +44,7 @@ async def _fetch_and_update_system_cost_indices(
     current_state: SystemCostIndicesResponse | None,
 ) -> SystemCostIndicesUpdateResult:
     """Fetch and persist system cost indices, preserving the previous state."""
-    response = await FetchEsi.fetch_system_cost_indices(esi_link, schema)
+    response = await EsiFetch.system_cost_indices(esi_link, schema)
     if isinstance(response, FailedEsiResponse):
         return SystemCostIndicesUpdateResult(
             update_successful=False,
@@ -54,7 +55,7 @@ async def _fetch_and_update_system_cost_indices(
         )
 
     try:
-        system_cost_indices = FetchEsi.validate_system_cost_indices(response)
+        system_cost_indices = EsiValidate.system_cost_indices(response)
         _writer.write_system_cost_indices(
             connection, system_cost_indices=system_cost_indices
         )

@@ -4,18 +4,21 @@ from sqlite3 import Connection
 from typing import Protocol
 
 from pfmsoft.eve_argus.dynamic.db import models as ADM
-from pfmsoft.eve_argus.models.esi import esi_response_models as ERM
+from pfmsoft.eve_argus.esi import models as EsiModels
 
 
 class DynamicDBWriteProtocol(Protocol):
     def write_markets_prices(
-        self, connection: Connection, *, markets_prices: ERM.GetMarketsPrices
+        self, connection: Connection, *, markets_prices: EsiModels.GetMarketsPrices
     ) -> None:
         """Write market prices."""
         ...
 
     def write_market_orders(
-        self, connection: Connection, *, market_orders: ERM.GetMarketsRegionIdOrders
+        self,
+        connection: Connection,
+        *,
+        market_orders: EsiModels.GetMarketsRegionIdOrders,
     ) -> None:
         """Write market orders."""
         ...
@@ -27,7 +30,10 @@ class DynamicDBWriteProtocol(Protocol):
         ...
 
     def write_system_cost_indices(
-        self, connection: Connection, *, system_cost_indices: ERM.GetIndustrySystems
+        self,
+        connection: Connection,
+        *,
+        system_cost_indices: EsiModels.GetIndustrySystems,
     ) -> None:
         """Write system cost indices."""
         ...
@@ -36,7 +42,7 @@ class DynamicDBWriteProtocol(Protocol):
         self,
         connection: Connection,
         *,
-        jobs: ERM.GetCorporationsCorporationIdIndustryJobs,
+        jobs: EsiModels.GetCorporationsCorporationIdIndustryJobs,
     ) -> None:
         """Write corporation industry jobs."""
         ...
@@ -45,7 +51,7 @@ class DynamicDBWriteProtocol(Protocol):
         self,
         connection: Connection,
         *,
-        blueprints: ERM.GetCorporationsCorporationIdBlueprints,
+        blueprints: EsiModels.GetCorporationsCorporationIdBlueprints,
     ) -> None:
         """Write corporation blueprints."""
         ...

@@ -2,10 +2,13 @@
 
 import asyncio
 import sqlite3
-from unittest.mock import AsyncMock
+from types import ModuleType
+from unittest.mock import AsyncMock, Mock
 from uuid import UUID
 
 import pytest
+from pfmsoft.eve_link import EsiLink, EsiRequest, EsiResponse, EsiSchema
+from whenever import Instant
 
 from pfmsoft.eve_argus.dynamic.db import load_table_definitions, query_helpers
 from pfmsoft.eve_argus.dynamic.db.models import (
@@ -19,9 +22,10 @@ from pfmsoft.eve_argus.dynamic.update import (
     corporation_industry_jobs,
     market_orders,
     markets_prices,
+    system_cost_indices,
 )
 from pfmsoft.eve_argus.dynamic.update.system_cost_indices import _current_state
-from pfmsoft.eve_argus.models.esi import esi_response_models as ERM
+from pfmsoft.eve_argus.esi import models as ERM
 
 
 def _make_connection() -> sqlite3.Connection:
@@ -97,9 +101,9 @@ def test_update_markets_prices_persists_response(
         markets_prices=[],
     )
     fetch = AsyncMock(return_value=raw_response)
-    monkeypatch.setattr(markets_prices.FetchEsi, "fetch_markets_prices", fetch)
+    monkeypatch.setattr(markets_prices.EsiFetch, "markets_prices", fetch)
     monkeypatch.setattr(
-        markets_prices.FetchEsi, "validate_markets_prices", lambda response: prices
+        markets_prices.EsiValidate, "markets_prices", lambda response: prices
     )
 
     result = asyncio.run(
@@ -131,7 +135,7 @@ def test_update_markets_prices_skips_current_response(
         ),
     )
     fetch = AsyncMock()
-    monkeypatch.setattr(markets_prices.FetchEsi, "fetch_markets_prices", fetch)
+    monkeypatch.setattr(markets_prices.EsiFetch, "markets_prices", fetch)
 
     result = asyncio.run(
         markets_prices.update_markets_prices(object(), object(), connection)
@@ -148,15 +152,15 @@ def test_update_markets_prices_reports_validation_failure(
     """Invalid price payloads return a failure without writing a response."""
     connection = _make_connection()
     monkeypatch.setattr(
-        markets_prices.FetchEsi,
-        "fetch_markets_prices",
+        markets_prices.EsiFetch,
+        "markets_prices",
         AsyncMock(return_value=object()),
     )
 
     def validate(response: object) -> ERM.GetMarketsPrices:
         raise ValueError("invalid price response")
 
-    monkeypatch.setattr(markets_prices.FetchEsi, "validate_markets_prices", validate)
+    monkeypatch.setattr(markets_prices.EsiValidate, "markets_prices", validate)
 
     result = asyncio.run(
         markets_prices.update_markets_prices(object(), object(), connection)
@@ -182,10 +186,10 @@ def test_update_market_orders_persists_new_region_response(
         orders=[],
     )
     fetch = AsyncMock(return_value=raw_response)
-    monkeypatch.setattr(market_orders.FetchEsi, "fetch_region_market_orders", fetch)
+    monkeypatch.setattr(market_orders.EsiFetch, "region_market_orders", fetch)
     monkeypatch.setattr(
-        market_orders.FetchEsi,
-        "validate_region_market_orders",
+        market_orders.EsiValidate,
+        "region_market_orders",
         lambda response: orders,
     )
 
@@ -216,10 +220,10 @@ def test_update_market_orders_rejects_duplicate_timestamp(
     query_helpers.write_market_orders(connection, existing)
     raw_response = object()
     fetch = AsyncMock(return_value=raw_response)
-    monkeypatch.setattr(market_orders.FetchEsi, "fetch_region_market_orders", fetch)
+    monkeypatch.setattr(market_orders.EsiFetch, "region_market_orders", fetch)
     monkeypatch.setattr(
-        market_orders.FetchEsi,
-        "validate_region_market_orders",
+        market_orders.EsiValidate,
+        "region_market_orders",
         lambda response: existing,
     )
 
@@ -254,13 +258,13 @@ def test_update_corporation_industry_jobs_passes_credentials_and_persists(
     )
     fetch = AsyncMock(return_value=raw_response)
     monkeypatch.setattr(
-        corporation_industry_jobs.FetchEsi,
-        "fetch_corporation_industry_jobs",
+        corporation_industry_jobs.EsiFetch,
+        "corporation_industry_jobs",
         fetch,
     )
     monkeypatch.setattr(
-        corporation_industry_jobs.FetchEsi,
-        "validate_corporation_industry_jobs",
+        corporation_industry_jobs.EsiValidate,
+        "corporation_industry_jobs",
         lambda response: jobs,
     )
 
@@ -311,13 +315,13 @@ def test_update_corporation_blueprints_passes_credentials_and_persists(
     )
     fetch = AsyncMock(return_value=raw_response)
     monkeypatch.setattr(
-        corporation_blueprints.FetchEsi,
-        "fetch_corporation_blueprints",
+        corporation_blueprints.EsiFetch,
+        "corporation_blueprints",
         fetch,
     )
     monkeypatch.setattr(
-        corporation_blueprints.FetchEsi,
-        "validate_corporation_blueprints",
+        corporation_blueprints.EsiValidate,
+        "corporation_blueprints",
         lambda response: blueprints,
     )
 
@@ -346,4 +350,105 @@ def test_update_corporation_blueprints_passes_credentials_and_persists(
         expires_at=blueprints.expires_at,
         argus_expires_at=None,
         corporation_id=corporation_id,
+    )
+
+
+@pytest.mark.parametrize(
+    ("module", "endpoint", "operation_id", "path_parameters", "update_parameters"),
+    [
+        (
+            markets_prices,
+            "markets_prices",
+            "GetMarketsPrices",
+            {},
+            {},
+        ),
+        (
+            system_cost_indices,
+            "system_cost_indices",
+            "GetIndustrySystems",
+            {},
+            {},
+        ),
+        (
+            market_orders,
+            "region_market_orders",
+            "GetMarketsRegionIdOrders",
+            {"region_id": 10000002},
+            {"region_id": 10000002},
+        ),
+        (
+            corporation_industry_jobs,
+            "corporation_industry_jobs",
+            "GetCorporationsCorporationIdIndustryJobs",
+            {"corporation_id": 987654},
+            {
+                "corporation_id": 987654,
+                "character_id": 123456,
+                "credential_id": UUID(int=1),
+            },
+        ),
+        (
+            corporation_blueprints,
+            "corporation_blueprints",
+            "GetCorporationsCorporationIdBlueprints",
+            {"corporation_id": 987654},
+            {
+                "corporation_id": 987654,
+                "character_id": 123456,
+                "credential_id": UUID(int=1),
+            },
+        ),
+    ],
+)
+def test_update_uses_new_esi_fetch_and_validation(
+    module: ModuleType,
+    endpoint: str,
+    operation_id: str,
+    path_parameters: dict[str, int],
+    update_parameters: dict[str, int | UUID],
+) -> None:
+    """Real fetches and validators should persist new models with only ESI mocked."""
+    connection = _make_connection()
+    esi_link = Mock(spec=EsiLink)
+    schema = Mock(spec=EsiSchema)
+    response = Mock(spec=EsiResponse)
+    response.response_data = []
+    response.response.metadata.received_at = "2026-09-01T00:00:00Z"
+    response.response.metadata.expires_at_instant = Instant.parse_iso(
+        "2999-01-01T00:00:00Z"
+    )
+
+    async def make_request(
+        *, esi_request: EsiRequest, schema: EsiSchema
+    ) -> EsiResponse:
+        response.esi_request = esi_request
+        return response
+
+    esi_link.make_request = AsyncMock(side_effect=make_request)
+    update = getattr(module, f"update_{module.__name__.rsplit('.', 1)[-1]}")
+
+    result = asyncio.run(update(esi_link, schema, connection, **update_parameters))
+
+    assert module.EsiFetch.__name__ == "pfmsoft.eve_argus.esi.fetch"
+    assert module.EsiValidate.__name__ == "pfmsoft.eve_argus.esi.validate"
+    esi_link.make_request.assert_awaited_once()
+    call = esi_link.make_request.await_args
+    request = call.kwargs["esi_request"]
+    assert call.kwargs["schema"] is schema
+    assert request.operation_id == operation_id
+    assert request.path_parameters == path_parameters
+    if endpoint.startswith("corporation_"):
+        assert request.auth_character_id == update_parameters["character_id"]
+        assert request.auth_credential_id == update_parameters["credential_id"]
+    assert result.update_successful is True, result.failure_message
+    assert result.update_not_required is False
+    assert result.previous_state is None
+    assert result.new_state is not None
+    assert result.new_state.received_at == "2026-09-01T00:00:00Z"
+    assert result.new_state.expires_at == "2999-01-01T00:00:00Z"
+    for key, value in path_parameters.items():
+        assert getattr(result.new_state, key) == value
+    assert connection.execute("SELECT COUNT(*) FROM response_metadata").fetchone() == (
+        1,
     )

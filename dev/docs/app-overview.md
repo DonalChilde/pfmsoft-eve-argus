@@ -80,7 +80,13 @@ Provides a central location for jinja templates used to create various objects, 
 
     /src/pfmsoft/eve_argus/data_loaders
 
-Contains code to import static databases, and request data from the EVE Esi.
+Contains code to import static databases.
+
+### esi
+
+    /src/pfmsoft/eve_argus/esi
+
+Contains code related to downloading and validating data from the EVE Online Esi endpoints.
 
 ### Reports
 
