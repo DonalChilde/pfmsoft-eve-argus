@@ -2,6 +2,8 @@
 
 from typing import Any
 
+from pfmsoft.eve_sd.helpers.sde_metadata import SdeMetadata
+
 from pfmsoft.eve_argus.esd import models as EsdModels
 
 
@@ -45,9 +47,11 @@ def groups(raw_dataset: dict[int, dict[str, Any]]) -> EsdModels.GroupsDataset:
 
 def industrial_activities(
     raw_dataset: dict[int, dict[str, Any]],
-) -> EsdModels.IndustryActivitiesDataset:
-    """Validate the raw industrial activities dataset and return an IndustryActivitiesDataset instance."""
-    validated_dataset = EsdModels.IndustryActivitiesDataset.model_validate(raw_dataset)
+) -> EsdModels.IndustrialActivitiesDataset:
+    """Validate the raw industrial activities dataset and return an IndustrialActivitiesDataset instance."""
+    validated_dataset = EsdModels.IndustrialActivitiesDataset.model_validate(
+        raw_dataset
+    )
     return validated_dataset
 
 
@@ -80,4 +84,20 @@ def market_groups(
 ) -> EsdModels.MarketGroupsDataset:
     """Validate the raw market groups dataset and return a MarketGroupsDataset instance."""
     validated_dataset = EsdModels.MarketGroupsDataset.model_validate(raw_dataset)
+    return validated_dataset
+
+
+def sde_info(
+    raw_dataset: dict[str, dict[str, Any]],
+) -> EsdModels.SdeInfoDataset:
+    """Validate the raw SDE info dataset and return an SdeInfoDataset instance."""
+    validated_dataset = EsdModels.SdeInfoDataset.model_validate(raw_dataset)
+    return validated_dataset
+
+
+def sde_metadata(
+    raw_dataset: SdeMetadata,
+) -> EsdModels.SdeMetadataDataset:
+    """Validate the raw SDE metadata dataset and return an SdeMetadataDataset instance."""
+    validated_dataset = EsdModels.SdeMetadataDataset(dataset=raw_dataset)
     return validated_dataset

@@ -16,9 +16,10 @@ from pfmsoft.eve_argus.dynamic.db.query_helpers import (
 from pfmsoft.eve_argus.market.history.db.query_helpers import (
     load_table_definitions as load_history_table_definitions,
 )
-from pfmsoft.eve_argus.market.orders.db.query_helpers import (
-    load_table_definitions as load_order_table_definitions,
-)
+
+# from pfmsoft.eve_argus.market.orders.db.query_helpers import (
+#     load_table_definitions as load_order_table_definitions,
+# )
 from pfmsoft.eve_argus.settings import EveArgusSettings
 from pfmsoft.eve_argus.static.query_helpers import (
     load_table_definitions as load_argus_static_table_definitions,
@@ -35,7 +36,7 @@ class EveArgusResources:
         self._esi_link: EsiLink | None = None
         self._sd_query_manager: EveSdDbQueryManager | None = None
         self._esi_schema: EsiSchema | None = None
-        self._order_db_connection: sqlite3.Connection | None = None
+        # self._order_db_connection: sqlite3.Connection | None = None
         self._argus_static_db_connection: sqlite3.Connection | None = None
         self._argus_dynamic_db_connection: sqlite3.Connection | None = None
         self._history_db_connection: sqlite3.Connection | None = None
@@ -51,9 +52,9 @@ class EveArgusResources:
         await self._esi_link.__aenter__()
         self._sd_query_manager = EveSdDbQueryManager(self._settings.static_database)
         self._sd_query_manager.__enter__()
-        self._order_db_connection = create_read_write_connection(
-            self._settings.market_orders_database, load_order_table_definitions()
-        )
+        # self._order_db_connection = create_read_write_connection(
+        #     self._settings.market_orders_database, load_order_table_definitions()
+        # )
         self._argus_static_db_connection = create_read_write_connection(
             self._settings.argus_static_database, load_argus_static_table_definitions()
         )
@@ -82,9 +83,9 @@ class EveArgusResources:
         if self._sd_query_manager is not None:
             self._sd_query_manager.__exit__(exc_type, exc_value, traceback)
             self._sd_query_manager = None
-        if self._order_db_connection is not None:
-            self._order_db_connection.close()
-            self._order_db_connection = None
+        # if self._order_db_connection is not None:
+        #     self._order_db_connection.close()
+        #     self._order_db_connection = None
         if self._argus_static_db_connection is not None:
             self._argus_static_db_connection.close()
             self._argus_static_db_connection = None
@@ -124,14 +125,14 @@ class EveArgusResources:
             )
         return self._esi_schema
 
-    @property
-    def order_db_connection(self) -> sqlite3.Connection:
-        """Get the order database connection."""
-        if self._order_db_connection is None:
-            raise RuntimeError(
-                "EveArgusResources is not initialized. Use 'async with' to initialize."
-            )
-        return self._order_db_connection
+    # @property
+    # def order_db_connection(self) -> sqlite3.Connection:
+    #     """Get the order database connection."""
+    #     if self._order_db_connection is None:
+    #         raise RuntimeError(
+    #             "EveArgusResources is not initialized. Use 'async with' to initialize."
+    #         )
+    #     return self._order_db_connection
 
     @property
     def argus_static_db_connection(self) -> sqlite3.Connection:

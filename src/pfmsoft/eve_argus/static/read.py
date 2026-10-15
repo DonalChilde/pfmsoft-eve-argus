@@ -3,7 +3,7 @@
 from sqlite3 import Connection
 from typing import Any
 
-from pfmsoft.eve_argus.models.argus import static as ASM
+from pfmsoft.eve_argus.static import models as ASM
 from pfmsoft.eve_argus.static import query_helpers as QH
 
 
@@ -69,3 +69,8 @@ def type_materials_randomized(
 def types(connection: Connection, *, only_published: bool = True) -> ASM.TypesDataset:
     """Retrieve types from the Argus static db."""
     return QH.get_types(connection, only_published=only_published)
+
+
+def sde_metadata(connection: Connection) -> ASM.SdeMetadata:
+    """Retrieve SDE metadata from the Argus static db."""
+    return QH.get_sde_metadata(connection)

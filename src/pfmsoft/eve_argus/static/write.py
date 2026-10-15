@@ -11,11 +11,11 @@ def blueprints(connection: Connection, *, dataset: EsdModels.BlueprintsDataset) 
     QH.write_blueprints(connection, dataset)
 
 
-def industry_activities(
-    connection: Connection, *, dataset: EsdModels.IndustryActivitiesDataset
+def industrial_activities(
+    connection: Connection, *, dataset: EsdModels.IndustrialActivitiesDataset
 ) -> None:
-    """Write industry activities to the Argus static db."""
-    QH.write_industry_activities(connection, dataset)
+    """Write industrial activities to the Argus static db."""
+    QH.write_industrial_activities(connection, dataset)
 
 
 def map_constellations(
@@ -63,3 +63,27 @@ def metadata(connection: Connection, *, metadata: object) -> None:
 def types(connection: Connection, *, dataset: EsdModels.TypesDataset) -> None:
     """Write types to the Argus static db."""
     QH.write_types(connection, dataset)
+
+
+def type_materials(
+    connection: Connection, *, dataset: EsdModels.TypeMaterialsDataset
+) -> None:
+    """Write type materials to the Argus static db."""
+    QH.write_type_materials(connection, dataset)
+
+
+def groups(connection: Connection, *, dataset: EsdModels.GroupsDataset) -> None:
+    """Write groups to the Argus static db."""
+    QH.write_groups(connection, dataset)
+
+
+def categories(connection: Connection, *, dataset: EsdModels.CategoriesDataset) -> None:
+    """Write categories to the Argus static db."""
+    QH.write_categories(connection, dataset)
+
+
+def sde_metadata(
+    connection: Connection, *, dataset: EsdModels.SdeMetadataDataset
+) -> None:
+    """Write SDE metadata to the Argus static db."""
+    QH.write_sde_metadata(connection, dataset)

@@ -3,6 +3,7 @@
 from dataclasses import dataclass, field
 from typing import Any, Self
 
+from pfmsoft.eve_sd.helpers.sde_metadata import SdeMetadata
 from pydantic import BaseModel, ConfigDict
 
 from pfmsoft.eve_argus.models.types import LanguageEnum
@@ -382,7 +383,7 @@ class GroupsDataset(SdeDatasetBaseModel):
 
 
 @dataclass(slots=True, kw_only=True)
-class IndustryActivitiesRecord:
+class IndustrialActivitiesRecord:
     """Record for a specific industrial activity.
 
     - source: dev/tmp/sde-yaml/3464040
@@ -399,8 +400,8 @@ class IndustryActivitiesRecord:
     name: str
 
 
-class IndustryActivitiesDataset(SdeDatasetBaseModel):
-    dataset: dict[int, IndustryActivitiesRecord]
+class IndustrialActivitiesDataset(SdeDatasetBaseModel):
+    dataset: dict[int, IndustrialActivitiesRecord]
 
 
 @dataclass(slots=True, kw_only=True)
@@ -629,3 +630,9 @@ class MarketGroupsRecord:
 
 class MarketGroupsDataset(SdeDatasetBaseModel):
     dataset: dict[int, MarketGroupsRecord]
+
+
+class SdeMetadataDataset(SdeDatasetBaseModel):
+    """Record for SDE metadata."""
+
+    dataset: SdeMetadata

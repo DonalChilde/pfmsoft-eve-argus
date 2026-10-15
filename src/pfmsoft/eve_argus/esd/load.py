@@ -3,6 +3,7 @@
 from typing import Any
 
 from pfmsoft.eve_sd import EveSdDbQueryManager
+from pfmsoft.eve_sd.helpers.sde_metadata import SdeMetadata
 
 
 def blueprints(db: EveSdDbQueryManager) -> dict[int, dict[str, Any]]:
@@ -91,3 +92,16 @@ def market_groups(db: EveSdDbQueryManager) -> dict[int, dict[str, Any]]:
         key: value for key, value in db.query.get_int_records("marketGroups")
     }
     return raw_dataset
+
+
+def sde_info(db: EveSdDbQueryManager) -> dict[str, dict[str, Any]]:
+    """Load SDE info from the EVE Static Data database."""
+    raw_dataset: dict[str, Any] = {
+        key: value for key, value in db.query.get_str_records("sdeInfo")
+    }
+    return raw_dataset
+
+
+def sde_metadata(db: EveSdDbQueryManager) -> SdeMetadata:
+    """Load SDE metadata from the EVE Static Data database."""
+    return db.query.sde_metadata

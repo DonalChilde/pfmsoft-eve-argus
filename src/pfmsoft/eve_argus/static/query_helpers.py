@@ -9,8 +9,8 @@ from typing import cast
 from pfmsoft.eve_argus.esd import models as EsdModels
 from pfmsoft.eve_argus.helpers.package_resource import load_package_resource_text
 from pfmsoft.eve_argus.helpers.timing import log_timing
-from pfmsoft.eve_argus.models.argus import static as ASM
 from pfmsoft.eve_argus.models.types import LanguageEnum
+from pfmsoft.eve_argus.static import models as ASM
 
 logger = logging.getLogger(__name__)
 
@@ -742,15 +742,15 @@ def write_map_solar_systems(
 
 
 @log_timing(logger=logger, level=_timing_log_level)
-def write_industry_activities(
+def write_industrial_activities(
     connection: sqlite3.Connection,
-    industrial_activities: EsdModels.IndustryActivitiesDataset,
+    industrial_activities: EsdModels.IndustrialActivitiesDataset,
 ) -> None:
     """Write the industrial activities dataset to the database."""
     with connection:
         connection.executemany(
             """
-            INSERT INTO industry_activities (activity_id, name, description)
+            INSERT INTO industrial_activities (activity_id, name, description)
             VALUES (?, ?, ?)
             """,
             (
@@ -765,6 +765,29 @@ def write_industry_activities(
     logger.info(
         "wrote %d industry activities to the database",
         len(industrial_activities.dataset),
+    )
+
+
+@log_timing(logger=logger, level=_timing_log_level)
+def write_sde_metadata(
+    connection: sqlite3.Connection,
+    sde_metadata: EsdModels.SdeMetadataDataset,
+) -> None:
+    """Write the SDE metadata to the database."""
+    with connection:
+        connection.execute(
+            """
+            INSERT INTO sde_metadata (build_number, release_date)
+            VALUES (?, ?)
+            """,
+            (
+                sde_metadata.dataset.buildNumber,
+                sde_metadata.dataset.releaseDate,
+            ),
+        )
+    logger.info(
+        "wrote SDE metadata to the database: build_number=%d",
+        sde_metadata.dataset.buildNumber,
     )
 
 
@@ -1366,4 +1389,29 @@ def get_types(
         ) in rows
     }
     logger.info("Retrieved %d types", len(result))
+    return result
+
+
+@log_timing(logger=logger, level=_timing_log_level)
+def get_sde_metadata(
+    connection: sqlite3.Connection,
+) -> ASM.SdeMetadata:
+    """Retrieve the SDE metadata from the database."""
+    row = connection.execute(
+        """
+        SELECT
+            build_number,
+            release_date
+        FROM sde_metadata
+        LIMIT 1
+        """
+    ).fetchone()
+    if row is None:
+        raise ValueError("SDE metadata not found in the database.")
+    build_number, release_date = row
+    result = ASM.SdeMetadata(
+        build_number=build_number,
+        release_date=release_date,
+    )
+    logger.info("Retrieved SDE metadata: build_number=%d", result.build_number)
     return result
