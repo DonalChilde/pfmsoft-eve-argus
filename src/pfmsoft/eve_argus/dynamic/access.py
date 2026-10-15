@@ -8,18 +8,23 @@ from pfmsoft.eve_argus.dynamic.protocol import (
     DynamicDBReadProtocol,
     DynamicDBWriteProtocol,
 )
-from pfmsoft.eve_argus.models.esi import esi_response_models as ERM
+
+# from pfmsoft.eve_argus.models.esi import esi_response_models as ERM
+from pfmsoft.eve_argus.esi import models as EsiModels
 
 
 class DynamicDBWriter(DynamicDBWriteProtocol):
     def write_markets_prices(
-        self, connection: Connection, *, markets_prices: ERM.GetMarketsPrices
+        self, connection: Connection, *, markets_prices: EsiModels.GetMarketsPrices
     ) -> None:
         """Write market prices."""
         QH.write_markets_prices(connection, markets_prices=markets_prices)
 
     def write_market_orders(
-        self, connection: Connection, *, market_orders: ERM.GetMarketsRegionIdOrders
+        self,
+        connection: Connection,
+        *,
+        market_orders: EsiModels.GetMarketsRegionIdOrders,
     ) -> None:
         """Write market orders."""
         QH.write_market_orders(connection, market_orders=market_orders)
@@ -31,7 +36,10 @@ class DynamicDBWriter(DynamicDBWriteProtocol):
         QH.write_order_summaries(connection, order_summaries=order_summaries)
 
     def write_system_cost_indices(
-        self, connection: Connection, *, system_cost_indices: ERM.GetIndustrySystems
+        self,
+        connection: Connection,
+        *,
+        system_cost_indices: EsiModels.GetIndustrySystems,
     ) -> None:
         """Write system cost indices."""
         QH.write_system_cost_indices(
@@ -42,7 +50,7 @@ class DynamicDBWriter(DynamicDBWriteProtocol):
         self,
         connection: Connection,
         *,
-        jobs: ERM.GetCorporationsCorporationIdIndustryJobs,
+        jobs: EsiModels.GetCorporationsCorporationIdIndustryJobs,
     ) -> None:
         """Write corporation industry jobs."""
         QH.write_corporation_industry_jobs(connection, jobs=jobs)
@@ -51,7 +59,7 @@ class DynamicDBWriter(DynamicDBWriteProtocol):
         self,
         connection: Connection,
         *,
-        blueprints: ERM.GetCorporationsCorporationIdBlueprints,
+        blueprints: EsiModels.GetCorporationsCorporationIdBlueprints,
     ) -> None:
         """Write corporation blueprints."""
         QH.write_corporation_blueprints(connection, blueprints=blueprints)

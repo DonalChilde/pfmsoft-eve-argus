@@ -6,9 +6,10 @@ from sqlite3 import Connection
 from pfmsoft.eve_link import EsiLink, EsiSchema, FailedEsiResponse
 from whenever import Instant
 
-from pfmsoft.eve_argus.data_loaders import esi as FetchEsi
 from pfmsoft.eve_argus.dynamic.access import DynamicDBReader, DynamicDBWriter
 from pfmsoft.eve_argus.dynamic.db.models import MarketsPricesResponse
+from pfmsoft.eve_argus.esi import fetch as EsiFetch
+from pfmsoft.eve_argus.esi import validate as EsiValidate
 
 _writer = DynamicDBWriter()
 _reader = DynamicDBReader()
@@ -55,7 +56,7 @@ async def _fetch_and_update_markets_prices(
     current_state: MarketsPricesResponse | None,
 ) -> MarketsPricesUpdateResult:
     """Fetch and persist market prices, preserving the previous state."""
-    response = await FetchEsi.fetch_markets_prices(esi_link, schema)
+    response = await EsiFetch.markets_prices(esi_link, schema)
     if isinstance(response, FailedEsiResponse):
         return MarketsPricesUpdateResult(
             update_successful=False,
@@ -66,7 +67,7 @@ async def _fetch_and_update_markets_prices(
         )
 
     try:
-        prices = FetchEsi.validate_markets_prices(response)
+        prices = EsiValidate.markets_prices(response)
         _writer.write_markets_prices(connection, markets_prices=prices)
         new_state = _current_state(connection)
     except Exception as error:

@@ -15,6 +15,9 @@ from sqlite3 import Connection
 from typing import cast
 
 from pfmsoft.eve_argus.dynamic.db import models
+
+# from pfmsoft.eve_argus.models.esi import esi_response_models as ERM
+from pfmsoft.eve_argus.esi import models as EsiModels
 from pfmsoft.eve_argus.helpers.currency import (
     from_cents,
     from_four_places,
@@ -23,7 +26,6 @@ from pfmsoft.eve_argus.helpers.currency import (
 )
 from pfmsoft.eve_argus.helpers.package_resource import load_package_resource_text
 from pfmsoft.eve_argus.helpers.timing import log_timing
-from pfmsoft.eve_argus.models.esi import esi_response_models as ERM
 
 logger = logging.getLogger(__name__)
 
@@ -70,7 +72,7 @@ def write_response_metadata(
 @log_timing(logger=logger, level=_timing_log_level)
 def write_markets_prices(
     connection: Connection,
-    markets_prices: ERM.GetMarketsPrices,
+    markets_prices: EsiModels.GetMarketsPrices,
 ) -> None:
     """Write the universe markets prices to the database."""
     with connection:
@@ -116,7 +118,7 @@ def write_markets_prices(
 @log_timing(logger=logger, level=_timing_log_level)
 def write_market_orders(
     connection: Connection,
-    market_orders: ERM.GetMarketsRegionIdOrders,
+    market_orders: EsiModels.GetMarketsRegionIdOrders,
 ) -> None:
     """Write the market orders to the database."""
     with connection:
@@ -421,18 +423,18 @@ def get_order_summary_responses(
 @log_timing(logger=logger, level=_timing_log_level)
 def write_system_cost_indices(
     connection: Connection,
-    system_cost_indices: ERM.GetIndustrySystems,
+    system_cost_indices: EsiModels.GetIndustrySystems,
 ) -> None:
     """Write the system cost indices to the database."""
     activity_columns = {
-        ERM.CostIndicesActivity.COPYING: "copying",
-        ERM.CostIndicesActivity.MANUFACTURING: "manufacturing",
-        ERM.CostIndicesActivity.INVENTION: "invention",
-        ERM.CostIndicesActivity.REACTION: "reaction",
-        ERM.CostIndicesActivity.RESEARCHING_MATERIAL_EFFICIENCY: (
+        EsiModels.CostIndicesActivity.COPYING: "copying",
+        EsiModels.CostIndicesActivity.MANUFACTURING: "manufacturing",
+        EsiModels.CostIndicesActivity.INVENTION: "invention",
+        EsiModels.CostIndicesActivity.REACTION: "reaction",
+        EsiModels.CostIndicesActivity.RESEARCHING_MATERIAL_EFFICIENCY: (
             "researching_material_efficiency"
         ),
-        ERM.CostIndicesActivity.RESEARCHING_TIME_EFFICIENCY: (
+        EsiModels.CostIndicesActivity.RESEARCHING_TIME_EFFICIENCY: (
             "researching_time_efficiency"
         ),
     }
@@ -509,7 +511,7 @@ def write_system_cost_indices(
 
 @log_timing(logger=logger, level=_timing_log_level)
 def write_corporation_industry_jobs(
-    connection: Connection, jobs: ERM.GetCorporationsCorporationIdIndustryJobs
+    connection: Connection, jobs: EsiModels.GetCorporationsCorporationIdIndustryJobs
 ) -> None:
     """Write corporation industry jobs to the database."""
 
@@ -604,7 +606,7 @@ def write_corporation_industry_jobs(
 
 @log_timing(logger=logger, level=_timing_log_level)
 def write_corporation_blueprints(
-    connection: Connection, blueprints: ERM.GetCorporationsCorporationIdBlueprints
+    connection: Connection, blueprints: EsiModels.GetCorporationsCorporationIdBlueprints
 ) -> None:
     """Write corporation blueprints to the database."""
 

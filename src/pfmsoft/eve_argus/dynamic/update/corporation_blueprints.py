@@ -7,9 +7,10 @@ from uuid import UUID
 from pfmsoft.eve_link import EsiLink, EsiSchema, FailedEsiResponse
 from whenever import Instant
 
-from pfmsoft.eve_argus.data_loaders import esi as FetchEsi
 from pfmsoft.eve_argus.dynamic.access import DynamicDBReader, DynamicDBWriter
 from pfmsoft.eve_argus.dynamic.db.models import CorporationBlueprintsResponse
+from pfmsoft.eve_argus.esi import fetch as EsiFetch
+from pfmsoft.eve_argus.esi import validate as EsiValidate
 
 _writer = DynamicDBWriter()
 _reader = DynamicDBReader()
@@ -66,7 +67,7 @@ async def _fetch_and_update_corporation_blueprints(
     current_state: CorporationBlueprintsResponse | None,
 ) -> CorporationBlueprintsUpdateResult:
     """Fetch and persist corporation blueprints, preserving previous state."""
-    response = await FetchEsi.fetch_corporation_blueprints(
+    response = await EsiFetch.corporation_blueprints(
         esi_link,
         schema,
         corporation_id=corporation_id,
@@ -83,7 +84,7 @@ async def _fetch_and_update_corporation_blueprints(
         )
 
     try:
-        blueprints = FetchEsi.validate_corporation_blueprints(response)
+        blueprints = EsiValidate.corporation_blueprints(response)
         _writer.write_corporation_blueprints(connection, blueprints=blueprints)
         new_state = _current_state(connection, corporation_id=corporation_id)
     except Exception as error:

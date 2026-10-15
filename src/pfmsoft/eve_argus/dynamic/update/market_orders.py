@@ -6,9 +6,10 @@ from sqlite3 import Connection
 from pfmsoft.eve_link import EsiLink, EsiSchema, FailedEsiResponse
 from whenever import Instant
 
-from pfmsoft.eve_argus.data_loaders import esi as FetchEsi
 from pfmsoft.eve_argus.dynamic.access import DynamicDBReader, DynamicDBWriter
 from pfmsoft.eve_argus.dynamic.db.models import MarketOrdersResponse
+from pfmsoft.eve_argus.esi import fetch as EsiFetch
+from pfmsoft.eve_argus.esi import validate as EsiValidate
 
 _writer = DynamicDBWriter()
 _reader = DynamicDBReader()
@@ -59,7 +60,7 @@ async def _fetch_and_update_market_orders(
     current_state: MarketOrdersResponse | None,
 ) -> MarketOrdersUpdateResult:
     """Fetch and persist market orders, preserving the previous state."""
-    response = await FetchEsi.fetch_region_market_orders(
+    response = await EsiFetch.region_market_orders(
         esi_link, schema, region_id=region_id
     )
     if isinstance(response, FailedEsiResponse):
@@ -72,7 +73,7 @@ async def _fetch_and_update_market_orders(
         )
 
     try:
-        market_orders = FetchEsi.validate_region_market_orders(response)
+        market_orders = EsiValidate.region_market_orders(response)
         stored_responses = _reader.read_market_orders_responses(
             connection, region_id=region_id
         )
