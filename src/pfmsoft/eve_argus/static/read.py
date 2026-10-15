@@ -4,7 +4,7 @@ from sqlite3 import Connection
 from typing import Any
 
 from pfmsoft.eve_argus.models.argus import static as ASM
-from pfmsoft.eve_argus.static.db import query_helpers as QH
+from pfmsoft.eve_argus.static import query_helpers as QH
 
 
 def categories(

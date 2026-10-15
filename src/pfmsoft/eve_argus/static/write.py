@@ -3,7 +3,7 @@
 from sqlite3 import Connection
 
 from pfmsoft.eve_argus.esd import models as EsdModels
-from pfmsoft.eve_argus.static.db import query_helpers as QH
+from pfmsoft.eve_argus.static import query_helpers as QH
 
 
 def blueprints(connection: Connection, *, dataset: EsdModels.BlueprintsDataset) -> None:

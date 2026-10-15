@@ -5,7 +5,7 @@ import sqlite3
 
 from pfmsoft.eve_argus.models.esd import esd_datasets as ESD
 from pfmsoft.eve_argus.models.types import LanguageEnum
-from pfmsoft.eve_argus.static.db import query_helpers
+from pfmsoft.eve_argus.static import query_helpers
 
 
 def _write_market_group_test_data(connection: sqlite3.Connection) -> None:

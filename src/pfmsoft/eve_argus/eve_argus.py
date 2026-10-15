@@ -20,7 +20,7 @@ from pfmsoft.eve_argus.market.orders.db.query_helpers import (
     load_table_definitions as load_order_table_definitions,
 )
 from pfmsoft.eve_argus.settings import EveArgusSettings
-from pfmsoft.eve_argus.static.db.query_helpers import (
+from pfmsoft.eve_argus.static.query_helpers import (
     load_table_definitions as load_argus_static_table_definitions,
 )
 

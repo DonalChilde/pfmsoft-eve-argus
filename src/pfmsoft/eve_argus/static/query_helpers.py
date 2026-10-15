@@ -14,7 +14,7 @@ from pfmsoft.eve_argus.models.types import LanguageEnum
 
 logger = logging.getLogger(__name__)
 
-_table_def_parent = "pfmsoft.eve_argus.static.db"
+_table_def_parent = "pfmsoft.eve_argus.static"
 _table_def_file = "table_definitions.sql"
 _timing_log_level = logging.INFO
 

@@ -8,7 +8,7 @@ from pfmsoft.eve_sd import EveSdDbQueryManager
 
 from pfmsoft.eve_argus.data_loaders.esd_datasets import EsdDatasetsLoader
 from pfmsoft.eve_argus.models.types import LanguageEnum
-from pfmsoft.eve_argus.static.db import query_helpers
+from pfmsoft.eve_argus.static import query_helpers
 
 ESD_DATABASE_PATH = Path("dev/app-dir/static-db.sqlite")
 ARGUS_DATABASE_PATH = Path("dev/app-dir/argus-static-db.sqlite")
