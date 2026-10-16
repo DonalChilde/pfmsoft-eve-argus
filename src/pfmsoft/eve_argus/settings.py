@@ -35,7 +35,7 @@ APP_NAMESPACE = uuid5(NAMESPACE_DNS, __app_name__)
 ENV_PREFIX = __app_name__.replace(".", "_").replace("-", "_").upper() + "_"
 SETTINGS_KEY = ENV_PREFIX + "SETTINGS"
 TOML_SETTINGS_FILE = f"{__app_name__}.toml"
-ESD_MIN_BUILD = "FOO"
+ESD_MIN_BUILD = 0
 
 
 @dataclass(slots=True)
@@ -46,10 +46,8 @@ class EveArgusSettings:
     """The directory where the application stores its data and logs."""
     logging_directory: Path
     """The directory where the application stores its log files."""
-    static_database: Path
-    """The path to the static database file used by the application."""
-    argus_static_database: Path
-    """The path to the Argus static database file used by the application."""
+    static_database_store: Path
+    """The path to the static database directory used by the application."""
     argus_dynamic_database: Path
     """The path to the Argus dynamic database file used by the application."""
     market_orders_database: Path
@@ -63,8 +61,10 @@ class EveArgusSettings:
     compatibility_date: str | None = None
     """The date used for ESI compatibility checks, in YYYY-MM-DD format. If None, the 
     most recent valid date is used."""
-    esd_min_build: str = ESD_MIN_BUILD
+    esd_min_build: int = ESD_MIN_BUILD
     """The minimum build of the Eve Static Data package required by the application."""
+    static_database_build_number: int | None = None
+    """The build number of the static database. if None, use the latest available build."""
 
 
 class EveArgusSettingsPydantic(BaseSettings):
@@ -98,6 +98,15 @@ class RateLimitSettings(BaseModel):
     """The time period over which the maximum rate is applied."""
 
 
+class DataSourcesSettings(BaseModel):
+    """Settings for data sources used by the application."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    build_number: int | None = Field(default=None)
+    """The build number of the static database to use. If None, the latest available build will be used."""
+
+
 class EveArgusTomlSettings(BaseModel):
     """Settings loaded from the TOML configuration file."""
 
@@ -105,6 +114,9 @@ class EveArgusTomlSettings(BaseModel):
 
     rate_limit: RateLimitSettings = Field(default_factory=RateLimitSettings)
     """The rate limit settings for ESI requests."""
+
+    data_sources: DataSourcesSettings = Field(default_factory=DataSourcesSettings)
+    """The data sources settings for the application."""
 
 
 def _default_settings() -> EveArgusTomlSettings:
@@ -179,8 +191,7 @@ def _initialize_settings(application_directory: Path) -> EveArgusSettings:
     settings = EveArgusSettings(
         application_directory=application_directory,
         logging_directory=application_directory / "logs",
-        static_database=application_directory / "static-db.sqlite",
-        argus_static_database=application_directory / "argus-static-db.sqlite",
+        static_database_store=application_directory / "static-db-store",
         argus_dynamic_database=application_directory / "argus-dynamic-db.sqlite",
         market_orders_database=application_directory / "market-orders-db.sqlite",
         market_history_database=application_directory / "market-history-db.sqlite",
@@ -194,6 +205,7 @@ def _initialize_settings(application_directory: Path) -> EveArgusSettings:
     # Ensure that the application directories exist.
     settings.application_directory.mkdir(parents=True, exist_ok=True)
     settings.logging_directory.mkdir(parents=True, exist_ok=True)
+    settings.static_database_store.mkdir(parents=True, exist_ok=True)
     _ensure_toml_settings_file(application_directory)
 
     # Apply TOML settings if available.
@@ -226,5 +238,6 @@ def _apply_toml_settings(
     """Apply TOML settings to the runtime settings."""
     settings.eve_link_settings.max_rate = toml_settings.rate_limit.max_rate
     settings.eve_link_settings.time_period = toml_settings.rate_limit.time_period
+    settings.static_database_build_number = toml_settings.data_sources.build_number
 
     return settings
