@@ -10,3 +10,12 @@ max_rate = 50.0
 
 # The time period over which the maximum rate is applied.
 time_period = 1.0
+
+[data_sources]
+
+# The build number of the static database to use. If not provided, the latest available build will be used.
+# Static databases are stored in the app_directory/static-db-store/ directory.
+# typical usage is to use the latest available build, but this setting is provided to allow reversion 
+# to a previous build if necessary.
+
+# build_number = 0
