@@ -3,9 +3,10 @@
 import json
 import sqlite3
 
-from pfmsoft.eve_argus.models.esd import esd_datasets as ESD
+from pfmsoft.eve_argus.esd import models as ESD
 from pfmsoft.eve_argus.models.types import LanguageEnum
-from pfmsoft.eve_argus.static.db import query_helpers
+from pfmsoft.eve_argus.static import models as ASM
+from pfmsoft.eve_argus.static import query_helpers
 
 
 def _write_market_group_test_data(connection: sqlite3.Connection) -> None:
@@ -73,28 +74,27 @@ def _make_connection() -> sqlite3.Connection:
     return connection
 
 
-def test_write_industry_activities_writes_string_fields() -> None:
+def test_write_industrial_activities_writes_string_fields() -> None:
     """Industrial activity records are written to the static database."""
     connection = _make_connection()
-    dataset = ESD.IndustryActivitiesDataset(
+    dataset = ESD.IndustrialActivitiesDataset(
         dataset={
-            1: ESD.IndustryActivitiesRecord(
+            1: ESD.IndustrialActivitiesRecord(
                 description="Manufacturing of things",
                 name="Manufacturing",
             )
         }
     )
 
-    query_helpers.write_industry_activities(connection, dataset)
+    query_helpers.write_industrial_activities(connection, dataset)
 
-    activity = connection.execute(
-        """
-        SELECT activity_id, name, description
-        FROM industry_activities
-        """
-    ).fetchone()
-
-    assert activity == (1, "Manufacturing", "Manufacturing of things")
+    assert query_helpers.get_industry_activities(connection) == {
+        1: ASM.IndustryActivityRecord(
+            activity_id=1,
+            name="Manufacturing",
+            description="Manufacturing of things",
+        )
+    }
 
 
 def test_write_market_groups_writes_localized_fields_and_parent() -> None:

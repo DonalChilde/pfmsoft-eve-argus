@@ -2,9 +2,9 @@
 
 from typing import TypedDict
 
-from pfmsoft.eve_argus.models.esd import esd_datasets
-from pfmsoft.eve_argus.models.esi import argus_response_models
+from pfmsoft.eve_argus.esd import models as EsdModels
 from pfmsoft.eve_argus.models.types import LanguageEnum
+from pfmsoft.eve_argus.static import models as StaticModels
 
 
 class BlueprintSummary1Report(TypedDict):
@@ -21,10 +21,10 @@ class BlueprintSummary1Report(TypedDict):
 
 
 def generate_blueprint_summary_1_report(
-    blueprints: esd_datasets.BlueprintsDataset,
-    market_groups: argus_response_models.MarketGroupsDataset,
-    meta_groups: esd_datasets.MetaGroupsDataset,
-    types: esd_datasets.TypesDataset,
+    blueprints: EsdModels.BlueprintsDataset,
+    market_groups: StaticModels.MarketGroupsDataset,
+    meta_groups: EsdModels.MetaGroupsDataset,
+    types: EsdModels.TypesDataset,
     language: LanguageEnum = LanguageEnum.EN,
 ) -> list[BlueprintSummary1Report]:
     """Generate the blueprint summary 1 report.
@@ -42,8 +42,8 @@ def generate_blueprint_summary_1_report(
         if type_record.marketGroupID is None:
             market_group = None
         else:
-            market_group = market_groups.dataset.get(type_record.marketGroupID)
-        market_path = " > ".join(market_group.path_str) if market_group else ""
+            market_group = market_groups.get(type_record.marketGroupID)
+        market_path = " > ".join(market_group.str_path) if market_group else ""
 
         meta_group_id = type_record.metaGroupID
         meta_group = (

@@ -167,8 +167,8 @@ CREATE TABLE IF NOT EXISTS market_groups (
     FOREIGN KEY (parent_group_id) REFERENCES market_groups(market_group_id)
 ) STRICT;
 
--- Industry Activities
-CREATE TABLE IF NOT EXISTS industry_activities (
+-- Industrial Activities
+CREATE TABLE IF NOT EXISTS industrial_activities (
     activity_id INTEGER PRIMARY KEY,
     name TEXT NOT NULL,
     description TEXT NOT NULL
@@ -277,3 +277,12 @@ CREATE TABLE IF NOT EXISTS map_solar_systems_stargates (
     FOREIGN KEY (solar_system_id)
         REFERENCES map_solar_systems(solar_system_id) ON DELETE CASCADE
 ) STRICT;
+
+-- Sde Metadata, has only one record
+CREATE TABLE IF NOT EXISTS sde_metadata (
+    build_number INTEGER NOT NULL,
+    release_date TEXT NOT NULL,
+    PRIMARY KEY (build_number)
+) STRICT;
+
+    

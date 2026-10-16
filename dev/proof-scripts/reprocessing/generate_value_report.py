@@ -14,7 +14,7 @@ from pfmsoft.eve_argus.eve_argus import EveArgusResources
 from pfmsoft.eve_argus.market.orders.db import query_helpers as market_queries
 from pfmsoft.eve_argus.models.market_hubs import MARKET_HUBS, MarketHub
 from pfmsoft.eve_argus.settings import get_settings
-from pfmsoft.eve_argus.static.db import query_helpers as static_queries
+from pfmsoft.eve_argus.static import query_helpers as static_queries
 
 PROOF_OUTPUT_DIR = Path(__file__).parent.parent / "proof-output" / "reprocessing"
 DEFAULT_REPORT_FILENAME = PROOF_OUTPUT_DIR / "reprocessing_value_report.md"
@@ -144,17 +144,15 @@ def build_reference_rows(
             hub_name: prices.get(input_type_id, {})
             for hub_name, prices in hub_prices.items()
         }
-        rows.append(
-            {
-                "role": "Input",
-                "type_id": input_type_id,
-                "name": input_record.name_localized(),
-                "market_path": market_path,
-                "quantity": input_record.portionSize,
-                "prices": input_prices,
-                "status": "complete",
-            }
-        )
+        rows.append({
+            "role": "Input",
+            "type_id": input_type_id,
+            "name": input_record.name_localized(),
+            "market_path": market_path,
+            "quantity": input_record.portionSize,
+            "prices": input_prices,
+            "status": "complete",
+        })
 
         input_status = "complete"
         for material in materials:
@@ -170,18 +168,16 @@ def build_reference_rows(
             }
             if material_record_type is None:
                 input_status = "incomplete"
-            rows.append(
-                {
-                    "role": "material",
-                    "type_id": material.materialTypeID,
-                    "name": material_name,
-                    "market_path": market_path,
-                    "quantity": recovered_quantity(material.quantity),
-                    "prices": material_prices,
-                    "status": "complete" if material_record_type else "unclassified",
-                    "input_type_id": input_type_id,
-                }
-            )
+            rows.append({
+                "role": "material",
+                "type_id": material.materialTypeID,
+                "name": material_name,
+                "market_path": market_path,
+                "quantity": recovered_quantity(material.quantity),
+                "prices": material_prices,
+                "status": "complete" if material_record_type else "unclassified",
+                "input_type_id": input_type_id,
+            })
 
         rows[-len(materials) - 1]["status"] = input_status
         input_count += 1
@@ -234,58 +230,48 @@ def render_report(
         if market_path != current_market_path:
             lines.extend([f"## Market path: {market_path}", ""])
             current_market_path = market_path
-        lines.extend(
-            [
-                f"### {input_row['name']}",
-                "",
-                f"Input type ID: {input_row['type_id']} | Portion size: {input_row['quantity']}",
-                "",
-                "#### Reference prices by hub",
-                "",
-                "| Role | Item | Quantity per portion | "
-                + " | ".join(
-                    f"{hub_name} Buy | {hub_name} Sell" for hub_name in hub_names
-                )
-                + " | Market status |",
-                "| --- | --- | ---: | "
-                + " | ".join("---: | ---:" for _ in hub_names)
-                + " | --- |",
-            ]
-        )
+        lines.extend([
+            f"### {input_row['name']}",
+            "",
+            f"Input type ID: {input_row['type_id']} | Portion size: {input_row['quantity']}",
+            "",
+            "#### Reference prices by hub",
+            "",
+            "| Role | Item | Quantity per portion | "
+            + " | ".join(f"{hub_name} Buy | {hub_name} Sell" for hub_name in hub_names)
+            + " | Market status |",
+            "| --- | --- | ---: | "
+            + " | ".join("---: | ---:" for _ in hub_names)
+            + " | --- |",
+        ])
         for row in item_rows:
             prices = []
             for hub_name in hub_names:
                 hub_price = row["prices"].get(hub_name, {})
-                prices.extend(
-                    [
-                        format_decimal(hub_price.get("buy")),
-                        format_decimal(hub_price.get("sell")),
-                    ]
-                )
+                prices.extend([
+                    format_decimal(hub_price.get("buy")),
+                    format_decimal(hub_price.get("sell")),
+                ])
             lines.append(
                 "| "
-                + " | ".join(
-                    [
-                        markdown_cell(row["role"]),
-                        markdown_cell(row["name"]),
-                        format_quantity(row["quantity"]),
-                        *prices,
-                        markdown_cell(row["status"]),
-                    ]
-                )
+                + " | ".join([
+                    markdown_cell(row["role"]),
+                    markdown_cell(row["name"]),
+                    format_quantity(row["quantity"]),
+                    *prices,
+                    markdown_cell(row["status"]),
+                ])
                 + " |"
             )
 
-        lines.extend(
-            [
-                "",
-                "#### Reprocessed value by hub",
-                "",
-                "| Hub | Input buy price | Input sell price | Reprocessed buy value | "
-                "Reprocessed sell value | Missing data |",
-                "| --- | ---: | ---: | ---: | ---: | --- |",
-            ]
-        )
+        lines.extend([
+            "",
+            "#### Reprocessed value by hub",
+            "",
+            "| Hub | Input buy price | Input sell price | Reprocessed buy value | "
+            "Reprocessed sell value | Missing data |",
+            "| --- | ---: | ---: | ---: | ---: | --- |",
+        ])
         material_rows = item_rows[1:]
         for hub_name in hub_names:
             input_prices = input_row["prices"].get(hub_name, {})
@@ -320,22 +306,20 @@ def build_csv_rows(
             buy_value, buy_missing = calculate_value(material_rows, hub_name, "buy")
             sell_value, sell_missing = calculate_value(material_rows, hub_name, "sell")
             missing = sorted(set(buy_missing + sell_missing))
-            csv_rows.append(
-                {
-                    "input_type_id": input_row["type_id"],
-                    "input_name": input_row["name"],
-                    "market_path": input_row["market_path"],
-                    "portion_size": input_row["quantity"],
-                    "yield_percent": yield_percent,
-                    "hub": hub_name,
-                    "input_buy_price": input_prices.get("buy", ""),
-                    "input_sell_price": input_prices.get("sell", ""),
-                    "reprocessed_buy_value": buy_value or "",
-                    "reprocessed_sell_value": sell_value or "",
-                    "missing_data": "; ".join(missing),
-                    "input_status": input_row["status"],
-                }
-            )
+            csv_rows.append({
+                "input_type_id": input_row["type_id"],
+                "input_name": input_row["name"],
+                "market_path": input_row["market_path"],
+                "portion_size": input_row["quantity"],
+                "yield_percent": yield_percent,
+                "hub": hub_name,
+                "input_buy_price": input_prices.get("buy", ""),
+                "input_sell_price": input_prices.get("sell", ""),
+                "reprocessed_buy_value": buy_value or "",
+                "reprocessed_sell_value": sell_value or "",
+                "missing_data": "; ".join(missing),
+                "input_status": input_row["status"],
+            })
     return csv_rows
 
 
@@ -409,33 +393,31 @@ def build_deal_rows(
                         if gross_profit is not None and cost
                         else None
                     )
-                    deal_rows.append(
-                        {
-                            "input_type_id": input_row["type_id"],
-                            "input_name": input_row["name"],
-                            "market_path": input_row["market_path"],
-                            "portion_size": input_row["quantity"],
-                            "yield_percent": yield_percent,
-                            "source_hub": source_hub,
-                            "output_hub": output_hub,
-                            "deal_scope": "local"
-                            if source_hub == output_hub
-                            else "cross_hub",
-                            "deal_direction": direction,
-                            "input_price": input_price,
-                            "input_price_side": input_price_side,
-                            "recovered_value": recovered_value,
-                            "recovered_value_side": recovered_value_side,
-                            "cost": cost,
-                            "revenue": revenue,
-                            "gross_profit": gross_profit,
-                            "margin_percent": margin_percent,
-                            "market_status": "complete"
-                            if not missing_data
-                            else "incomplete",
-                            "missing_data": sorted(set(missing_data)),
-                        }
-                    )
+                    deal_rows.append({
+                        "input_type_id": input_row["type_id"],
+                        "input_name": input_row["name"],
+                        "market_path": input_row["market_path"],
+                        "portion_size": input_row["quantity"],
+                        "yield_percent": yield_percent,
+                        "source_hub": source_hub,
+                        "output_hub": output_hub,
+                        "deal_scope": "local"
+                        if source_hub == output_hub
+                        else "cross_hub",
+                        "deal_direction": direction,
+                        "input_price": input_price,
+                        "input_price_side": input_price_side,
+                        "recovered_value": recovered_value,
+                        "recovered_value_side": recovered_value_side,
+                        "cost": cost,
+                        "revenue": revenue,
+                        "gross_profit": gross_profit,
+                        "margin_percent": margin_percent,
+                        "market_status": "complete"
+                        if not missing_data
+                        else "incomplete",
+                        "missing_data": sorted(set(missing_data)),
+                    })
     return deal_rows
 
 
@@ -473,20 +455,18 @@ def render_deals_report(
             f"{format_decimal(row['gross_profit'])} | "
             f"{format_decimal(row['margin_percent'])}% | {row['market_status']} |"
         )
-    lines.extend(
-        [
-            "",
-            f"Ranked opportunities: {len(ranked_rows)} of {len(deal_rows)} deal rows.",
-            "",
-            "## Exception notes",
-            "",
-            "Routine opportunities do not receive duplicate detail sections.",
-            "The following sample shows incomplete rows that require explanation.",
-            "",
-            "| Input item | Source hub | Output hub | Deal direction | Missing data | Impact |",
-            "| --- | --- | --- | --- | --- | --- |",
-        ]
-    )
+    lines.extend([
+        "",
+        f"Ranked opportunities: {len(ranked_rows)} of {len(deal_rows)} deal rows.",
+        "",
+        "## Exception notes",
+        "",
+        "Routine opportunities do not receive duplicate detail sections.",
+        "The following sample shows incomplete rows that require explanation.",
+        "",
+        "| Input item | Source hub | Output hub | Deal direction | Missing data | Impact |",
+        "| --- | --- | --- | --- | --- | --- |",
+    ])
     for row in incomplete_rows[:25]:
         lines.append(
             f"| {markdown_cell(row['input_name'])} | {row['source_hub']} | "

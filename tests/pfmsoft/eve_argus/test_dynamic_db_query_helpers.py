@@ -30,7 +30,7 @@ from pfmsoft.eve_argus.dynamic.db.models import (
     SystemCostIndicesDataset,
     SystemCostIndicesResponse,
 )
-from pfmsoft.eve_argus.models.esi import esi_response_models as ERM
+from pfmsoft.eve_argus.esi import models as ERM
 
 
 def _make_connection() -> sqlite3.Connection:
@@ -103,7 +103,7 @@ def test_write_market_orders_allows_multiple_sets_per_region() -> None:
 
     query_helpers.write_market_orders(connection, response)
     query_helpers.write_market_orders(
-        connection, replace(response, received_at="2026-09-02T00:00:00Z")
+        connection, response.model_copy(update={"received_at": "2026-09-02T00:00:00Z"})
     )
 
     assert len(query_helpers.get_market_orders_responses(connection, 10000002)) == 2
