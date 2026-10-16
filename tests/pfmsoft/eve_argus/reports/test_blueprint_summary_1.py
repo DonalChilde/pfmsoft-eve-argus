@@ -1,11 +1,11 @@
 """Tests for the blueprint summary 1 report."""
 
-from pfmsoft.eve_argus.models.esd import esd_datasets
-from pfmsoft.eve_argus.models.esi import argus_response_models
+from pfmsoft.eve_argus.esd import models as esd_datasets
 from pfmsoft.eve_argus.models.types import LanguageEnum
 from pfmsoft.eve_argus.reports.blueprint_summary_1 import (
     generate_blueprint_summary_1_report,
 )
+from pfmsoft.eve_argus.static import models as static_models
 
 
 def test_generate_blueprint_summary_1_report_builds_and_sorts_rows():
@@ -50,18 +50,19 @@ def test_generate_blueprint_summary_1_report_builds_and_sorts_rows():
             )
         }
     )
-    market_groups = argus_response_models.MarketGroupsDataset(
-        dataset={
-            20: argus_response_models.MarketGroup(
-                received_at="2024-01-01T00:00:00Z",
-                expires_at=None,
-                market_group_id=20,
-                name="Frigates",
-                description="Frigates",
-                path_str=("Ships", "Frigates"),
-            )
-        }
-    )
+    market_groups = {
+        20: static_models.MarketGroupsRecord(
+            market_group_id=20,
+            description="Frigates",
+            has_types=True,
+            icon_id=None,
+            int_path=(10, 20),
+            name="Frigates",
+            parent_group_id=10,
+            str_path=("Ships", "Frigates"),
+            types=(),
+        )
+    }
 
     result = generate_blueprint_summary_1_report(
         blueprints=blueprints,
@@ -108,7 +109,7 @@ def test_generate_blueprint_summary_1_report_skips_missing_type():
 
     result = generate_blueprint_summary_1_report(
         blueprints=blueprints,
-        market_groups=argus_response_models.MarketGroupsDataset(dataset={}),
+        market_groups={},
         meta_groups=esd_datasets.MetaGroupsDataset(dataset={}),
         types=esd_datasets.TypesDataset(dataset={}),
     )
