@@ -20,7 +20,7 @@ _timing_log_level = logging.INFO
 
 
 def load_table_definitions() -> str:
-    """Load the SQL table definitions for the market orders database."""
+    """Load the SQL table definitions for the static data database."""
     return load_package_resource_text(_table_def_parent, _table_def_file)
 
 
@@ -462,14 +462,12 @@ def write_blueprints(
                     continue
                 activity = cast(EsdModels.Blueprint_Activity, activity)
                 for material in activity.materials or []:
-                    material_rows.append(
-                        (
-                            blueprint_type_id,
-                            activity_name,
-                            material.typeID,
-                            material.quantity,
-                        )
-                    )
+                    material_rows.append((
+                        blueprint_type_id,
+                        activity_name,
+                        material.typeID,
+                        material.quantity,
+                    ))
 
         connection.executemany(
             """
@@ -519,15 +517,13 @@ def write_blueprints(
                     continue
                 activity = cast(EsdModels.Blueprint_Activity, activity)
                 for product in activity.products or []:
-                    product_rows.append(
-                        (
-                            blueprint_type_id,
-                            activity_name,
-                            product.typeID,
-                            product.quantity,
-                            product.probability,
-                        )
-                    )
+                    product_rows.append((
+                        blueprint_type_id,
+                        activity_name,
+                        product.typeID,
+                        product.quantity,
+                        product.probability,
+                    ))
 
         connection.executemany(
             """
