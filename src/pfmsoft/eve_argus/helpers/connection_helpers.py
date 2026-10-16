@@ -33,6 +33,35 @@ def read_write_uri(db_path: str | Path) -> str:
     return f"file:{db_path}?mode=rwc"
 
 
+def init_database(
+    db_path: str | Path,
+    *,
+    init_sql: str | None = None,
+) -> None:
+    """Initialize a SQLite database with the given schema if it does not already exist.
+
+    Args:
+        db_path: Path to the SQLite database file.
+        init_sql: Optional SQL script to execute on the connection to ensure schema exists.
+
+
+    Returns:
+        Open SQLite connection configured with sqlite3.Row row factory.
+    """
+    logger.info(f"Initializing database at {db_path}")
+    if not Path(db_path).exists():
+        logger.info(f"Database at {db_path} does not exist and will be created.")
+    if isinstance(db_path, Path):
+        db_path = str(db_path.resolve())
+    uri = read_write_uri(db_path)
+    connection = connect(uri, uri=True)
+    if init_sql is not None:
+        with connection:
+            connection.executescript(init_sql)
+            logger.info(f"Executed SQL init commands for {db_path}:\n{init_sql}.")
+    connection.close()
+
+
 def create_read_only_connection(
     db_path: str | Path,
     *,
@@ -92,16 +121,14 @@ def create_read_write_connection(
     """
     if isinstance(db_path, Path):
         db_path = str(db_path.resolve())
+    if init_sql is not None:
+        init_database(db_path, init_sql=init_sql)
     uri = read_write_uri(db_path)
     connection = connect(uri, uri=True)
     logger.info(f"Created read-write connection to database at {db_path}")
     if row_factory is not None:
         connection.row_factory = row_factory
         logger.info(f"Set row factory for {db_path} to {row_factory}")
-    if init_sql is not None:
-        with connection:
-            connection.executescript(init_sql)
-            logger.info(f"Executed SQL init commands for {db_path}.")
     return connection
 
 
