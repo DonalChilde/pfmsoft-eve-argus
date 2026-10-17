@@ -13,6 +13,7 @@ from pathlib import Path
 from pydantic import RootModel
 
 from pfmsoft.eve_argus.helpers.connection_helpers import init_database
+from pfmsoft.eve_argus.helpers.file_safe_string import file_safe_string
 from pfmsoft.eve_argus.static.query_helpers import load_table_definitions
 
 
@@ -129,6 +130,7 @@ class StaticStore:
     def file_name_for_new_entry(self, build_number: int, release_date: str) -> str:
         """Generate a file name for a new entry based on the build number and release date."""
         filename = f"build_{build_number}_{release_date}.sqlite"
+        filename = file_safe_string(filename)
         return filename
 
     def get_file_path_for_entry(self, build_number: int | None) -> Path:
