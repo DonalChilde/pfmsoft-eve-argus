@@ -46,20 +46,20 @@ def import_db(
         messenger = Console(stderr=True)
     settings = get_eve_argus_settings_from_context(ctx)
     eve_sd_db_query_manager = EveSdDbQueryManager(file_in)
+
     static_store = StaticStore(settings.static_database_store)
-    sde_metadata = eve_sd_db_query_manager.query.sde_metadata
-    static_store.add_entry(
-        build_number=sde_metadata.buildNumber, release_date=sde_metadata.releaseDate
-    )
-    db_path = static_store.get_file_path_for_entry(sde_metadata.buildNumber)
-    with db_connection_manager(db_path=db_path) as connection:
-        try:
-            create_db(
-                argus_connection=connection, query_manager=eve_sd_db_query_manager
-            )
-            _ = read.sde_metadata(connection)
-        except Exception as e:
-            messenger.print(
-                f"[red]There was an error importing the static datasets. {e}[/red]"
-            )
-            raise typer.Exit(code=1) from e
+    with eve_sd_db_query_manager as esd_db:
+        sde_metadata = esd_db.query.sde_metadata
+        static_store.add_entry(
+            build_number=sde_metadata.buildNumber, release_date=sde_metadata.releaseDate
+        )
+        db_path = static_store.get_file_path_for_entry(sde_metadata.buildNumber)
+        with db_connection_manager(db_path=db_path) as connection:
+            try:
+                create_db(argus_connection=connection, query_manager=esd_db)
+                _ = read.sde_metadata(connection)
+            except Exception as e:
+                messenger.print(
+                    f"[red]There was an error importing the static datasets. {e}[/red]"
+                )
+                raise typer.Exit(code=1) from e

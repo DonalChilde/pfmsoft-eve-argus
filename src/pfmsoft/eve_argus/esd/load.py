@@ -57,7 +57,7 @@ def groups(db: EveSdDbQueryManager) -> dict[int, dict[str, Any]]:
 def industrial_activities(db: EveSdDbQueryManager) -> dict[int, dict[str, Any]]:
     """Load industrial activities from the EVE Static Data database."""
     raw_dataset: dict[int, Any] = {
-        key: value for key, value in db.query.get_int_records("industrialActivities")
+        key: value for key, value in db.query.get_int_records("industryActivities")
     }
     return raw_dataset
 
@@ -90,14 +90,6 @@ def market_groups(db: EveSdDbQueryManager) -> dict[int, dict[str, Any]]:
     """Load market groups from the EVE Static Data database."""
     raw_dataset: dict[int, Any] = {
         key: value for key, value in db.query.get_int_records("marketGroups")
-    }
-    return raw_dataset
-
-
-def sde_info(db: EveSdDbQueryManager) -> dict[str, dict[str, Any]]:
-    """Load SDE info from the EVE Static Data database."""
-    raw_dataset: dict[str, Any] = {
-        key: value for key, value in db.query.get_str_records("sdeInfo")
     }
     return raw_dataset
 

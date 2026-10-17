@@ -87,14 +87,6 @@ def market_groups(
     return validated_dataset
 
 
-def sde_info(
-    raw_dataset: dict[str, dict[str, Any]],
-) -> EsdModels.SdeInfoDataset:
-    """Validate the raw SDE info dataset and return an SdeInfoDataset instance."""
-    validated_dataset = EsdModels.SdeInfoDataset.model_validate(raw_dataset)
-    return validated_dataset
-
-
 def sde_metadata(
     raw_dataset: SdeMetadata,
 ) -> EsdModels.SdeMetadataDataset:
