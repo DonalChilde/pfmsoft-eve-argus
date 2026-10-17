@@ -12,6 +12,8 @@ CREATE TABLE IF NOT EXISTS types (
     graphic_id INTEGER,
     group_id INTEGER NOT NULL,
     icon_id INTEGER,
+    is_dynamic_type INTEGER, --boolean represented as integer (0 or 1)
+    is_repackable INTEGER, --boolean represented as integer (0 or 1)
     market_group_id INTEGER,
     mass REAL,
     meta_group_id INTEGER,

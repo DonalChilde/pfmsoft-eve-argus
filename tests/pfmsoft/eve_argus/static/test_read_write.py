@@ -17,6 +17,97 @@ from pfmsoft.eve_argus.static import models as ASM
 from pfmsoft.eve_argus.static import query_helpers as QH
 from pfmsoft.eve_argus.static import read, write
 
+
+@pytest.mark.parametrize("value", [True, False, None])
+def test_nullable_type_flags_round_trip(
+    static_connection: Connection, value: bool | None
+) -> None:
+    """Preserve nullable type flags as bool/None rather than SQLite integers."""
+    write.types(
+        static_connection,
+        dataset=ESD.TypesDataset.model_validate(
+            {
+                "dataset": {
+                    1: {
+                        "groupID": 1,
+                        "name": {"en": "Type"},
+                        "portionSize": 1,
+                        "published": True,
+                        "isDynamicType": value,
+                        "isRepackable": value,
+                    }
+                }
+            }
+        ),
+    )
+
+    record = read.types(static_connection)[1]
+
+    assert record.is_dynamic_type is value
+    assert record.is_repackable is value
+
+
+@pytest.mark.parametrize("value", [True, False, None])
+def test_nullable_solar_flags_round_trip(
+    static_connection: Connection, value: bool | None
+) -> None:
+    """Preserve all six nullable solar-system booleans with exact Python types."""
+    write.map_regions(
+        static_connection,
+        dataset=ESD.MapRegionsDataset.model_validate(
+            {
+                "dataset": {
+                    1: {
+                        "constellationIDs": [2],
+                        "name": {"en": "Region"},
+                        "nebulaID": 1,
+                        "position": {"x": 0, "y": 0, "z": 0},
+                    }
+                }
+            }
+        ),
+    )
+    write.map_constellations(
+        static_connection,
+        dataset=ESD.MapConstellationsDataset.model_validate(
+            {
+                "dataset": {
+                    2: {
+                        "name": {"en": "Constellation"},
+                        "position": {"x": 0, "y": 0, "z": 0},
+                        "regionID": 1,
+                        "solarSystemIDs": [3],
+                    }
+                }
+            }
+        ),
+    )
+    flags = ("border", "corridor", "fringe", "hub", "international", "regional")
+    write.map_solar_systems(
+        static_connection,
+        dataset=ESD.MapSolarSystemsDataset.model_validate(
+            {
+                "dataset": {
+                    3: {
+                        "constellationID": 2,
+                        "regionID": 1,
+                        "name": {"en": "System"},
+                        "position": {"x": 1, "y": 2, "z": 3},
+                        "radius": 4,
+                        "securityStatus": 0.5,
+                        **dict.fromkeys(flags, value),
+                    }
+                }
+            }
+        ),
+    )
+
+    record = read.map_solar_systems(static_connection)[3]
+
+    for flag in flags:
+        assert getattr(record, flag) is value, flag
+
+
 _READERS = (
     "categories",
     "groups",

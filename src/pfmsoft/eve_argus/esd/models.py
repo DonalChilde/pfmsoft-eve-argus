@@ -160,34 +160,36 @@ class TypeMaterialsDataset(SdeDatasetBaseModel):
 class TypesRecord:
     """Record for a specific type.
 
-    - source: dev/tmp/sde-yaml/3464040
-    - records: 52863 (key: int)
-    - valid: 52863, skipped: 0
+    - source: dev/tmp/sde-yaml/3607705
+    - records: 53288 (key: int)
+    - valid: 53288, skipped: 0
 
     | Field                 | Required | Type        | Presence    |
     | --------------------- | -------- | ----------- | ----------- |
-    | basePrice             | no       | float       | 13933/52863 |
-    | capacity              | no       | float       | 10009/52863 |
-    | description           | no       | Description | 34299/52863 |
-    | factionID             | no       | int         | 1376/52863  |
-    | graphicID             | no       | int         | 18720/52863 |
-    | groupID               | yes      | int         | 52863/52863 |
-    | iconID                | no       | int         | 22808/52863 |
-    | marketGroupID         | no       | int         | 19667/52863 |
-    | mass                  | no       | float       | 21228/52863 |
-    | metaGroupID           | no       | int         | 13798/52863 |
-    | metaLevel             | no       | int         | 8204/52863  |
-    | name                  | yes      | Name        | 52863/52863 |
-    | packagedVolume        | no       | float       | 46748/52863 |
-    | portionSize           | yes      | int         | 52863/52863 |
-    | published             | yes      | bool        | 52863/52863 |
-    | raceID                | no       | int         | 23120/52863 |
-    | radius                | no       | float       | 15599/52863 |
-    | shipTreeGroupID       | no       | int         | 934/52863   |
-    | soundID               | no       | int         | 5085/52863  |
-    | techLevel             | no       | int         | 10075/52863 |
-    | variationParentTypeID | no       | int         | 4796/52863  |
-    | volume                | no       | float       | 46748/52863 |
+    | basePrice             | no       | float       | 13971/53288 |
+    | capacity              | no       | float       | 10055/53288 |
+    | description           | no       | Description | 34650/53288 |
+    | factionID             | no       | int         | 1383/53288  |
+    | graphicID             | no       | int         | 18816/53288 |
+    | groupID               | yes      | int         | 53288/53288 |
+    | iconID                | no       | int         | 23088/53288 |
+    | isDynamicType         | no       | bool        | 97/53288    |
+    | isRepackable          | no       | bool        | 6526/53288  |
+    | marketGroupID         | no       | int         | 19957/53288 |
+    | mass                  | no       | float       | 21324/53288 |
+    | metaGroupID           | no       | int         | 13905/53288 |
+    | metaLevel             | no       | int         | 8288/53288  |
+    | name                  | yes      | Name        | 53288/53288 |
+    | packagedVolume        | no       | float       | 47120/53288 |
+    | portionSize           | yes      | int         | 53288/53288 |
+    | published             | yes      | bool        | 53288/53288 |
+    | raceID                | no       | int         | 23205/53288 |
+    | radius                | no       | float       | 15654/53288 |
+    | shipTreeGroupID       | no       | int         | 943/53288   |
+    | soundID               | no       | int         | 5091/53288  |
+    | techLevel             | no       | int         | 10115/53288 |
+    | variationParentTypeID | no       | int         | 4804/53288  |
+    | volume                | no       | float       | 47120/53288 |
     """
 
     basePrice: float | None = None
@@ -197,6 +199,8 @@ class TypesRecord:
     graphicID: int | None = None
     groupID: int
     iconID: int | None = None
+    isDynamicType: bool | None = None
+    isRepackable: bool | None = None
     marketGroupID: int | None = None
     mass: float | None = None
     metaGroupID: int | None = None

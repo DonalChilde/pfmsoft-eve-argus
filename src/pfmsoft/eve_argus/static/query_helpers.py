@@ -8,6 +8,7 @@ from typing import cast
 
 from pfmsoft.eve_argus.esd import models as EsdModels
 from pfmsoft.eve_argus.helpers.package_resource import load_package_resource_text
+from pfmsoft.eve_argus.helpers.sqlite_bool import bool_to_int, int_to_bool
 from pfmsoft.eve_argus.helpers.timing import log_timing
 from pfmsoft.eve_argus.models.types import LanguageEnum
 from pfmsoft.eve_argus.static import models as ASM
@@ -39,12 +40,12 @@ def write_types(
             """
             INSERT INTO types (
                 type_id, base_price, capacity, description, faction_id,
-                graphic_id, group_id, icon_id, market_group_id, mass,
+                graphic_id, group_id, icon_id,is_dynamic_type, is_repackable, market_group_id, mass,
                 meta_group_id, meta_level, name, packaged_volume, portion_size,
                 published, race_id, radius, ship_tree_group_id, sound_id,
                 tech_level, variation_parent_type_id, volume
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 (
@@ -56,6 +57,8 @@ def write_types(
                     record.graphicID,
                     record.groupID,
                     record.iconID,
+                    bool_to_int(record.isDynamicType),
+                    bool_to_int(record.isRepackable),
                     record.marketGroupID,
                     record.mass,
                     record.metaGroupID,
@@ -63,7 +66,7 @@ def write_types(
                     record.name_localized(language),
                     record.packagedVolume,
                     record.portionSize,
-                    record.published,
+                    bool_to_int(record.published),
                     record.raceID,
                     record.radius,
                     record.shipTreeGroupID,
@@ -185,7 +188,7 @@ def write_categories(
                     category_id,
                     record.iconID,
                     record.name_localized(language),
-                    record.published,
+                    bool_to_int(record.published),
                 )
                 for category_id, record in categories.dataset.items()
             ),
@@ -212,14 +215,14 @@ def write_groups(
             (
                 (
                     group_id,
-                    record.anchorable,
-                    record.anchored,
+                    bool_to_int(record.anchorable),
+                    bool_to_int(record.anchored),
                     record.categoryID,
-                    record.fittableNonSingleton,
+                    bool_to_int(record.fittableNonSingleton),
                     record.iconID,
                     record.name_localized(language),
-                    record.published,
-                    record.useBasePrice,
+                    bool_to_int(record.published),
+                    bool_to_int(record.useBasePrice),
                 )
                 for group_id, record in groups.dataset.items()
             ),
@@ -265,7 +268,7 @@ def write_market_groups(
                 (
                     market_group_id,
                     record.description_localized(language),
-                    record.hasTypes,
+                    bool_to_int(record.hasTypes),
                     record.iconID,
                     record.name_localized(language),
                     record.parentGroupID,
@@ -662,13 +665,13 @@ def write_map_solar_systems(
             (
                 (
                     solar_system_id,
-                    record.border,
+                    bool_to_int(record.border),
                     record.constellationID,
-                    record.corridor,
+                    bool_to_int(record.corridor),
                     record.factionID,
-                    record.fringe,
-                    record.hub,
-                    record.international,
+                    bool_to_int(record.fringe),
+                    bool_to_int(record.hub),
+                    bool_to_int(record.international),
                     record.luminosity,
                     getattr(record.name, language, record.name.en),
                     record.position.x,
@@ -678,7 +681,7 @@ def write_map_solar_systems(
                     record.position2D.y if record.position2D else None,
                     record.radius,
                     record.regionID,
-                    record.regional,
+                    bool_to_int(record.regional),
                     record.securityClass,
                     record.securityStatus,
                     record.starID,
@@ -819,7 +822,7 @@ def get_market_groups(connection: sqlite3.Connection) -> ASM.MarketGroupsDataset
             name=name,
             description=description,
             parent_group_id=parent_group_id,
-            has_types=bool(has_types),
+            has_types=int_to_bool(has_types),
             icon_id=icon_id,
             int_path=tuple(json.loads(int_path)),
             str_path=tuple(json.loads(str_path)),
@@ -1056,15 +1059,15 @@ def get_map_solar_systems(
     result = {
         solar_system_id: ASM.MapSolarSystemsRecord(
             solar_system_id=solar_system_id,
-            border=border,
+            border=int_to_bool(border),
             constellation_id=constellation_id,
-            corridor=corridor,
+            corridor=int_to_bool(corridor),
             disallowed_anchor_categories=disallowed_categories.get(solar_system_id, ()),
             disallowed_anchor_groups=disallowed_groups.get(solar_system_id, ()),
             faction_id=faction_id,
-            fringe=fringe,
-            hub=hub,
-            international=international,
+            fringe=int_to_bool(fringe),
+            hub=int_to_bool(hub),
+            international=int_to_bool(international),
             luminosity=luminosity,
             name=name,
             planet_ids=planet_ids.get(solar_system_id, ()),
@@ -1075,7 +1078,7 @@ def get_map_solar_systems(
             position2d_y=position2d_y,
             radius=radius,
             region_id=region_id,
-            regional=regional,
+            regional=int_to_bool(regional),
             security_class=security_class,
             security_status=security_status,
             star_id=star_id,
@@ -1139,14 +1142,14 @@ def get_groups(
     result = {
         group_id: ASM.GroupsRecord(
             group_id=group_id,
-            anchorable=bool(anchorable),
-            anchored=bool(anchored),
+            anchorable=int_to_bool(anchorable),
+            anchored=int_to_bool(anchored),
             category_id=category_id,
-            fittable_non_singleton=bool(fittable_non_singleton),
+            fittable_non_singleton=int_to_bool(fittable_non_singleton),
             icon_id=icon_id,
             name=name,
-            published=bool(published),
-            use_base_price=bool(use_base_price),
+            published=int_to_bool(published),
+            use_base_price=int_to_bool(use_base_price),
         )
         for (
             group_id,
@@ -1183,7 +1186,7 @@ def get_categories(
             category_id=category_id,
             icon_id=icon_id,
             name=name,
-            published=bool(published),
+            published=int_to_bool(published),
         )
         for category_id, icon_id, name, published in rows
     }
@@ -1316,6 +1319,8 @@ def get_types(
             graphic_id,
             group_id,
             icon_id,
+            is_dynamic_type,
+            is_repackable,
             market_group_id,
             mass,
             meta_group_id,
@@ -1346,6 +1351,8 @@ def get_types(
             graphic_id=graphic_id,
             group_id=group_id,
             icon_id=icon_id,
+            is_dynamic_type=int_to_bool(is_dynamic_type),
+            is_repackable=int_to_bool(is_repackable),
             market_group_id=market_group_id,
             mass=mass,
             meta_group_id=meta_group_id,
@@ -1353,7 +1360,7 @@ def get_types(
             name=name,
             packaged_volume=packaged_volume,
             portion_size=portion_size,
-            published=bool(published),
+            published=int_to_bool(published),
             race_id=race_id,
             radius=radius,
             ship_tree_group_id=ship_tree_group_id,
@@ -1371,6 +1378,8 @@ def get_types(
             graphic_id,
             group_id,
             icon_id,
+            is_dynamic_type,
+            is_repackable,
             market_group_id,
             mass,
             meta_group_id,

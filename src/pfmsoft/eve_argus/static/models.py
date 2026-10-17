@@ -292,6 +292,8 @@ class TypesRecord:
     graphic_id: int | None
     group_id: int
     icon_id: int | None
+    is_dynamic_type: bool | None
+    is_repackable: bool | None
     market_group_id: int | None
     mass: float | None
     meta_group_id: int | None
