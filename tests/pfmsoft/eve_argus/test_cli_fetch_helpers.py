@@ -116,7 +116,7 @@ def test_report_update_result_reports_cached_response() -> None:
 
     assert actual is response
     assert "Using cached market prices" in output.getvalue()
-    assert "stored market prices dataset is already current" in output.getvalue()
+    assert "stored dataset for market prices is already current" in output.getvalue()
 
 
 def test_report_update_result_exits_for_failed_update() -> None:

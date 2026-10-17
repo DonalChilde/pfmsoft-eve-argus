@@ -28,7 +28,7 @@ def report_update_result[T: Expirable](
     if result.status is UpdateStatus.SKIPPED:
         messenger.print(f"Using cached {dataset_name}...")
         response = result.previous_state
-        messenger.print(f"\tThe stored {dataset_name} dataset is already current.")
+        messenger.print(f"\tThe stored dataset for {dataset_name} is already current.")
     else:
         response = result.new_state
     if response is None:
