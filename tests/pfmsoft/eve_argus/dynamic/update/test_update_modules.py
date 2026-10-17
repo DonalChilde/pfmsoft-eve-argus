@@ -26,6 +26,7 @@ from pfmsoft.eve_argus.fetch_esi import (
     system_cost_indices,
 )
 from pfmsoft.eve_argus.fetch_esi.system_cost_indices import _current_state
+from pfmsoft.eve_argus.fetch_esi.update import UpdateStatus
 
 
 def _make_connection() -> sqlite3.Connection:
@@ -111,8 +112,7 @@ def test_update_markets_prices_persists_response(
     )
 
     fetch.assert_awaited_once_with(esi_link, schema)
-    assert result.update_successful is True
-    assert result.update_not_required is False
+    assert result.status is UpdateStatus.UPDATED
     assert result.new_state == MarketsPricesResponse(
         response_metadata_id=1,
         received_at=prices.received_at,
@@ -142,8 +142,7 @@ def test_update_markets_prices_skips_current_response(
     )
 
     fetch.assert_not_awaited()
-    assert result.update_successful is True
-    assert result.update_not_required is True
+    assert result.status is UpdateStatus.SKIPPED
 
 
 def test_update_markets_prices_reports_validation_failure(
@@ -166,7 +165,7 @@ def test_update_markets_prices_reports_validation_failure(
         markets_prices.update_markets_prices(object(), object(), connection)
     )
 
-    assert result.update_successful is False
+    assert result.status is UpdateStatus.FAILED
     assert result.failure_message == "invalid price response"
     assert result.new_state is None
     assert read.markets_prices_responses(connection) == []
@@ -200,7 +199,7 @@ def test_update_market_orders_persists_new_region_response(
     )
 
     fetch.assert_awaited_once()
-    assert result.update_successful is True
+    assert result.status is UpdateStatus.UPDATED
     assert result.new_state is not None
     assert result.new_state.region_id == region_id
     assert len(read.market_orders_responses(connection, region_id)) == 1
@@ -233,8 +232,7 @@ def test_update_market_orders_rejects_duplicate_timestamp(
         )
     )
 
-    assert result.update_successful is False
-    assert result.update_not_required is False
+    assert result.status is UpdateStatus.FAILED
     assert "previously stored" in result.failure_message
     assert len(read.market_orders_responses(connection, 10000002)) == 1
 
@@ -286,7 +284,7 @@ def test_update_corporation_industry_jobs_passes_credentials_and_persists(
         character_id=character_id,
         credential_id=credential_id,
     )
-    assert result.update_successful is True
+    assert result.status is UpdateStatus.UPDATED
     assert result.new_state == CorporationIndustryJobsResponse(
         response_metadata_id=1,
         received_at=jobs.received_at,
@@ -343,7 +341,7 @@ def test_update_corporation_blueprints_passes_credentials_and_persists(
         character_id=character_id,
         credential_id=credential_id,
     )
-    assert result.update_successful is True
+    assert result.status is UpdateStatus.UPDATED
     assert result.new_state == CorporationBlueprintsResponse(
         response_metadata_id=1,
         received_at=blueprints.received_at,
@@ -441,8 +439,7 @@ def test_update_uses_new_esi_fetch_and_validation(
     if endpoint.startswith("corporation_"):
         assert request.auth_character_id == update_parameters["character_id"]
         assert request.auth_credential_id == update_parameters["credential_id"]
-    assert result.update_successful is True, result.failure_message
-    assert result.update_not_required is False
+    assert result.status is UpdateStatus.UPDATED, result.failure_message
     assert result.previous_state is None
     assert result.new_state is not None
     assert result.new_state.received_at == "2026-09-01T00:00:00Z"

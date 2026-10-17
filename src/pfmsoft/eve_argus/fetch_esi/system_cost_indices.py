@@ -1,96 +1,29 @@
 """Fetch and update system cost indices when stored data expires."""
 
-import logging
-from dataclasses import dataclass
+from functools import partial
 from sqlite3 import Connection
 
-from pfmsoft.eve_link import (
-    EsiLink,
-    EsiSchema,
-    FailedEsiResponse,
-)
-from whenever import Instant
+from pfmsoft.eve_link import EsiLink, EsiResponse, EsiSchema
 
 from pfmsoft.eve_argus.dynamic import read, write
 from pfmsoft.eve_argus.dynamic.models import SystemCostIndicesResponse
 from pfmsoft.eve_argus.esi import fetch as EsiFetch
 from pfmsoft.eve_argus.esi import validate as EsiValidate
+from pfmsoft.eve_argus.fetch_esi.update import UpdateResult, update_if_expired
 
-logger = logging.getLogger(__name__)
-
-
-@dataclass(slots=True, kw_only=True)
-class SystemCostIndicesStatus:
-    exists: bool
-    expired: bool
-    current_state: SystemCostIndicesResponse | None
+type SystemCostIndicesUpdateResult = UpdateResult[SystemCostIndicesResponse]
 
 
-@dataclass(slots=True, kw_only=True)
-class SystemCostIndicesUpdateResult:
-    update_successful: bool
-    update_not_required: bool
-    failure_message: str | None
-    previous_state: SystemCostIndicesResponse | None
-    new_state: SystemCostIndicesResponse | None
-
-
-async def _fetch_and_update_system_cost_indices(
-    esi_link: EsiLink,
-    schema: EsiSchema,
-    connection: Connection,
-    current_state: SystemCostIndicesResponse | None,
-) -> SystemCostIndicesUpdateResult:
-    """Fetch and persist system cost indices, preserving the previous state."""
-    response = await EsiFetch.system_cost_indices(esi_link, schema)
-    if isinstance(response, FailedEsiResponse):
-        return SystemCostIndicesUpdateResult(
-            update_successful=False,
-            update_not_required=False,
-            failure_message=str(response.failed_response.error_messages),
-            previous_state=current_state,
-            new_state=None,
-        )
-
-    try:
-        system_cost_indices = EsiValidate.system_cost_indices(response)
-        write.system_cost_indices(connection, system_cost_indices=system_cost_indices)
-        new_state = _current_state(connection)
-    except Exception as error:
-        return SystemCostIndicesUpdateResult(
-            update_successful=False,
-            update_not_required=False,
-            failure_message=str(error),
-            previous_state=current_state,
-            new_state=None,
-        )
-
-    return SystemCostIndicesUpdateResult(
-        update_successful=True,
-        update_not_required=False,
-        failure_message=None,
-        previous_state=current_state,
-        new_state=new_state,
-    )
-
-
-def _current_state(conn: Connection) -> SystemCostIndicesResponse | None:
-    responses = read.system_cost_indices_responses(conn)
+def _current_state(connection: Connection) -> SystemCostIndicesResponse | None:
+    """Return the latest stored system cost indices response, if any."""
+    responses = read.system_cost_indices_responses(connection)
     return responses[0] if responses else None
 
 
-def _check_db_status(conn: Connection) -> SystemCostIndicesStatus:
-    """Check whether the latest system cost indices response is expired."""
-    current = _current_state(conn)
-    now = Instant.now()
-    exists = current is not None
-    expiration = (current.argus_expires_at or current.expires_at) if current else None
-    expired = not exists or expiration is None or Instant.parse_iso(expiration) <= now
-    return SystemCostIndicesStatus(
-        exists=exists,
-        expired=expired,
-        current_state=current,
-    )
+def _store(connection: Connection, response: EsiResponse) -> None:
+    """Validate and write a system cost indices response."""
+    system_cost_indices = EsiValidate.system_cost_indices(response)
+    write.system_cost_indices(connection, system_cost_indices=system_cost_indices)
 
 
 async def update_system_cost_indices(
@@ -99,19 +32,8 @@ async def update_system_cost_indices(
     connection: Connection,
 ) -> SystemCostIndicesUpdateResult:
     """Update system cost indices when the stored response has expired."""
-    status = _check_db_status(connection)
-    if status.exists and not status.expired:
-        return SystemCostIndicesUpdateResult(
-            update_successful=True,
-            update_not_required=True,
-            failure_message=None,
-            previous_state=status.current_state,
-            new_state=None,
-        )
-
-    return await _fetch_and_update_system_cost_indices(
-        esi_link,
-        schema,
-        connection,
-        current_state=status.current_state,
+    return await update_if_expired(
+        read_current=partial(_current_state, connection),
+        fetch=partial(EsiFetch.system_cost_indices, esi_link, schema),
+        store=partial(_store, connection),
     )

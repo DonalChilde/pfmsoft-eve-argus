@@ -15,6 +15,7 @@ from pfmsoft.eve_argus.dynamic.access import DynamicDBReader, DynamicDBWriter
 from pfmsoft.eve_argus.dynamic.order_summary import calculate_summaries
 from pfmsoft.eve_argus.eve_argus import EveArgusResources
 from pfmsoft.eve_argus.fetch_esi.market_orders import update_market_orders
+from pfmsoft.eve_argus.fetch_esi.update import UpdateStatus
 from pfmsoft.eve_argus.models.market_hubs import MARKET_HUBS, MarketHub
 from pfmsoft.eve_argus.settings import EveArgusSettings
 
@@ -88,10 +89,10 @@ async def _fetch_hub(
         connection,
         region_id=hub.region_id,
     )
-    if not result.update_successful:
+    if result.status is UpdateStatus.FAILED:
         raise RuntimeError(result.failure_message or "Market orders update failed.")
 
-    if result.update_not_required:
+    if result.status is UpdateStatus.SKIPPED:
         messenger.print(f"Using cached market data for {hub.system_name}...")
         order_response = result.previous_state
         messenger.print("\tOrders already in database.")
@@ -117,7 +118,7 @@ async def _fetch_hub(
     region_orders = reader.read_market_orders(
         connection, response_metadata_id=order_response.response_metadata_id
     )
-    if not result.update_not_required:
+    if result.status is not UpdateStatus.SKIPPED:
         order_count = sum(
             len(orders.buy_orders) + len(orders.sell_orders)
             for orders in region_orders.records.values()

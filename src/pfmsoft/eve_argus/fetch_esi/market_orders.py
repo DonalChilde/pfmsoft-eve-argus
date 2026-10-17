@@ -1,31 +1,17 @@
 """Fetch and update regional market orders when stored data expires."""
 
-from dataclasses import dataclass
+from functools import partial
 from sqlite3 import Connection
 
-from pfmsoft.eve_link import EsiLink, EsiSchema, FailedEsiResponse
-from whenever import Instant
+from pfmsoft.eve_link import EsiLink, EsiResponse, EsiSchema
 
 from pfmsoft.eve_argus.dynamic import read, write
 from pfmsoft.eve_argus.dynamic.models import MarketOrdersResponse
 from pfmsoft.eve_argus.esi import fetch as EsiFetch
 from pfmsoft.eve_argus.esi import validate as EsiValidate
+from pfmsoft.eve_argus.fetch_esi.update import UpdateResult, update_if_expired
 
-
-@dataclass(slots=True, kw_only=True)
-class MarketOrdersStatus:
-    exists: bool
-    expired: bool
-    current_state: MarketOrdersResponse | None
-
-
-@dataclass(slots=True, kw_only=True)
-class MarketOrdersUpdateResult:
-    update_successful: bool
-    update_not_required: bool
-    failure_message: str | None
-    previous_state: MarketOrdersResponse | None
-    new_state: MarketOrdersResponse | None
+type MarketOrdersUpdateResult = UpdateResult[MarketOrdersResponse]
 
 
 def _current_state(
@@ -36,75 +22,22 @@ def _current_state(
     return responses[0] if responses else None
 
 
-def _check_db_status(connection: Connection, *, region_id: int) -> MarketOrdersStatus:
-    """Check whether the latest market-orders response for a region has expired."""
-    current = _current_state(connection, region_id=region_id)
-    expiration = (current.argus_expires_at or current.expires_at) if current else None
-    expired = expiration is None or Instant.parse_iso(expiration) <= Instant.now()
-    return MarketOrdersStatus(
-        exists=current is not None,
-        expired=expired,
-        current_state=current,
-    )
+def _store(connection: Connection, response: EsiResponse, *, region_id: int) -> None:
+    """Validate and write a market-orders response.
 
-
-async def _fetch_and_update_market_orders(
-    esi_link: EsiLink,
-    schema: EsiSchema,
-    connection: Connection,
-    *,
-    region_id: int,
-    current_state: MarketOrdersResponse | None,
-) -> MarketOrdersUpdateResult:
-    """Fetch and persist market orders, preserving the previous state."""
-    response = await EsiFetch.region_market_orders(
-        esi_link, schema, region_id=region_id
-    )
-    if isinstance(response, FailedEsiResponse):
-        return MarketOrdersUpdateResult(
-            update_successful=False,
-            update_not_required=False,
-            failure_message=str(response.failed_response.error_messages),
-            previous_state=current_state,
-            new_state=None,
+    Raises:
+        ValueError: If ESI returned a response already stored for this region.
+    """
+    market_orders = EsiValidate.region_market_orders(response)
+    stored_responses = read.market_orders_responses(connection, region_id=region_id)
+    if any(
+        stored.received_at == market_orders.received_at for stored in stored_responses
+    ):
+        raise ValueError(
+            "ESI returned a previously stored market-orders response "
+            "without a new received_at."
         )
-
-    try:
-        market_orders = EsiValidate.region_market_orders(response)
-        stored_responses = read.market_orders_responses(connection, region_id=region_id)
-        if any(
-            stored.received_at == market_orders.received_at
-            for stored in stored_responses
-        ):
-            return MarketOrdersUpdateResult(
-                update_successful=False,
-                update_not_required=False,
-                failure_message=(
-                    "ESI returned a previously stored market-orders response "
-                    "without a new received_at."
-                ),
-                previous_state=current_state,
-                new_state=None,
-            )
-
-        write.market_orders(connection, market_orders=market_orders)
-        new_state = _current_state(connection, region_id=region_id)
-    except Exception as error:
-        return MarketOrdersUpdateResult(
-            update_successful=False,
-            update_not_required=False,
-            failure_message=str(error),
-            previous_state=current_state,
-            new_state=None,
-        )
-
-    return MarketOrdersUpdateResult(
-        update_successful=True,
-        update_not_required=False,
-        failure_message=None,
-        previous_state=current_state,
-        new_state=new_state,
-    )
+    write.market_orders(connection, market_orders=market_orders)
 
 
 async def update_market_orders(
@@ -115,20 +48,10 @@ async def update_market_orders(
     region_id: int,
 ) -> MarketOrdersUpdateResult:
     """Update a region's market orders when the stored response has expired."""
-    status = _check_db_status(connection, region_id=region_id)
-    if status.exists and not status.expired:
-        return MarketOrdersUpdateResult(
-            update_successful=True,
-            update_not_required=True,
-            failure_message=None,
-            previous_state=status.current_state,
-            new_state=None,
-        )
-
-    return await _fetch_and_update_market_orders(
-        esi_link,
-        schema,
-        connection,
-        region_id=region_id,
-        current_state=status.current_state,
+    return await update_if_expired(
+        read_current=partial(_current_state, connection, region_id=region_id),
+        fetch=partial(
+            EsiFetch.region_market_orders, esi_link, schema, region_id=region_id
+        ),
+        store=partial(_store, connection, region_id=region_id),
     )

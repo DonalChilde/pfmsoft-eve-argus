@@ -1,32 +1,18 @@
 """Fetch and update corporation blueprints when stored data expires."""
 
-from dataclasses import dataclass
+from functools import partial
 from sqlite3 import Connection
 from uuid import UUID
 
-from pfmsoft.eve_link import EsiLink, EsiSchema, FailedEsiResponse
-from whenever import Instant
+from pfmsoft.eve_link import EsiLink, EsiResponse, EsiSchema
 
 from pfmsoft.eve_argus.dynamic import read, write
 from pfmsoft.eve_argus.dynamic.models import CorporationBlueprintsResponse
 from pfmsoft.eve_argus.esi import fetch as EsiFetch
 from pfmsoft.eve_argus.esi import validate as EsiValidate
+from pfmsoft.eve_argus.fetch_esi.update import UpdateResult, update_if_expired
 
-
-@dataclass(slots=True, kw_only=True)
-class CorporationBlueprintsStatus:
-    exists: bool
-    expired: bool
-    current_state: CorporationBlueprintsResponse | None
-
-
-@dataclass(slots=True, kw_only=True)
-class CorporationBlueprintsUpdateResult:
-    update_successful: bool
-    update_not_required: bool
-    failure_message: str | None
-    previous_state: CorporationBlueprintsResponse | None
-    new_state: CorporationBlueprintsResponse | None
+type CorporationBlueprintsUpdateResult = UpdateResult[CorporationBlueprintsResponse]
 
 
 def _current_state(
@@ -39,67 +25,10 @@ def _current_state(
     return responses[0] if responses else None
 
 
-def _check_db_status(
-    connection: Connection, *, corporation_id: int
-) -> CorporationBlueprintsStatus:
-    """Check whether the latest corporation blueprints response has expired."""
-    current = _current_state(connection, corporation_id=corporation_id)
-    expiration = (current.argus_expires_at or current.expires_at) if current else None
-    expired = expiration is None or Instant.parse_iso(expiration) <= Instant.now()
-    return CorporationBlueprintsStatus(
-        exists=current is not None,
-        expired=expired,
-        current_state=current,
-    )
-
-
-async def _fetch_and_update_corporation_blueprints(
-    esi_link: EsiLink,
-    schema: EsiSchema,
-    connection: Connection,
-    *,
-    corporation_id: int,
-    character_id: int,
-    credential_id: UUID,
-    current_state: CorporationBlueprintsResponse | None,
-) -> CorporationBlueprintsUpdateResult:
-    """Fetch and persist corporation blueprints, preserving previous state."""
-    response = await EsiFetch.corporation_blueprints(
-        esi_link,
-        schema,
-        corporation_id=corporation_id,
-        character_id=character_id,
-        credential_id=credential_id,
-    )
-    if isinstance(response, FailedEsiResponse):
-        return CorporationBlueprintsUpdateResult(
-            update_successful=False,
-            update_not_required=False,
-            failure_message=str(response.failed_response.error_messages),
-            previous_state=current_state,
-            new_state=None,
-        )
-
-    try:
-        blueprints = EsiValidate.corporation_blueprints(response)
-        write.corporation_blueprints(connection, blueprints=blueprints)
-        new_state = _current_state(connection, corporation_id=corporation_id)
-    except Exception as error:
-        return CorporationBlueprintsUpdateResult(
-            update_successful=False,
-            update_not_required=False,
-            failure_message=str(error),
-            previous_state=current_state,
-            new_state=None,
-        )
-
-    return CorporationBlueprintsUpdateResult(
-        update_successful=True,
-        update_not_required=False,
-        failure_message=None,
-        previous_state=current_state,
-        new_state=new_state,
-    )
+def _store(connection: Connection, response: EsiResponse) -> None:
+    """Validate and write a blueprints response."""
+    blueprints = EsiValidate.corporation_blueprints(response)
+    write.corporation_blueprints(connection, blueprints=blueprints)
 
 
 async def update_corporation_blueprints(
@@ -121,22 +50,15 @@ async def update_corporation_blueprints(
         character_id: Character authorized to access the corporation endpoint.
         credential_id: ESI credential authorized for that character.
     """
-    status = _check_db_status(connection, corporation_id=corporation_id)
-    if status.exists and not status.expired:
-        return CorporationBlueprintsUpdateResult(
-            update_successful=True,
-            update_not_required=True,
-            failure_message=None,
-            previous_state=status.current_state,
-            new_state=None,
-        )
-
-    return await _fetch_and_update_corporation_blueprints(
-        esi_link,
-        schema,
-        connection,
-        corporation_id=corporation_id,
-        character_id=character_id,
-        credential_id=credential_id,
-        current_state=status.current_state,
+    return await update_if_expired(
+        read_current=partial(_current_state, connection, corporation_id=corporation_id),
+        fetch=partial(
+            EsiFetch.corporation_blueprints,
+            esi_link,
+            schema,
+            corporation_id=corporation_id,
+            character_id=character_id,
+            credential_id=credential_id,
+        ),
+        store=partial(_store, connection),
     )
