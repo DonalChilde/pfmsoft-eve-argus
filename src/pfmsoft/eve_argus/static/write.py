@@ -12,7 +12,7 @@ def blueprints(connection: Connection, *, dataset: EsdModels.BlueprintsDataset) 
 
 
 def industrial_activities(
-    connection: Connection, *, dataset: EsdModels.IndustrialActivitiesDataset
+    connection: Connection, *, dataset: EsdModels.IndustryActivitiesDataset
 ) -> None:
     """Write industrial activities to the Argus static db."""
     QH.write_industrial_activities(connection, dataset)

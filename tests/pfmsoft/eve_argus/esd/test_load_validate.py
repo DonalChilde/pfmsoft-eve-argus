@@ -109,10 +109,10 @@ _CASES = (
     ),
     DatasetCase(
         name="industryActivities",
-        loader=load.industrial_activities,
-        validator=validate.industrial_activities,
-        model=models.IndustrialActivitiesDataset,
-        record_type=models.IndustrialActivitiesRecord,
+        loader=load.industry_activities,
+        validator=validate.industry_activities,
+        model=models.IndustryActivitiesDataset,
+        record_type=models.IndustryActivitiesRecord,
         record={"name": "Manufacturing", "description": "Manufacturing items"},
     ),
     DatasetCase(

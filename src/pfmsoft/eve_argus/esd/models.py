@@ -383,8 +383,8 @@ class GroupsDataset(SdeDatasetBaseModel):
 
 
 @dataclass(slots=True, kw_only=True)
-class IndustrialActivitiesRecord:
-    """Record for a specific industrial activity.
+class IndustryActivitiesRecord:
+    """Record for a specific industry activity.
 
     - source: dev/tmp/sde-yaml/3464040
     - records: 6 (key: int)
@@ -400,8 +400,8 @@ class IndustrialActivitiesRecord:
     name: str
 
 
-class IndustrialActivitiesDataset(SdeDatasetBaseModel):
-    dataset: dict[int, IndustrialActivitiesRecord]
+class IndustryActivitiesDataset(SdeDatasetBaseModel):
+    dataset: dict[int, IndustryActivitiesRecord]
 
 
 @dataclass(slots=True, kw_only=True)

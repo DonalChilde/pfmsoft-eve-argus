@@ -54,8 +54,8 @@ def groups(db: EveSdDbQueryManager) -> dict[int, dict[str, Any]]:
     return raw_dataset
 
 
-def industrial_activities(db: EveSdDbQueryManager) -> dict[int, dict[str, Any]]:
-    """Load industrial activities from the EVE Static Data database."""
+def industry_activities(db: EveSdDbQueryManager) -> dict[int, dict[str, Any]]:
+    """Load industry activities from the EVE Static Data database."""
     raw_dataset: dict[int, Any] = {
         key: value for key, value in db.query.get_int_records("industryActivities")
     }

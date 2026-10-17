@@ -39,8 +39,8 @@ def create_db(argus_connection: Connection, query_manager: EveSdDbQueryManager) 
     write.categories(argus_connection, dataset=categories)
     groups = EsdValidate.groups(EsdLoad.groups(query_manager))
     write.groups(argus_connection, dataset=groups)
-    industrial_activities = EsdValidate.industrial_activities(
-        EsdLoad.industrial_activities(query_manager)
+    industrial_activities = EsdValidate.industry_activities(
+        EsdLoad.industry_activities(query_manager)
     )
     write.industrial_activities(argus_connection, dataset=industrial_activities)
     map_constellations = EsdValidate.map_constellations(
