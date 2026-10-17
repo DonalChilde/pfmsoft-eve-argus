@@ -65,6 +65,10 @@ class EveArgusSettings:
     """The minimum build of the Eve Static Data package required by the application."""
     static_database_build_number: int | None = None
     """The build number of the static database. if None, use the latest available build."""
+    character_id: int | None = None
+    """The default character ID associated with the application, if applicable."""
+    corporation_id: int | None = None
+    """The default corporation ID associated with the application, if applicable."""
 
 
 class EveArgusSettingsPydantic(BaseSettings):
@@ -107,6 +111,18 @@ class DataSourcesSettings(BaseModel):
     """The build number of the static database to use. If None, the latest available build will be used."""
 
 
+class DefaultIdsSettings(BaseModel):
+    """Settings for default IDs associated with the application."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    character_id: int | None = Field(default=None)
+    """The default character ID associated with the application, if applicable."""
+
+    corporation_id: int | None = Field(default=None)
+    """The default corporation ID associated with the application, if applicable."""
+
+
 class EveArgusTomlSettings(BaseModel):
     """Settings loaded from the TOML configuration file."""
 
@@ -117,6 +133,9 @@ class EveArgusTomlSettings(BaseModel):
 
     data_sources: DataSourcesSettings = Field(default_factory=DataSourcesSettings)
     """The data sources settings for the application."""
+
+    default_ids: DefaultIdsSettings = Field(default_factory=DefaultIdsSettings)
+    """The default IDs settings for the application."""
 
 
 def _default_settings() -> EveArgusTomlSettings:
