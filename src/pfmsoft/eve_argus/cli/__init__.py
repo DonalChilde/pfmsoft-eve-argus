@@ -3,6 +3,7 @@
 import typer
 
 from pfmsoft.eve_argus.cli.market import app as market_app
+from pfmsoft.eve_argus.cli.static import app as static_app
 from pfmsoft.eve_argus.cli.util import app as util_app
 
 app = typer.Typer(
@@ -11,3 +12,4 @@ app = typer.Typer(
 )
 app.add_typer(util_app, name="util")
 app.add_typer(market_app, name="market")
+app.add_typer(static_app, name="static")

@@ -137,7 +137,7 @@ def db_connection_manager(
     db_path: str | Path,
     *,
     init_sql: str | None = None,
-    read_only: bool = True,
+    read_only: bool = False,
     row_factory: type[Row] | None = None,
 ) -> Generator[Connection]:
     """Yield a SQLite connection and close it automatically on exit.

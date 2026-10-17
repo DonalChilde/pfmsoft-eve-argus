@@ -1,21 +1,30 @@
+"""Create the Argus static database."""
+
 from sqlite3 import Connection
 
 from pfmsoft.eve_sd import EveSdDbQueryManager
 
 from pfmsoft.eve_argus.esd import load as EsdLoad
 from pfmsoft.eve_argus.esd import validate as EsdValidate
-from pfmsoft.eve_argus.static import write
+from pfmsoft.eve_argus.static import read, write
 
 
 def _is_empty(argus_connection: Connection) -> bool:
     """Check that the Argus static database is empty."""
-    # check that the sde_info table does not have an entry
-    # Note that the sde_info table is not yet implemented.
-    return False
+    try:
+        foo = read.sde_metadata(argus_connection)
+        if foo:
+            return False
+    except Exception:
+        return True
+    return True
 
 
 def create_db(argus_connection: Connection, query_manager: EveSdDbQueryManager) -> None:
-    """Create the Argus static database."""
+    """Create the Argus static database.
+
+    The connection must be to an empty but configured Argus static database.
+    """
     if not _is_empty(argus_connection):
         raise RuntimeError("The Argus static database is not empty.")
     blueprints = EsdValidate.blueprints(EsdLoad.blueprints(query_manager))
