@@ -11,14 +11,12 @@ from pfmsoft.eve_link import (
 )
 from whenever import Instant
 
-from pfmsoft.eve_argus.dynamic.access import DynamicDBReader, DynamicDBWriter
-from pfmsoft.eve_argus.dynamic.db.models import SystemCostIndicesResponse
+from pfmsoft.eve_argus.dynamic import read, write
+from pfmsoft.eve_argus.dynamic.models import SystemCostIndicesResponse
 from pfmsoft.eve_argus.esi import fetch as EsiFetch
 from pfmsoft.eve_argus.esi import validate as EsiValidate
 
 logger = logging.getLogger(__name__)
-_writer = DynamicDBWriter()
-_reader = DynamicDBReader()
 
 
 @dataclass(slots=True, kw_only=True)
@@ -56,9 +54,7 @@ async def _fetch_and_update_system_cost_indices(
 
     try:
         system_cost_indices = EsiValidate.system_cost_indices(response)
-        _writer.write_system_cost_indices(
-            connection, system_cost_indices=system_cost_indices
-        )
+        write.system_cost_indices(connection, system_cost_indices=system_cost_indices)
         new_state = _current_state(connection)
     except Exception as error:
         return SystemCostIndicesUpdateResult(
@@ -79,7 +75,7 @@ async def _fetch_and_update_system_cost_indices(
 
 
 def _current_state(conn: Connection) -> SystemCostIndicesResponse | None:
-    responses = _reader.read_system_cost_indices_responses(conn)
+    responses = read.system_cost_indices_responses(conn)
     return responses[0] if responses else None
 
 

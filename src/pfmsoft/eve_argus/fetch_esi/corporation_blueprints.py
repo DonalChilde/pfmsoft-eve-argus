@@ -7,13 +7,10 @@ from uuid import UUID
 from pfmsoft.eve_link import EsiLink, EsiSchema, FailedEsiResponse
 from whenever import Instant
 
-from pfmsoft.eve_argus.dynamic.access import DynamicDBReader, DynamicDBWriter
-from pfmsoft.eve_argus.dynamic.db.models import CorporationBlueprintsResponse
+from pfmsoft.eve_argus.dynamic import read, write
+from pfmsoft.eve_argus.dynamic.models import CorporationBlueprintsResponse
 from pfmsoft.eve_argus.esi import fetch as EsiFetch
 from pfmsoft.eve_argus.esi import validate as EsiValidate
-
-_writer = DynamicDBWriter()
-_reader = DynamicDBReader()
 
 
 @dataclass(slots=True, kw_only=True)
@@ -36,7 +33,7 @@ def _current_state(
     connection: Connection, *, corporation_id: int
 ) -> CorporationBlueprintsResponse | None:
     """Return the latest stored blueprints response for a corporation."""
-    responses = _reader.read_corporation_blueprints_responses(
+    responses = read.corporation_blueprints_responses(
         connection, corporation_id=corporation_id
     )
     return responses[0] if responses else None
@@ -85,7 +82,7 @@ async def _fetch_and_update_corporation_blueprints(
 
     try:
         blueprints = EsiValidate.corporation_blueprints(response)
-        _writer.write_corporation_blueprints(connection, blueprints=blueprints)
+        write.corporation_blueprints(connection, blueprints=blueprints)
         new_state = _current_state(connection, corporation_id=corporation_id)
     except Exception as error:
         return CorporationBlueprintsUpdateResult(

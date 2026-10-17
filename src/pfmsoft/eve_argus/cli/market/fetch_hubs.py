@@ -12,9 +12,9 @@ from whenever import Instant
 
 from pfmsoft.eve_argus.cli.helpers import get_eve_argus_settings_from_context
 from pfmsoft.eve_argus.dynamic.access import DynamicDBReader, DynamicDBWriter
-from pfmsoft.eve_argus.dynamic.db.order_summary import calculate_summaries
-from pfmsoft.eve_argus.dynamic.update.market_orders import update_market_orders
+from pfmsoft.eve_argus.dynamic.order_summary import calculate_summaries
 from pfmsoft.eve_argus.eve_argus import EveArgusResources
+from pfmsoft.eve_argus.fetch_esi.market_orders import update_market_orders
 from pfmsoft.eve_argus.models.market_hubs import MARKET_HUBS, MarketHub
 from pfmsoft.eve_argus.settings import EveArgusSettings
 

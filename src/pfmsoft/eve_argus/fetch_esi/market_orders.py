@@ -6,13 +6,10 @@ from sqlite3 import Connection
 from pfmsoft.eve_link import EsiLink, EsiSchema, FailedEsiResponse
 from whenever import Instant
 
-from pfmsoft.eve_argus.dynamic.access import DynamicDBReader, DynamicDBWriter
-from pfmsoft.eve_argus.dynamic.db.models import MarketOrdersResponse
+from pfmsoft.eve_argus.dynamic import read, write
+from pfmsoft.eve_argus.dynamic.models import MarketOrdersResponse
 from pfmsoft.eve_argus.esi import fetch as EsiFetch
 from pfmsoft.eve_argus.esi import validate as EsiValidate
-
-_writer = DynamicDBWriter()
-_reader = DynamicDBReader()
 
 
 @dataclass(slots=True, kw_only=True)
@@ -35,7 +32,7 @@ def _current_state(
     connection: Connection, *, region_id: int
 ) -> MarketOrdersResponse | None:
     """Return the latest stored market-orders response for a region."""
-    responses = _reader.read_market_orders_responses(connection, region_id=region_id)
+    responses = read.market_orders_responses(connection, region_id=region_id)
     return responses[0] if responses else None
 
 
@@ -74,9 +71,7 @@ async def _fetch_and_update_market_orders(
 
     try:
         market_orders = EsiValidate.region_market_orders(response)
-        stored_responses = _reader.read_market_orders_responses(
-            connection, region_id=region_id
-        )
+        stored_responses = read.market_orders_responses(connection, region_id=region_id)
         if any(
             stored.received_at == market_orders.received_at
             for stored in stored_responses
@@ -92,7 +87,7 @@ async def _fetch_and_update_market_orders(
                 new_state=None,
             )
 
-        _writer.write_market_orders(connection, market_orders=market_orders)
+        write.market_orders(connection, market_orders=market_orders)
         new_state = _current_state(connection, region_id=region_id)
     except Exception as error:
         return MarketOrdersUpdateResult(

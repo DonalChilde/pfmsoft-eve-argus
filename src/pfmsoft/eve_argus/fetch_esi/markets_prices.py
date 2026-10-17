@@ -6,13 +6,10 @@ from sqlite3 import Connection
 from pfmsoft.eve_link import EsiLink, EsiSchema, FailedEsiResponse
 from whenever import Instant
 
-from pfmsoft.eve_argus.dynamic.access import DynamicDBReader, DynamicDBWriter
-from pfmsoft.eve_argus.dynamic.db.models import MarketsPricesResponse
+from pfmsoft.eve_argus.dynamic import read, write
+from pfmsoft.eve_argus.dynamic.models import MarketsPricesResponse
 from pfmsoft.eve_argus.esi import fetch as EsiFetch
 from pfmsoft.eve_argus.esi import validate as EsiValidate
-
-_writer = DynamicDBWriter()
-_reader = DynamicDBReader()
 
 
 @dataclass(slots=True, kw_only=True)
@@ -33,7 +30,7 @@ class MarketsPricesUpdateResult:
 
 def _current_state(connection: Connection) -> MarketsPricesResponse | None:
     """Return the latest stored market-prices response, if any."""
-    responses = _reader.read_markets_prices_responses(connection)
+    responses = read.markets_prices_responses(connection)
     return responses[0] if responses else None
 
 
@@ -68,7 +65,7 @@ async def _fetch_and_update_markets_prices(
 
     try:
         prices = EsiValidate.markets_prices(response)
-        _writer.write_markets_prices(connection, markets_prices=prices)
+        write.markets_prices(connection, markets_prices=prices)
         new_state = _current_state(connection)
     except Exception as error:
         return MarketsPricesUpdateResult(

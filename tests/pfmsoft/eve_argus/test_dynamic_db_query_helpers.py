@@ -7,7 +7,7 @@ from decimal import Decimal
 import pytest
 
 from pfmsoft.eve_argus.dynamic.db import load_table_definitions, query_helpers
-from pfmsoft.eve_argus.dynamic.db.models import (
+from pfmsoft.eve_argus.dynamic.models import (
     BuySellOrders,
     BuySellSummary,
     CorporationBlueprintRecord,

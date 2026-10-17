@@ -3,7 +3,7 @@
 from collections.abc import Sequence
 from decimal import Decimal
 
-from pfmsoft.eve_argus.dynamic.db import models
+from pfmsoft.eve_argus.dynamic import models
 from pfmsoft.eve_argus.helpers.currency import as_currency
 
 

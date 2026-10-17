@@ -8,7 +8,7 @@ from typing import Self
 
 from pfmsoft.eve_link import EsiLink, EsiSchema, SimpleRequests
 
-from pfmsoft.eve_argus.dynamic.db.query_helpers import (
+from pfmsoft.eve_argus.dynamic.util import (
     load_table_definitions as load_argus_dynamic_table_definitions,
 )
 from pfmsoft.eve_argus.helpers.connection_helpers import create_read_write_connection

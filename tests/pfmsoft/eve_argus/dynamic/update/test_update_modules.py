@@ -7,25 +7,25 @@ from unittest.mock import AsyncMock, Mock
 from uuid import UUID
 
 import pytest
+from pfmsoft.eve_argus.dynamic.db import load_table_definitions, query_helpers
 from pfmsoft.eve_link import EsiLink, EsiRequest, EsiResponse, EsiSchema
 from whenever import Instant
 
-from pfmsoft.eve_argus.dynamic.db import load_table_definitions, query_helpers
-from pfmsoft.eve_argus.dynamic.db.models import (
+from pfmsoft.eve_argus.dynamic.models import (
     CorporationBlueprintsResponse,
     CorporationIndustryJobsResponse,
     MarketsPricesResponse,
     SystemCostIndicesResponse,
 )
-from pfmsoft.eve_argus.dynamic.update import (
+from pfmsoft.eve_argus.esi import models as ERM
+from pfmsoft.eve_argus.fetch_esi import (
     corporation_blueprints,
     corporation_industry_jobs,
     market_orders,
     markets_prices,
     system_cost_indices,
 )
-from pfmsoft.eve_argus.dynamic.update.system_cost_indices import _current_state
-from pfmsoft.eve_argus.esi import models as ERM
+from pfmsoft.eve_argus.fetch_esi.system_cost_indices import _current_state
 
 
 def _make_connection() -> sqlite3.Connection:
