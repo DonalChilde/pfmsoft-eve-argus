@@ -9,7 +9,7 @@ import logging
 import tomllib
 from dataclasses import dataclass
 from pathlib import Path
-from uuid import NAMESPACE_DNS, uuid5
+from uuid import NAMESPACE_DNS, UUID, uuid5
 
 from pfmsoft.eve_link.settings import EsiLinkSettings
 from pfmsoft.eve_link.settings import get_settings as get_eve_link_settings
@@ -69,6 +69,8 @@ class EveArgusSettings:
     """The default character ID associated with the application, if applicable."""
     corporation_id: int | None = None
     """The default corporation ID associated with the application, if applicable."""
+    credential_id: UUID | None = None
+    """The default credential id associated with the application, if applicable."""
 
 
 class EveArgusSettingsPydantic(BaseSettings):
@@ -121,6 +123,8 @@ class DefaultIdsSettings(BaseModel):
 
     corporation_id: int | None = Field(default=None)
     """The default corporation ID associated with the application, if applicable."""
+    credential_id: UUID | None = Field(default=None)
+    """The default credential ID associated with the application, if applicable."""
 
 
 class EveArgusTomlSettings(BaseModel):
@@ -258,5 +262,8 @@ def _apply_toml_settings(
     settings.eve_link_settings.max_rate = toml_settings.rate_limit.max_rate
     settings.eve_link_settings.time_period = toml_settings.rate_limit.time_period
     settings.static_database_build_number = toml_settings.data_sources.build_number
+    settings.character_id = toml_settings.default_ids.character_id
+    settings.corporation_id = toml_settings.default_ids.corporation_id
+    settings.credential_id = toml_settings.default_ids.credential_id
 
     return settings

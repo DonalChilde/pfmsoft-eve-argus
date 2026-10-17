@@ -22,7 +22,10 @@ time_period = 1.0
 
 [default_ids]
 # The default character ID associated with the application, if applicable.
-# character_id = 123456789
+# character_id = 12345678
 
 # The default corporation ID associated with the application, if applicable.
-# corporation_id = 987654321
+# corporation_id = 12345678
+
+# The default UUID credential ID associated with the application, if applicable.
+# credential_id = "00000000-0000-0000-0000-000000000000"
