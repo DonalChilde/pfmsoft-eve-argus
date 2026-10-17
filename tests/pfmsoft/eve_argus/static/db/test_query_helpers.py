@@ -77,16 +77,16 @@ def _make_connection() -> sqlite3.Connection:
 def test_write_industrial_activities_writes_string_fields() -> None:
     """Industrial activity records are written to the static database."""
     connection = _make_connection()
-    dataset = ESD.IndustrialActivitiesDataset(
+    dataset = ESD.IndustryActivitiesDataset(
         dataset={
-            1: ESD.IndustrialActivitiesRecord(
+            1: ESD.IndustryActivitiesRecord(
                 description="Manufacturing of things",
                 name="Manufacturing",
             )
         }
     )
 
-    query_helpers.write_industrial_activities(connection, dataset)
+    query_helpers.write_industry_activities(connection, dataset)
 
     assert query_helpers.get_industry_activities(connection) == {
         1: ASM.IndustryActivityRecord(
