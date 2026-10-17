@@ -1,6 +1,8 @@
 """Pytest configuration for test selection markers."""
 
 from dataclasses import dataclass
+from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -11,6 +13,7 @@ class SkipMarkerOption:
 
     option: str
     marker_name: str
+    default: Any
     help_text: str
     skip_reason: str
     marker_description: str
@@ -20,6 +23,7 @@ _SKIP_MARKER_OPTIONS: tuple[SkipMarkerOption, ...] = (
     SkipMarkerOption(
         option="--runslow",
         marker_name="slow",
+        default=False,
         help_text="run slow tests",
         skip_reason="need --runslow option to run",
         marker_description="mark test as slow to run",
@@ -27,9 +31,18 @@ _SKIP_MARKER_OPTIONS: tuple[SkipMarkerOption, ...] = (
     SkipMarkerOption(
         option="--runlive",
         marker_name="live",
+        default=False,
         help_text="run live network tests",
         skip_reason="need --runlive option to run",
         marker_description="mark test as live network test",
+    ),
+    SkipMarkerOption(
+        option="--esd-static-db",
+        marker_name="esd_static_db",
+        default=None,
+        help_text="run tests requiring the ESD static database",
+        skip_reason="need --esd-static-db option to run",
+        marker_description="mark test as requiring the ESD static database",
     ),
 )
 
@@ -71,7 +84,7 @@ def pytest_addoption(parser: pytest.Parser) -> None:
         parser.addoption(
             marker_option.option,
             action="store_true",
-            default=False,
+            default=marker_option.default,
             help=marker_option.help_text,
         )
 
@@ -99,3 +112,14 @@ def pytest_collection_modifyitems(
 
 
 # ---------------------------------------------------------------------------------
+@pytest.fixture(scope="session")
+def esd_static_db_path(request: pytest.FixtureRequest) -> Path:
+    """Fixture to provide the path to the ESD static database."""
+    raw = request.config.getoption("--esd-static-db")
+    if raw is None:
+        pytest.skip("no --esd-static-db path provided")
+
+    path = Path(raw)
+    if not path.is_file():
+        pytest.fail(f"--esd-static-db path does not exist or is not a file: {path}")
+    return path
