@@ -1,4 +1,4 @@
-"""Fetch market hub orders and summarize them in the dynamic database."""
+"""Fetch market hub orders and report update results."""
 
 import asyncio
 import sqlite3
@@ -11,10 +11,10 @@ from rich.console import Console
 from whenever import Instant
 
 from pfmsoft.eve_argus.cli.helpers import get_eve_argus_settings_from_context
-from pfmsoft.eve_argus.dynamic.access import DynamicDBReader, DynamicDBWriter
+from pfmsoft.eve_argus.dynamic import read, write
 from pfmsoft.eve_argus.dynamic.order_summary import calculate_summaries
 from pfmsoft.eve_argus.eve_argus import EveArgusResources
-from pfmsoft.eve_argus.fetch_esi.market_orders import update_market_orders
+from pfmsoft.eve_argus.fetch_esi import update_market_orders
 from pfmsoft.eve_argus.fetch_esi.update import UpdateStatus
 from pfmsoft.eve_argus.models.market_hubs import MARKET_HUBS, MarketHub
 from pfmsoft.eve_argus.settings import EveArgusSettings
@@ -22,8 +22,8 @@ from pfmsoft.eve_argus.settings import EveArgusSettings
 app = typer.Typer(no_args_is_help=True)
 
 
-@app.command(name="fetch-hubs")
-def fetch_hubs(
+@app.command(name="hub-orders")
+def fetch_hub_orders(
     ctx: typer.Context,
     quiet: Annotated[
         bool,
@@ -47,11 +47,9 @@ def fetch_hubs(
 
 
 async def _fetch_hubs(*, settings: EveArgusSettings, messenger: Console) -> list[str]:
-    """Fetch and summarize orders for each configured market hub."""
+    """Fetch market orders for each configured hub and report failures."""
     failed_hubs: list[str] = []
     async with EveArgusResources(settings) as resources:
-        reader = DynamicDBReader()
-        writer = DynamicDBWriter()
         for hub in MARKET_HUBS:
             try:
                 await _fetch_hub(
@@ -59,8 +57,6 @@ async def _fetch_hubs(*, settings: EveArgusSettings, messenger: Console) -> list
                     esi_link=resources.esi_link,
                     schema=resources.esi_schema,
                     connection=resources.argus_dynamic_db_connection,
-                    reader=reader,
-                    writer=writer,
                     messenger=messenger,
                 )
             except Exception as error:
@@ -77,11 +73,9 @@ async def _fetch_hub(
     esi_link: EsiLink,
     schema: EsiSchema,
     connection: sqlite3.Connection,
-    reader: DynamicDBReader,
-    writer: DynamicDBWriter,
     messenger: Console,
 ) -> None:
-    """Fetch, store, and summarize one market hub in the dynamic database."""
+    """Fetch market orders for one hub and report the update result."""
     messenger.print(f"Checking market data for {hub.system_name}...")
     result = await update_market_orders(
         esi_link,
@@ -95,11 +89,11 @@ async def _fetch_hub(
     if result.status is UpdateStatus.SKIPPED:
         messenger.print(f"Using cached market data for {hub.system_name}...")
         order_response = result.previous_state
-        messenger.print("\tOrders already in database.")
+        messenger.print("\tMarket orders are already current.")
     else:
         order_response = result.new_state
     if order_response is None:
-        raise ValueError("No matching market orders response found after writing.")
+        raise ValueError("No market orders response available after update.")
     expiration = order_response.argus_expires_at or order_response.expires_at
     if expiration is None:
         messenger.print("\tDataset expiration is unavailable.")
@@ -115,18 +109,20 @@ async def _fetch_hub(
             messenger.print(
                 f"\tDataset expired {ceil(-seconds_until_expiration)} seconds ago."
             )
-    region_orders = reader.read_market_orders(
-        connection, response_metadata_id=order_response.response_metadata_id
-    )
     if result.status is not UpdateStatus.SKIPPED:
+        messenger.print("\tFetched and stored market orders.")
+
+        region_orders = read.market_orders(
+            connection, response_metadata_id=order_response.response_metadata_id
+        )
         order_count = sum(
             len(orders.buy_orders) + len(orders.sell_orders)
             for orders in region_orders.records.values()
         )
-        messenger.print(f"\tFetched and stored {order_count} orders.")
-    report = calculate_summaries(region_orders, system_id=hub.system_id)
-    messenger.print(
-        f"\tCalculated order summaries for {len(report.records.keys())} types."
-    )
-    writer.write_order_summaries(connection, order_summaries=report)
-    messenger.print("\tWrote order summaries to database.")
+        messenger.print(f"\tRead {order_count} orders from the database.")
+        report = calculate_summaries(region_orders, system_id=hub.system_id)
+        messenger.print(
+            f"\tCalculated order summaries for {len(report.records)} types."
+        )
+        write.order_summaries(connection, order_summaries=report)
+        messenger.print("\tUpdated order summaries in the database.")

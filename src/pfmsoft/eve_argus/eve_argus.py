@@ -70,9 +70,6 @@ class EveArgusResources:
         if self._esi_link is not None:
             await self._esi_link.__aexit__(exc_type, exc_value, traceback)
             self._esi_link = None
-        if self._sd_query_manager is not None:
-            self._sd_query_manager.__exit__(exc_type, exc_value, traceback)
-            self._sd_query_manager = None
         if self._argus_static_db_connection is not None:
             self._argus_static_db_connection.close()
             self._argus_static_db_connection = None
