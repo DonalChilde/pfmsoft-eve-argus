@@ -92,7 +92,7 @@ class StaticStore:
         entry = self.get_entry(build_number)
         if entry is None:
             raise ValueError(f"No entry found for build number: {build_number}")
-        if not Path(entry.file_name).exists():
+        if not (self.store_path / entry.file_name).is_file():
             raise FileNotFoundError(f"File not found for entry: {entry}")
 
     def add_entry(self, build_number: int, release_date: str):
@@ -100,7 +100,7 @@ class StaticStore:
         file_name = self.file_name_for_new_entry(build_number, release_date)
         if self.get_entry(build_number) is not None:
             raise ValueError(f"Entry already exists for build number: {build_number}")
-        if (self.manifest_path / file_name).exists():
+        if (self.store_path / file_name).exists():
             raise FileExistsError(f"File already exists for entry: {file_name}")
         init_database(self.store_path / file_name, init_sql=load_table_definitions())
         self.manifest.entries[build_number] = ManifestEntry(

@@ -1,8 +1,10 @@
 """Pytest configuration for custom options and test selection."""
 
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
+from contextlib import closing
 from dataclasses import dataclass
 from pathlib import Path
+from sqlite3 import Connection, connect
 from typing import Any
 
 import pytest
@@ -148,3 +150,37 @@ def esd_static_db_path(request: pytest.FixtureRequest) -> Path:
     if not path.is_file():
         pytest.fail(f"--esd-static-db path does not exist or is not a file: {path}")
     return path
+
+
+@pytest.fixture(scope="session")
+def argus_static_db_path(
+    esd_static_db_path: Path, tmp_path_factory: pytest.TempPathFactory
+) -> Path:
+    """Build one temporary Argus database from the explicitly supplied ESD export.
+
+    Requires ``--esd-static-db PATH``; otherwise dependent tests are skipped.
+    The source export is never used as a write target. Tests that need to mutate
+    the generated database should copy it rather than changing this shared file.
+    """
+    from pfmsoft.eve_sd import EveSdDbQueryManager
+
+    from pfmsoft.eve_argus.helpers.connection_helpers import db_connection_manager
+    from pfmsoft.eve_argus.static.create import create_db
+    from pfmsoft.eve_argus.static.query_helpers import load_table_definitions
+
+    path = tmp_path_factory.mktemp("argus-static") / "static.sqlite"
+    with (
+        EveSdDbQueryManager(esd_static_db_path) as source,
+        db_connection_manager(path, init_sql=load_table_definitions()) as target,
+    ):
+        create_db(target, source)
+    return path
+
+
+@pytest.fixture
+def argus_static_db_connection(argus_static_db_path: Path) -> Iterator[Connection]:
+    """Open a fresh read-only connection to the shared live-derived Argus database."""
+    with closing(
+        connect(f"{argus_static_db_path.resolve().as_uri()}?mode=ro", uri=True)
+    ) as connection:
+        yield connection

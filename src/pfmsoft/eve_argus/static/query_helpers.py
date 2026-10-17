@@ -852,7 +852,7 @@ def get_industry_activities(
             activity_id,
             name,
             description
-        FROM industrial_activities
+        FROM industry_activities
         ORDER BY activity_id
         """
     ).fetchall()
