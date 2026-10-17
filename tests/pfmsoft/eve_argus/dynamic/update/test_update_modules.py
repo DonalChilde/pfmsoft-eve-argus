@@ -7,10 +7,10 @@ from unittest.mock import AsyncMock, Mock
 from uuid import UUID
 
 import pytest
-from pfmsoft.eve_argus.dynamic.db import load_table_definitions, query_helpers
 from pfmsoft.eve_link import EsiLink, EsiRequest, EsiResponse, EsiSchema
 from whenever import Instant
 
+from pfmsoft.eve_argus.dynamic import read, util, write
 from pfmsoft.eve_argus.dynamic.models import (
     CorporationBlueprintsResponse,
     CorporationIndustryJobsResponse,
@@ -30,7 +30,7 @@ from pfmsoft.eve_argus.fetch_esi.system_cost_indices import _current_state
 
 def _make_connection() -> sqlite3.Connection:
     connection = sqlite3.connect(":memory:")
-    connection.executescript(load_table_definitions())
+    connection.executescript(util.load_table_definitions())
     return connection
 
 
@@ -39,7 +39,7 @@ def test_write_system_cost_indices_preserves_response_snapshots() -> None:
     connection = _make_connection()
     for received_at in ("2026-09-01T00:00:00Z", "2026-09-02T00:00:00Z"):
         (
-            query_helpers.write_system_cost_indices(
+            write.system_cost_indices(
                 connection,
                 ERM.GetIndustrySystems(
                     received_at=received_at,
@@ -54,11 +54,11 @@ def test_write_system_cost_indices_preserves_response_snapshots() -> None:
             ),
         )
 
-    responses = query_helpers.get_system_cost_indices_responses(connection)
+    responses = read.system_cost_indices_responses(connection)
 
     assert len(responses) == 2
     for response in responses:
-        dataset = query_helpers.get_system_cost_indices(
+        dataset = read.system_cost_indices(
             connection, response_metadata_id=response.response_metadata_id
         )
         assert dataset.records[30000142].response_metadata_id == (
@@ -70,7 +70,7 @@ def test_system_cost_indices_current_state_selects_latest_snapshot() -> None:
     """System-cost state reads the highest response metadata ID."""
     connection = _make_connection()
     for received_at in ("2026-09-01T00:00:00Z", "2026-09-02T00:00:00Z"):
-        query_helpers.write_system_cost_indices(
+        write.system_cost_indices(
             connection,
             ERM.GetIndustrySystems(
                 received_at=received_at,
@@ -126,7 +126,7 @@ def test_update_markets_prices_skips_current_response(
 ) -> None:
     """An unexpired global prices response skips the ESI request."""
     connection = _make_connection()
-    query_helpers.write_markets_prices(
+    write.markets_prices(
         connection,
         ERM.GetMarketsPrices(
             received_at="2026-09-01T00:00:00Z",
@@ -169,7 +169,7 @@ def test_update_markets_prices_reports_validation_failure(
     assert result.update_successful is False
     assert result.failure_message == "invalid price response"
     assert result.new_state is None
-    assert query_helpers.get_markets_prices_responses(connection) == []
+    assert read.markets_prices_responses(connection) == []
 
 
 def test_update_market_orders_persists_new_region_response(
@@ -203,7 +203,7 @@ def test_update_market_orders_persists_new_region_response(
     assert result.update_successful is True
     assert result.new_state is not None
     assert result.new_state.region_id == region_id
-    assert len(query_helpers.get_market_orders_responses(connection, region_id)) == 1
+    assert len(read.market_orders_responses(connection, region_id)) == 1
 
 
 def test_update_market_orders_rejects_duplicate_timestamp(
@@ -217,7 +217,7 @@ def test_update_market_orders_rejects_duplicate_timestamp(
         region_id=10000002,
         orders=[],
     )
-    query_helpers.write_market_orders(connection, existing)
+    write.market_orders(connection, existing)
     raw_response = object()
     fetch = AsyncMock(return_value=raw_response)
     monkeypatch.setattr(market_orders.EsiFetch, "region_market_orders", fetch)
@@ -236,7 +236,7 @@ def test_update_market_orders_rejects_duplicate_timestamp(
     assert result.update_successful is False
     assert result.update_not_required is False
     assert "previously stored" in result.failure_message
-    assert len(query_helpers.get_market_orders_responses(connection, 10000002)) == 1
+    assert len(read.market_orders_responses(connection, 10000002)) == 1
 
 
 def test_update_corporation_industry_jobs_passes_credentials_and_persists(

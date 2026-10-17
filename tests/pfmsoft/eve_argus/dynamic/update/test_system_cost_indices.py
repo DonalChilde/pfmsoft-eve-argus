@@ -2,9 +2,8 @@
 
 import sqlite3
 
-from pfmsoft.eve_argus.dynamic.db import load_table_definitions
-
 from pfmsoft.eve_argus.dynamic.models import SystemCostIndicesResponse
+from pfmsoft.eve_argus.dynamic.util import load_table_definitions
 from pfmsoft.eve_argus.fetch_esi.system_cost_indices import _check_db_status
 
 
