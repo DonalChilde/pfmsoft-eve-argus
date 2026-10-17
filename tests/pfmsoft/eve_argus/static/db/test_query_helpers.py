@@ -86,7 +86,7 @@ def test_write_industrial_activities_writes_string_fields() -> None:
         }
     )
 
-    query_helpers.write_industrial_activities(connection, dataset)
+    query_helpers.write_industry_activities(connection, dataset)
 
     assert query_helpers.get_industry_activities(connection) == {
         1: ASM.IndustryActivityRecord(

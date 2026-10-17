@@ -742,15 +742,15 @@ def write_map_solar_systems(
 
 
 @log_timing(logger=logger, level=_timing_log_level)
-def write_industrial_activities(
+def write_industry_activities(
     connection: sqlite3.Connection,
     industrial_activities: EsdModels.IndustryActivitiesDataset,
 ) -> None:
-    """Write the industrial activities dataset to the database."""
+    """Write the industry activities dataset to the database."""
     with connection:
         connection.executemany(
             """
-            INSERT INTO industrial_activities (activity_id, name, description)
+            INSERT INTO industry_activities (activity_id, name, description)
             VALUES (?, ?, ?)
             """,
             (

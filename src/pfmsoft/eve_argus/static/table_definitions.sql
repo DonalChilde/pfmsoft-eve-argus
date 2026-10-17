@@ -168,7 +168,7 @@ CREATE TABLE IF NOT EXISTS market_groups (
 ) STRICT;
 
 -- Industrial Activities
-CREATE TABLE IF NOT EXISTS industrial_activities (
+CREATE TABLE IF NOT EXISTS industry_activities (
     activity_id INTEGER PRIMARY KEY,
     name TEXT NOT NULL,
     description TEXT NOT NULL
