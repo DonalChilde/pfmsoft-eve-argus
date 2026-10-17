@@ -7,9 +7,7 @@ Run against the current local export with:
     uv run pytest tests/pfmsoft/eve_argus/esd/test_load_validate.py \
         --esd-static-db dev/tmp/sde-db/eve_static_data_3464040_yaml.db
 
-Mock-backed tests run without the option. Strict xfails document existing
-raw-dataset validation defects.
-Use ``--runxfail`` to reproduce those failures without expected-failure handling.
+Mock-backed loader tests and validation unit tests run without the option.
 """
 
 from collections.abc import Callable, Iterator
@@ -168,12 +166,6 @@ _CASES = (
     ),
 )
 
-_RAW_VALIDATION_BUG = pytest.mark.xfail(
-    strict=True,
-    raises=ValidationError,
-    reason="Validators pass raw records to models requiring a 'dataset' envelope",
-)
-
 
 @pytest.fixture(params=_CASES, ids=lambda case: case.name)
 def case(request: pytest.FixtureRequest) -> DatasetCase:
@@ -233,7 +225,6 @@ def test_load_sde_metadata(db_mock: MagicMock, metadata: SdeMetadata) -> None:
     db_mock.query.get_str_records.assert_not_called()
 
 
-@_RAW_VALIDATION_BUG
 @pytest.mark.parametrize("empty", [False, True], ids=["records", "empty"])
 def test_validate_raw_records(case: DatasetCase, *, empty: bool) -> None:
     """Accept the raw loader output, including an empty dataset, without data loss."""
@@ -250,11 +241,27 @@ def test_validate_raw_records(case: DatasetCase, *, empty: bool) -> None:
     )
 
 
-def test_representative_records_match_schema(case: DatasetCase) -> None:
-    """Ensure valid test records are independent of the validator envelope defect."""
-    result = case.model(dataset={1: case.record})
+def test_validate_rejects_invalid_record(case: DatasetCase) -> None:
+    """Reject malformed records at the record's location inside the dataset."""
+    with pytest.raises(ValidationError) as exc_info:
+        case.validator({1: "invalid"})  # type: ignore[dict-item]
 
-    assert isinstance(result.dataset[1], case.record_type)
+    assert any(
+        error["loc"] == ("dataset", 1) and error["type"] == "dataclass_type"
+        for error in exc_info.value.errors()
+    )
+
+
+def test_validate_rejects_invalid_key(case: DatasetCase) -> None:
+    """Reject keys that cannot be parsed as integer record IDs."""
+    with pytest.raises(ValidationError) as exc_info:
+        case.validator({"invalid": case.record})  # type: ignore[dict-item]
+
+    assert any(
+        error["loc"] == ("dataset", "invalid", "[key]")
+        and error["type"] == "int_parsing"
+        for error in exc_info.value.errors()
+    )
 
 
 def test_validate_sde_metadata(metadata: SdeMetadata) -> None:
@@ -291,25 +298,9 @@ def test_live_load_records(
     assert all(isinstance(record, dict) for record in result.values())
 
 
-def test_live_records_match_schema(
-    case: DatasetCase, live_db: EveSdDbQueryManager
-) -> None:
-    """Check every live record against its schema independently of wrapper defects."""
-    raw = dict(live_db.query.get_int_records(case.name))
-
-    result = case.model(dataset=raw)
-
-    assert raw
-    assert set(result.dataset) == set(raw)
-    assert all(
-        isinstance(record, case.record_type) for record in result.dataset.values()
-    )
-
-
-@_RAW_VALIDATION_BUG
 def test_live_validate_records(case: DatasetCase, live_db: EveSdDbQueryManager) -> None:
     """Validate the complete live dataset, not just a sample of records."""
-    raw = dict(live_db.query.get_int_records(case.name))
+    raw = case.loader(live_db)
     expected = case.model(dataset=raw)
 
     result = case.validator(raw)
