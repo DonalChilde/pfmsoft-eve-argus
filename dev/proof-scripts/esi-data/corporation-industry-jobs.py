@@ -21,7 +21,7 @@ from _shared import (
 
 from pfmsoft.eve_argus.data_loaders.esi_responses import EsiResponseLoader
 from pfmsoft.eve_argus.models.esi import esi_response_models
-from pfmsoft.eve_argus.reports.corp_industry_jobs import (
+from pfmsoft.eve_argus.reports.old.corp_industry_jobs import (
     CollectedIds,
     CollectedIdsRoot,
     CorporationIndustryJobsNamed,
@@ -29,7 +29,7 @@ from pfmsoft.eve_argus.reports.corp_industry_jobs import (
     collect_ids_for_lookup,
     create_corporation_industry_jobs_named,
 )
-from pfmsoft.eve_argus.reports.corp_industry_jobs_markdown import (
+from pfmsoft.eve_argus.reports.old.corp_industry_jobs_markdown import (
     render_corporation_industry_jobs_markdown,
 )
 

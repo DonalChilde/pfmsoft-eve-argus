@@ -11,7 +11,7 @@ from importlib.resources import files
 from jinja2 import Environment, FileSystemLoader, StrictUndefined
 from whenever import Instant
 
-from pfmsoft.eve_argus.reports.corp_missing_bpo import (
+from pfmsoft.eve_argus.reports.old.corp_missing_bpo import (
     CorpBpoReport,
     MissingBpoRow,
     OwnedBpoRow,

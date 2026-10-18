@@ -10,7 +10,7 @@ from whenever import Instant
 from pfmsoft.eve_argus.models.esi.esi_response_models import (
     GetCorporationsCorporationIdIndustryJobsDetail_Status,
 )
-from pfmsoft.eve_argus.reports.corp_industry_jobs import (
+from pfmsoft.eve_argus.reports.old.corp_industry_jobs import (
     CorporationIndustryJobDetailedNamed,
     CorporationIndustryJobsNamed,
 )
