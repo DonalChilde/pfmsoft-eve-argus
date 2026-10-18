@@ -141,6 +141,14 @@ class CorporationIndustryJobsResponse(ResponseMetadata):
 
 @dataclass(slots=True, kw_only=True, frozen=True)
 class CorporationBlueprintRecord:
+    """Represents a corporation blueprint record.
+
+    Note that `quantity` is -1 for a blueprint original, -2 for a blueprint copy,
+    and a positive integer for an unprocessed stack of originals (e.g. fresh from the
+    market). `runs` is -1 for an original, otherwise the number of runs remaining
+    on the copy.
+    """
+
     corporation_id: int
     item_id: int
     type_id: int
