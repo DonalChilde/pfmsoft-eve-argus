@@ -6,8 +6,8 @@ from decimal import Decimal
 
 import pytest
 
-from pfmsoft.eve_argus.dynamic.db import load_table_definitions, query_helpers
-from pfmsoft.eve_argus.dynamic.db.models import (
+from pfmsoft.eve_argus.dynamic import read, util, write
+from pfmsoft.eve_argus.dynamic.models import (
     BuySellOrders,
     BuySellSummary,
     CorporationBlueprintRecord,
@@ -35,7 +35,7 @@ from pfmsoft.eve_argus.esi import models as ERM
 
 def _make_connection() -> sqlite3.Connection:
     connection = sqlite3.connect(":memory:")
-    connection.executescript(load_table_definitions())
+    connection.executescript(util.load_table_definitions())
     return connection
 
 
@@ -82,9 +82,9 @@ def test_write_market_orders_rolls_back_duplicate_response_metadata() -> None:
         orders=[],
     )
 
-    query_helpers.write_market_orders(connection, response)
+    write.market_orders(connection, response)
     with pytest.raises(sqlite3.IntegrityError):
-        query_helpers.write_market_orders(connection, response)
+        write.market_orders(connection, response)
 
     assert connection.execute("SELECT count(*) FROM response_metadata").fetchone() == (
         1,
@@ -101,12 +101,12 @@ def test_write_market_orders_allows_multiple_sets_per_region() -> None:
         orders=[],
     )
 
-    query_helpers.write_market_orders(connection, response)
-    query_helpers.write_market_orders(
+    write.market_orders(connection, response)
+    write.market_orders(
         connection, response.model_copy(update={"received_at": "2026-09-02T00:00:00Z"})
     )
 
-    assert len(query_helpers.get_market_orders_responses(connection, 10000002)) == 2
+    assert len(read.market_orders_responses(connection, 10000002)) == 2
 
 
 def test_order_summary_schema_tracks_scopes_and_type_membership() -> None:
@@ -211,7 +211,7 @@ def test_write_and_get_order_summaries_round_trip_both_sides() -> None:
         }
     )
 
-    batch_id = query_helpers.write_order_summaries(connection, dataset)
+    batch_id = write.order_summaries(connection, dataset)
 
     assert isinstance(batch_id, int)
     assert connection.execute(
@@ -220,7 +220,7 @@ def test_write_and_get_order_summaries_round_trip_both_sides() -> None:
     assert connection.execute("SELECT count(*) FROM response_metadata").fetchone() == (
         1,
     )
-    assert query_helpers.get_order_summaries(connection, batch_id) == dataset
+    assert read.order_summaries(connection, batch_id) == dataset
 
 
 def test_write_order_summaries_accepts_application_row_factory() -> None:
@@ -230,9 +230,9 @@ def test_write_order_summaries_accepts_application_row_factory() -> None:
     _insert_source_order_response(connection)
     dataset = _summary_dataset()
 
-    batch_id = query_helpers.write_order_summaries(connection, dataset)
+    batch_id = write.order_summaries(connection, dataset)
 
-    assert query_helpers.get_order_summaries(connection, batch_id) == dataset
+    assert read.order_summaries(connection, batch_id) == dataset
 
 
 def test_order_summaries_preserve_empty_and_one_sided_types() -> None:
@@ -241,9 +241,9 @@ def test_order_summaries_preserve_empty_and_one_sided_types() -> None:
     _insert_source_order_response(connection)
     empty = _summary_dataset()
 
-    batch_id = query_helpers.write_order_summaries(connection, empty)
+    batch_id = write.order_summaries(connection, empty)
 
-    assert query_helpers.get_order_summaries(connection, batch_id) == empty
+    assert read.order_summaries(connection, batch_id) == empty
     one_side = _summary_dataset(
         records={
             34: BuySellSummary(
@@ -254,13 +254,13 @@ def test_order_summaries_preserve_empty_and_one_sided_types() -> None:
         }
     )
 
-    assert query_helpers.write_order_summaries(connection, one_side) == batch_id
-    assert query_helpers.get_order_summaries(connection, batch_id) == one_side
+    assert write.order_summaries(connection, one_side) == batch_id
+    assert read.order_summaries(connection, batch_id) == one_side
     assert connection.execute(
         "SELECT type_id FROM order_summary_types ORDER BY type_id"
     ).fetchall() == [(34,), (35,)]
-    assert query_helpers.write_order_summaries(connection, empty) == batch_id
-    assert query_helpers.get_order_summaries(connection, batch_id) == empty
+    assert write.order_summaries(connection, empty) == batch_id
+    assert read.order_summaries(connection, batch_id) == empty
     assert connection.execute("SELECT count(*) FROM order_summaries").fetchone() == (0,)
 
 
@@ -271,14 +271,12 @@ def test_order_summary_responses_discover_independent_scopes() -> None:
     region = _summary_dataset()
     system = _summary_dataset(system_id=30000142)
     location = _summary_dataset(location_id=60003760)
-    region_id = query_helpers.write_order_summaries(connection, region)
-    system_id = query_helpers.write_order_summaries(connection, system)
-    location_id = query_helpers.write_order_summaries(connection, location)
+    region_id = write.order_summaries(connection, region)
+    system_id = write.order_summaries(connection, system)
+    location_id = write.order_summaries(connection, location)
 
     assert len({region_id, system_id, location_id}) == 3
-    assert query_helpers.get_order_summary_responses(
-        connection, region_id=10000002
-    ) == [
+    assert read.order_summary_responses(connection, region_id=10000002) == [
         OrderSummaryResponse(
             order_summary_response_id=batch_id,
             response_metadata_id=1,
@@ -295,11 +293,11 @@ def test_order_summary_responses_discover_independent_scopes() -> None:
             (region_id, None, None),
         )
     ]
-    assert len(query_helpers.get_order_summary_responses(connection)) == 3
-    assert query_helpers.get_order_summary_responses(connection, region_id=999) == []
-    assert query_helpers.get_order_summaries(connection, system_id) == system
-    assert query_helpers.get_order_summaries(connection, region_id) == region
-    assert query_helpers.get_order_summaries(connection, location_id) == location
+    assert len(read.order_summary_responses(connection)) == 3
+    assert read.order_summary_responses(connection, region_id=999) == []
+    assert read.order_summaries(connection, system_id) == system
+    assert read.order_summaries(connection, region_id) == region
+    assert read.order_summaries(connection, location_id) == location
 
 
 def test_order_summaries_reject_mismatched_source_or_record() -> None:
@@ -314,27 +312,27 @@ def test_order_summaries_reject_mismatched_source_or_record() -> None:
             )
         }
     )
-    batch_id = query_helpers.write_order_summaries(connection, original)
+    batch_id = write.order_summaries(connection, original)
 
     for invalid in (
         replace(original, response_metadata_id=999),
         replace(original, received_at="2026-09-03T00:00:00Z"),
     ):
         with pytest.raises(ValueError):
-            query_helpers.write_order_summaries(connection, invalid)
+            write.order_summaries(connection, invalid)
 
     wrong_side = replace(_summary_record(is_buy_summary=True), is_buy_summary=False)
     with pytest.raises(ValueError, match="does not match"):
-        query_helpers.write_order_summaries(
+        write.order_summaries(
             connection,
             replace(
                 original,
                 records={34: BuySellSummary(buy_summary=wrong_side, sell_summary=None)},
             ),
         )
-    assert query_helpers.get_order_summaries(connection, batch_id) == original
+    assert read.order_summaries(connection, batch_id) == original
     with pytest.raises(ValueError, match="No order summary response"):
-        query_helpers.get_order_summaries(connection, 999)
+        read.order_summaries(connection, 999)
 
 
 def test_order_summaries_reject_invalid_scope_type_and_region() -> None:
@@ -354,7 +352,7 @@ def test_order_summaries_reject_invalid_scope_type_and_region() -> None:
         ),
     ):
         with pytest.raises(ValueError):
-            query_helpers.write_order_summaries(connection, invalid)
+            write.order_summaries(connection, invalid)
     assert connection.execute(
         "SELECT count(*) FROM order_summary_response"
     ).fetchone() == (0,)
@@ -379,16 +377,12 @@ def test_order_summary_replacement_keeps_other_scopes() -> None:
         location_id=60003760,
         records={34: BuySellSummary(buy_summary=None, sell_summary=location_record)},
     )
-    region_id = query_helpers.write_order_summaries(connection, region)
-    location_id = query_helpers.write_order_summaries(connection, location)
+    region_id = write.order_summaries(connection, region)
+    location_id = write.order_summaries(connection, location)
 
-    assert (
-        query_helpers.write_order_summaries(connection, _summary_dataset()) == region_id
-    )
-    assert (
-        query_helpers.get_order_summaries(connection, region_id) == _summary_dataset()
-    )
-    assert query_helpers.get_order_summaries(connection, location_id) == location
+    assert write.order_summaries(connection, _summary_dataset()) == region_id
+    assert read.order_summaries(connection, region_id) == _summary_dataset()
+    assert read.order_summaries(connection, location_id) == location
 
 
 def test_order_summary_schema_rejects_orphan_type_and_duplicate_side() -> None:
@@ -403,7 +397,7 @@ def test_order_summary_schema_rejects_orphan_type_and_duplicate_side() -> None:
             )
         }
     )
-    query_helpers.write_order_summaries(connection, dataset)
+    write.order_summaries(connection, dataset)
 
     assert connection.execute("PRAGMA foreign_keys").fetchone() == (1,)
     with pytest.raises(sqlite3.IntegrityError):
@@ -455,9 +449,9 @@ def test_get_response_metadata_filters_by_ids() -> None:
         ),
     ]
 
-    assert query_helpers.get_response_metadata(connection, None) == expected
-    assert query_helpers.get_response_metadata(connection, {2}) == [expected[1]]
-    assert query_helpers.get_response_metadata(connection, set()) == []
+    assert read.response_metadata(connection, None) == expected
+    assert read.response_metadata(connection, {2}) == [expected[1]]
+    assert read.response_metadata(connection, set()) == []
 
 
 def test_get_markets_prices_responses_returns_linked_metadata() -> None:
@@ -482,7 +476,7 @@ def test_get_markets_prices_responses_returns_linked_metadata() -> None:
         [(1,), (3,)],
     )
 
-    assert query_helpers.get_markets_prices_responses(connection) == [
+    assert read.markets_prices_responses(connection) == [
         MarketsPricesResponse(
             response_metadata_id=3,
             received_at="2026-09-05T00:00:00Z",
@@ -524,7 +518,7 @@ def test_get_markets_prices_returns_dataset_and_converts_prices() -> None:
         [(34, 12345, 10000, 1), (35, None, 250, 1)],
     )
 
-    assert query_helpers.get_markets_prices(connection, 1) == MarketsPricesDataset(
+    assert read.markets_prices(connection, 1) == MarketsPricesDataset(
         response_metadata_id=1,
         received_at="2026-09-01T00:00:00Z",
         expires_at="2026-09-02T00:00:00Z",
@@ -630,7 +624,7 @@ def test_get_market_orders_returns_grouped_buy_and_sell_order_records() -> None:
         ],
     )
 
-    assert query_helpers.get_market_orders_responses(connection, None) == [
+    assert read.market_orders_responses(connection, None) == [
         MarketOrdersResponse(
             response_metadata_id=2,
             received_at="2026-09-03T00:00:00Z",
@@ -646,7 +640,7 @@ def test_get_market_orders_returns_grouped_buy_and_sell_order_records() -> None:
             region_id=10000002,
         ),
     ]
-    assert query_helpers.get_market_orders(connection, 1) == MarketOrdersDataset(
+    assert read.market_orders(connection, 1) == MarketOrdersDataset(
         response_metadata_id=1,
         received_at="2026-09-01T00:00:00Z",
         expires_at="2026-09-02T00:00:00Z",
@@ -726,7 +720,7 @@ def test_get_system_cost_indices_returns_dataset_and_converts_values() -> None:
         ],
     )
 
-    assert query_helpers.get_system_cost_indices_responses(connection) == [
+    assert read.system_cost_indices_responses(connection) == [
         SystemCostIndicesResponse(
             response_metadata_id=1,
             received_at="2026-09-01T00:00:00Z",
@@ -734,9 +728,7 @@ def test_get_system_cost_indices_returns_dataset_and_converts_values() -> None:
             argus_expires_at=None,
         )
     ]
-    assert query_helpers.get_system_cost_indices(
-        connection, 1
-    ) == SystemCostIndicesDataset(
+    assert read.system_cost_indices(connection, 1) == SystemCostIndicesDataset(
         response_metadata_id=1,
         received_at="2026-09-01T00:00:00Z",
         expires_at="2026-09-02T00:00:00Z",
@@ -853,7 +845,7 @@ def test_get_corporation_industry_jobs_returns_dataset_and_converts_cost() -> No
         ],
     )
 
-    assert query_helpers.get_corporation_industry_jobs_responses(connection, None) == [
+    assert read.corporation_industry_jobs_responses(connection, None) == [
         CorporationIndustryJobsResponse(
             response_metadata_id=2,
             received_at="2026-09-03T00:00:00Z",
@@ -869,7 +861,7 @@ def test_get_corporation_industry_jobs_returns_dataset_and_converts_cost() -> No
             corporation_id=98000001,
         ),
     ]
-    assert query_helpers.get_corporation_industry_jobs(
+    assert read.corporation_industry_jobs(
         connection, 1
     ) == CorporationIndustryJobsDataset(
         response_metadata_id=1,
@@ -943,7 +935,7 @@ def test_get_corporation_blueprints_returns_dataset() -> None:
         ],
     )
 
-    assert query_helpers.get_corporation_blueprints_responses(connection, None) == [
+    assert read.corporation_blueprints_responses(connection, None) == [
         CorporationBlueprintsResponse(
             response_metadata_id=2,
             received_at="2026-09-03T00:00:00Z",
@@ -959,9 +951,7 @@ def test_get_corporation_blueprints_returns_dataset() -> None:
             corporation_id=98000001,
         ),
     ]
-    assert query_helpers.get_corporation_blueprints(
-        connection, 1
-    ) == CorporationBlueprintsDataset(
+    assert read.corporation_blueprints(connection, 1) == CorporationBlueprintsDataset(
         response_metadata_id=1,
         received_at="2026-09-01T00:00:00Z",
         expires_at="2026-09-02T00:00:00Z",

@@ -2,9 +2,10 @@
 
 import sqlite3
 
-from pfmsoft.eve_argus.dynamic.db import load_table_definitions
-from pfmsoft.eve_argus.dynamic.db.models import SystemCostIndicesResponse
-from pfmsoft.eve_argus.dynamic.update.system_cost_indices import _check_db_status
+from pfmsoft.eve_argus.dynamic.models import SystemCostIndicesResponse
+from pfmsoft.eve_argus.dynamic.util import load_table_definitions
+from pfmsoft.eve_argus.fetch_esi.system_cost_indices import _current_state
+from pfmsoft.eve_argus.fetch_esi.update import is_expired
 
 
 def _make_connection() -> sqlite3.Connection:
@@ -34,7 +35,7 @@ def _insert_response(
     return response_metadata_id
 
 
-def test_check_db_status_uses_latest_system_cost_indices_response() -> None:
+def test_current_state_uses_latest_system_cost_indices_response() -> None:
     """An older expired response must not hide the latest unexpired response."""
     connection = _make_connection()
     _insert_response(
@@ -48,15 +49,12 @@ def test_check_db_status_uses_latest_system_cost_indices_response() -> None:
         expires_at="2999-01-01T00:00:00Z",
     )
 
-    status = _check_db_status(connection)
+    current = _current_state(connection)
 
-    assert status == type(status)(
-        exists=True,
-        expired=False,
-        current_state=SystemCostIndicesResponse(
-            response_metadata_id=latest_response_id,
-            received_at="2026-09-03T00:00:00Z",
-            expires_at="2999-01-01T00:00:00Z",
-            argus_expires_at=None,
-        ),
+    assert current == SystemCostIndicesResponse(
+        response_metadata_id=latest_response_id,
+        received_at="2026-09-03T00:00:00Z",
+        expires_at="2999-01-01T00:00:00Z",
+        argus_expires_at=None,
     )
+    assert not is_expired(current)
