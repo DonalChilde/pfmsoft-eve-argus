@@ -1,5 +1,52 @@
 # Pfmsoft Eve Argus
 
+## Corporation blueprints report
+
+```bash
+uv run eve-argus reports corporation-blueprints --corporation-id 98196252 --to ./reports
+```
+
+Uses the latest stored blueprint snapshot for the explicit or configured
+corporation, without refreshing inventory. Populate it separately with
+`uv run eve-argus fetch corporation-blueprints`. Types and market groups must
+already exist in the configured static database.
+
+Four files share the stem
+`corporation-blueprints-<corporation_id>-<file_safe_received_at>`:
+
+- `.json`: source metadata, all enriched inventory, original summaries, missing
+  BPOs, and name-resolution diagnostics.
+- `.md`: freshness, owned-original summaries and missing BPOs by market path,
+  plus separate detailed originals/stacks and copies tables.
+- `-owned.csv`: one row per original/stack/copy source record, including raw
+  quantity/runs sentinels, names, location flags, and metadata.
+- `-missing-bpo.csv`: one row per missing published market-blueprint type with
+  nullable static base price (not a live market quote).
+
+All originals, including unpublished/nonmarket types, appear in inventory and
+original summaries. Missing originals are compared only against published types
+beneath blueprint market group 2. Copies alone do not satisfy BPO ownership.
+Quantity `-1` is one original, `-2` one copy, and positive quantities count stacked
+originals; other values are errors. Copy runs are not item counts. Summary ME/TE
+comes from one actual original, selected by highest ME, TE, raw quantity, then
+smallest item ID.
+
+CSV columns are fixed, optional values use empty cells, paths use `/`, and empty
+views retain headers. JSON preserves nulls and raw fields. An empty snapshot has
+no inventory but still lists all eligible missing originals. Missing snapshots
+are errors; expired snapshots remain usable with stale-data notices.
+
+Only corporation and station-range location IDs are sent to public name lookup.
+Private/container locations remain `UNKNOWN`, with IDs and flags preserved.
+Name-resolution warnings are omitted from CLI/Markdown but retained in JSON/logs;
+actual lookup failures are errors.
+
+The directory is created as needed. Source receipt time is sanitized with the
+existing filename helper; generation time does not affect filenames. Use
+`--overwrite` when regenerating a snapshot and `--quiet` to suppress progress,
+not errors or stale-data warnings. All formats render before writes begin;
+filesystem errors may still leave partial output and return a nonzero exit status.
+
 ## Corporation industry jobs report
 
 Generate JSON, CSV, and Markdown from a corporation's latest stored jobs snapshot:

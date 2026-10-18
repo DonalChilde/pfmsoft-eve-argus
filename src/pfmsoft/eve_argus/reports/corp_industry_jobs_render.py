@@ -3,13 +3,14 @@
 import csv
 from collections import defaultdict
 from dataclasses import asdict, dataclass, fields
-from html import escape
 from io import StringIO
 
 from jinja2 import Environment, PackageLoader, StrictUndefined
+from mdformat import text as mdformat_text  # type: ignore
 from pydantic import TypeAdapter
 from whenever import Instant
 
+from pfmsoft.eve_argus.helpers.markdown import markdown_cell as _markdown_cell
 from pfmsoft.eve_argus.reports.corp_industry_jobs import (
     CorporationJobReportRow,
     CorporationJobsReport,
@@ -96,13 +97,11 @@ def build_markdown_context(report: CorporationJobsReport) -> CorporationJobsCont
                 installer_id=installer_id,
                 installer_name=rows[0].installer_name,
                 manufacturing=_counts(by_category["manufacturing"]),
-                research=_counts(
-                    [
-                        row
-                        for category in ("copying", "invention", "me", "te")
-                        for row in by_category[category]
-                    ]
-                ),
+                research=_counts([
+                    row
+                    for category in ("copying", "invention", "me", "te")
+                    for row in by_category[category]
+                ]),
                 copying=_counts(by_category["copying"]),
                 invention=_counts(by_category["invention"]),
                 me=_counts(by_category["me"]),
@@ -171,13 +170,6 @@ def render_corporation_jobs_csv(report: CorporationJobsReport) -> str:
     return stream.getvalue()
 
 
-def _markdown_cell(value: object) -> str:
-    text = escape(str(value), quote=False).replace("\\", "\\\\")
-    for character in ("|", "`", "[", "]", "*", "_"):
-        text = text.replace(character, "\\" + character)
-    return text.replace("\r\n", "\n").replace("\r", "\n").replace("\n", "<br>")
-
-
 def _remaining(seconds: int) -> str:
     days, remainder = divmod(seconds, 86400)
     hours, remainder = divmod(remainder, 3600)
@@ -206,6 +198,7 @@ def render_corporation_jobs_markdown(report: CorporationJobsReport) -> str:
         trim_blocks=True,
         lstrip_blocks=True,
     )
-    return environment.get_template(
+    rendered = environment.get_template(
         "report.md.jinja2", globals={"cell": _markdown_cell, "remaining": _remaining}
     ).render(context=build_markdown_context(report))
+    return mdformat_text(rendered, extensions=["tables"])

@@ -141,6 +141,15 @@ class CorporationIndustryJobsResponse(ResponseMetadata):
 
 @dataclass(slots=True, kw_only=True, frozen=True)
 class CorporationBlueprintRecord:
+    """A stored original, original stack, or copy, preserving raw ESI sentinels.
+
+    quantity -1 means one original, -2 means one copy, and positive values count
+    stacked originals. runs is not an item count and remains unmodified.
+    item_id and response_metadata_id are not universe-name lookup identifiers.
+    location_id may identify a station, private structure, or container; only
+    eligible station IDs are submitted to public name lookup by blueprint reports.
+    """
+
     """Represents a corporation blueprint record.
 
     Note that `quantity` is -1 for a blueprint original, -2 for a blueprint copy,

@@ -502,8 +502,14 @@ def test_markdown_tables_have_separate_aligned_lines(
     markdown = render_corporation_jobs_markdown(report)
     table_lines = [line for line in markdown.splitlines() if line.startswith("|")]
     assert len(table_lines) == 6  # Two three-line tables: summary and delivered.
-    assert "| Facility | Location |" in table_lines[3]
-    assert "| Factory (60014572) | Station (60014573) |" in table_lines[5]
+    header = [cell.strip() for cell in re.split(r"(?<!\\)\|", table_lines[3])[1:-1]]
+    values = [cell.strip() for cell in re.split(r"(?<!\\)\|", table_lines[5])[1:-1]]
+    facility_index = header.index("Facility")
+    assert header[facility_index + 1] == "Location"
+    assert values[facility_index : facility_index + 2] == [
+        "Factory (60014572)",
+        "Station (60014573)",
+    ]
     for index in (0, 3):
         widths = [
             len(re.findall(r"(?<!\\)\|", line))

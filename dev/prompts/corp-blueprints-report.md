@@ -455,3 +455,47 @@ uv run ruff format --check src/pfmsoft/eve_argus/reports/corp_blueprints*.py \
 Check Pylance diagnostics on touched Python modules and run existing jobs-report
 tests as a registration/regression check. No application implementation or live
 blueprint-location probing has been performed during this planning step.
+
+## Implementation progress (2026-10-18)
+
+- Implemented collection/immutable models in
+  [corp_blueprints.py](../../src/pfmsoft/eve_argus/reports/corp_blueprints.py).
+- Implemented JSON, owned CSV, missing-BPO CSV, and typed Markdown contexts in
+  [corp_blueprints_render.py](../../src/pfmsoft/eve_argus/reports/corp_blueprints_render.py)
+  and packaged [templates](../../src/pfmsoft/eve_argus/templates/corp_blueprints).
+- Registered [corporation-blueprints](../../src/pfmsoft/eve_argus/cli/reports/corporation_blueprints.py)
+  under the reports CLI, with all four timestamped files and agreed options.
+- Quantity, aggregation, enrichment, rendering, and CLI tests share synthetic
+  fixtures in [test_corp_blueprints.py](../../tests/pfmsoft/eve_argus/reports/test_corp_blueprints.py)
+  rather than duplicating fixtures across three test modules.
+- Extracted unchanged Markdown escaping to a small
+  [shared helper](../../src/pfmsoft/eve_argus/helpers/markdown.py); jobs report
+  behavior is preserved and covered by regression tests.
+- Legacy report modules/templates have not been removed.
+
+### Location investigation
+
+A read-only inspection of the latest configured snapshot found 1,249 records:
+794 original records, 109 copy records, and 346 stack records. Location values
+included two station-range IDs and eleven 64-bit private IDs. Counts here refer
+to records, not physical originals summed from stacks.
+
+The [ESI asset-location reference](https://github.com/esi/esi-docs/blob/master/docs/asset_location_id.md)
+documents the station namespace as 60000000-64000000 and distinguishes private
+structures, containers, asset safety, and corporation offices. The blueprint
+collector conservatively submits only station candidates in `[60000000, 64000000)`
+and verifies returned categories. Other locations are `UNKNOWN`; int32 fit alone
+does not qualify an ID. No live blueprint-location requests were needed.
+
+### Implementation validation
+
+- 52 blueprint tests and 64 jobs-report/CLI regression tests pass (116 total).
+- Focused statement/branch coverage is 99% across blueprint collection, renderers,
+  and CLI. Blueprint CLI and renderers have 100% coverage.
+- Scoped Ruff lint/format and diff whitespace checks pass; new production modules
+  and tests have no Pylance diagnostics.
+- A read-only real-dataset smoke check with mocked public names rendered all four
+  formats in memory: 1,249 inventory records, 784 owned-original types, 1,075
+  missing-original types, and 1,265 physical originals. Item/type sets, original
+  counts, and selected actual ME/TE pairs matched the source data. No report files
+  were written and no live ESI requests were made by that check.
