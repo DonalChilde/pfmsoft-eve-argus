@@ -8,6 +8,12 @@ For functions that update the dynamic database:
  - If existing data is found and it is not expired, updates will be skipped.
  - If existing data is not found or is expired, updates will be performed.
  - A results object will be returned indicating the outcome of the update operations.
+
+For functions that update the market history database:
+ - The database will be check for existing data.
+ - If existing data is found and it is not expired, updates will be skipped.
+ - If existing data is not found or is expired, updates will be performed.
+ - A results object will be returned indicating the outcome of the update operations.
 """
 
 from pfmsoft.eve_argus.fetch_esi.corporation_blueprints import (
