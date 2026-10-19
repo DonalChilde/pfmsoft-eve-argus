@@ -1,4 +1,4 @@
-"""Shared update-if-expired workflow for ESI data stored in the dynamic database."""
+"""Shared update-if-expired workflow for ESI data stored in Argus databases."""
 
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass

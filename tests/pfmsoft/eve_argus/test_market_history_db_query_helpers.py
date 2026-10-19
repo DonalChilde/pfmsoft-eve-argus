@@ -1,17 +1,17 @@
-"""Tests for market-history database query helpers."""
+"""Tests for market-history database readers."""
 
 import sqlite3
 from decimal import Decimal
 
 import pytest
 
-from pfmsoft.eve_argus.market_history import models, query_helpers
+from pfmsoft.eve_argus.market_history import models, read, util
 
 
 def test_read_market_history_filters_and_orders_records() -> None:
     """Read matching history newest first and convert prices from cents."""
     connection = sqlite3.connect(":memory:")
-    connection.executescript(query_helpers.load_table_definitions())
+    connection.executescript(util.load_table_definitions())
     connection.executemany(
         """
         INSERT INTO market_history (
@@ -28,7 +28,7 @@ def test_read_market_history_filters_and_orders_records() -> None:
         ],
     )
 
-    records = query_helpers.read_market_history(connection, region_id=10, type_id=20)
+    records = read.read_market_history(connection, region_id=10, type_id=20)
 
     assert records == (
         models.MarketHistoryRecord(
@@ -55,7 +55,7 @@ def test_read_market_history_filters_and_orders_records() -> None:
         ),
     )
 
-    bounded_records = query_helpers.read_market_history_date_range(
+    bounded_records = read.read_market_history_date_range(
         connection,
         region_id=10,
         type_id=20,
@@ -66,7 +66,7 @@ def test_read_market_history_filters_and_orders_records() -> None:
 
     assert [
         record.date
-        for record in query_helpers.read_market_history_date_range(
+        for record in read.read_market_history_date_range(
             connection,
             region_id=10,
             type_id=20,
@@ -76,7 +76,7 @@ def test_read_market_history_filters_and_orders_records() -> None:
     ] == ["2026-09-29"]
     assert [
         record.date
-        for record in query_helpers.read_market_history_date_range(
+        for record in read.read_market_history_date_range(
             connection,
             region_id=10,
             type_id=20,
@@ -86,7 +86,7 @@ def test_read_market_history_filters_and_orders_records() -> None:
     ] == ["2026-09-30"]
     assert [
         record.date
-        for record in query_helpers.read_market_history_date_range(
+        for record in read.read_market_history_date_range(
             connection,
             region_id=10,
             type_id=20,
@@ -95,23 +95,19 @@ def test_read_market_history_filters_and_orders_records() -> None:
         )
     ] == ["2026-09-30", "2026-09-29"]
 
-    assert query_helpers.read_market_history_latest(
+    assert read.read_market_history_latest(
         connection, region_id=10, type_id=20, count=1
     ) == (records[0],)
     with pytest.raises(ValueError, match="count must be positive"):
-        query_helpers.read_market_history_latest(
-            connection, region_id=10, type_id=20, count=0
-        )
+        read.read_market_history_latest(connection, region_id=10, type_id=20, count=0)
     with pytest.raises(ValueError, match="count must be positive"):
-        query_helpers.read_market_history_latest(
-            connection, region_id=10, type_id=20, count=-1
-        )
+        read.read_market_history_latest(connection, region_id=10, type_id=20, count=-1)
 
 
 def test_read_market_history_responses_filter_order_and_group_by_region() -> None:
     """Read response metadata newest first and group region data by type."""
     connection = sqlite3.connect(":memory:")
-    connection.executescript(query_helpers.load_table_definitions())
+    connection.executescript(util.load_table_definitions())
     connection.executemany(
         """
         INSERT INTO market_history_response (
@@ -127,9 +123,7 @@ def test_read_market_history_responses_filter_order_and_group_by_region() -> Non
         ],
     )
 
-    responses = query_helpers.read_market_history_responses(
-        connection, region_id=10, type_id=20
-    )
+    responses = read.read_market_history_responses(connection, region_id=10, type_id=20)
 
     assert responses == (
         models.MarketHistoryResponse(
@@ -150,9 +144,7 @@ def test_read_market_history_responses_filter_order_and_group_by_region() -> Non
         ),
     )
 
-    assert query_helpers.read_market_history_responses_by_region(
-        connection, region_id=10
-    ) == {
+    assert read.read_market_history_responses_by_region(connection, region_id=10) == {
         20: responses,
         21: (
             models.MarketHistoryResponse(
