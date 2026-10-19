@@ -14,11 +14,11 @@ from whenever import Instant
 
 from pfmsoft.eve_argus.data_loaders import esi as FetchEsi
 from pfmsoft.eve_argus.helpers.timing import log_timing
-from pfmsoft.eve_argus.market.history.access import (
+from pfmsoft.eve_argus.market_history.access import (
     MarketHistoryReader,
     MarketHistoryWrite,
 )
-from pfmsoft.eve_argus.market.history.db.models import MarketHistoryResponse
+from pfmsoft.eve_argus.market_history.models import MarketHistoryResponse
 
 logger = logging.getLogger(__name__)
 _timing_log_level = logging.INFO

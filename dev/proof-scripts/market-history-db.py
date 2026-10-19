@@ -15,13 +15,15 @@ from logging import basicConfig
 from pathlib import Path
 from sqlite3 import Connection
 
+from pfmsoft.eve_argus.static.access import ArgusStaticDBQuery
+
 from pfmsoft.eve_argus.eve_argus import EveArgusResources
 from pfmsoft.eve_argus.helpers.market_groups import filter_type_ids_by_market_path
-from pfmsoft.eve_argus.market.history.access import (
+from pfmsoft.eve_argus.market_history.access import (
     MarketHistoryReader,
 )
-from pfmsoft.eve_argus.market.history.db.models import MarketHistoryRecord
-from pfmsoft.eve_argus.market.history.update import (
+from pfmsoft.eve_argus.market_history.models import MarketHistoryRecord
+from pfmsoft.eve_argus.market_history.update import (
     MarketHistoryID,
     MarketHistoryUpdateResult,
     update_histories,
@@ -29,7 +31,6 @@ from pfmsoft.eve_argus.market.history.update import (
 from pfmsoft.eve_argus.models.argus.static import MarketGroupsDataset
 from pfmsoft.eve_argus.models.market_hubs import MARKET_HUBS
 from pfmsoft.eve_argus.settings import get_settings
-from pfmsoft.eve_argus.static.access import ArgusStaticDBQuery
 
 SCRIPT_NAME = "market-history-db"
 PROOF_SCRIPTS_DIR = Path(__file__).parent

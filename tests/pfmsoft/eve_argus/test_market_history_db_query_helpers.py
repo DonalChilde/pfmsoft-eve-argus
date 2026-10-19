@@ -5,7 +5,7 @@ from decimal import Decimal
 
 import pytest
 
-from pfmsoft.eve_argus.market.history.db import models, query_helpers
+from pfmsoft.eve_argus.market_history import models, query_helpers
 
 
 def test_read_market_history_filters_and_orders_records() -> None:
