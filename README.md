@@ -15,6 +15,44 @@ Overlapping dates are replaced and older dates remain stored. Empty responses
 still record metadata. Failures are reported with a nonzero exit status.
 Use `--quiet` to suppress progress and success messages, but not update errors.
 
+### Bulk market history
+
+```bash
+uv run eve-argus fetch market-history-bulk \
+  --region-id 10000002 --region-id 10000043 \
+  --include 4 --include 9 --exclude 187
+```
+
+At least one `--region-id` is required. Regions are validated against the static
+map-regions dataset; terminal output includes their names and IDs. The configured
+static database must contain map regions, market groups, and published types.
+Unknown regions or market-group filters fail before any history requests.
+
+Only published types listed in the market-groups dataset are considered.
+Repeated `--include` values form a union: a type matches if any included group
+appears in its market path, including its directly assigned group. Without
+includes, all market-group type IDs are collected. All `--exclude` values are
+applied afterward, regardless of option order, and exclusions always win.
+Unpublished and nonmarket types are never fetched. Duplicate options do not
+duplicate requests. An empty selection is a successful no-op.
+
+Every selected region/type pair uses the same expiry-aware updater as the
+single-pair command. Updates run concurrently in nonoverlapping batches, bounded
+by `MARKET_HISTORY_BATCH_SIZE = 100`. Existing ESI client caching and rate limiting
+still apply. Omitting filters can result in a large number of requests.
+
+`MARKET_HISTORY_FAILURE_LIMIT = 20` counts failed updates across all regions and
+batches, including raised updater exceptions. At the limit, no further batches
+start; unfinished tasks are cancelled and awaited before resources close.
+Requests already sent cannot be retracted, and updates already committed remain
+stored. Updates finishing during cancellation are still counted, so the final
+failure count can exceed the limit. Cancellation itself is not an update failure.
+
+Output reports progress and final updated, skipped, failed, cancelled, and
+not-started totals. Any failed update produces a nonzero exit status; below the
+limit, other pairs continue. `--quiet` hides routine output, but failures and
+abort notices remain visible.
+
 ## Market hub price summaries
 
 ```bash
