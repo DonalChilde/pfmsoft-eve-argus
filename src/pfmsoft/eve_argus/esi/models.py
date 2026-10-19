@@ -384,9 +384,9 @@ class GetCorporationsCorporationIdBlueprintsDetail_LocationFlag(StrEnum):
 class GetCorporationsCorporationIdBlueprintsDetail(BaseModel):
     """Detail for corporation blueprints response.
 
-    Note that ``quantity`` is -1 for a blueprint original, -2 for a blueprint copy,
+    Note that `quantity` is -1 for a blueprint original, -2 for a blueprint copy,
     and a positive integer for an unprocessed stack of originals (e.g. fresh from the
-    market). ``runs`` is -1 for an original, otherwise the number of runs remaining
+    market). `runs` is -1 for an original, otherwise the number of runs remaining
     on the copy.
     """
 

@@ -10,15 +10,15 @@ The github repository url for this project is https://github.com/DonalChilde/pfm
 
 ### State
 
-Initial project scaffolding, and copy/paste of code.
+Basic functionality complete.
 
 ### Goals for the current Session.
 
-The goals of the current coding session.
+Implementing report output.
 
 ### Key Dependencies
 
-A list of important dependencies, with versions
+Not Defined
 
 ## Commands
 

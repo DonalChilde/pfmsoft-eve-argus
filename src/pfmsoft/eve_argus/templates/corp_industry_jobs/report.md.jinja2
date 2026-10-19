@@ -1,0 +1,60 @@
+# {{ cell(context.report.corporation_name) }} Industry Jobs
+
+Corporation ID: `{{ context.report.corporation_id }}`
+
+Generated at (UTC): `{{ context.report.generated_at }}`
+
+Source response ID: `{{ context.report.response_metadata_id }}`
+
+Received at (UTC): `{{ context.report.received_at }}`
+
+ESI expires at (UTC): `{{ context.report.expires_at or "Unavailable" }}`
+
+Argus expires at (UTC): `{{ context.report.argus_expires_at or "Unavailable" }}`
+
+{% if context.report.is_stale is none %}
+Freshness: unavailable (no source expiration).
+{% elif context.report.is_stale %}
+**STALE:** This stored snapshot has expired. Jobs have not been refreshed.
+{% else %}
+Freshness: current at report generation time.
+{% endif %}
+
+{% if not context.report.jobs %}
+No industry jobs in this stored snapshot.
+
+{% endif %}
+## Character Summary
+
+T/A/R/P = current Total / Active / Ready / Paused. Total excludes delivered,
+cancelled, reverted, and unrecognized statuses. Research aggregates copying,
+invention, ME, and TE. Active jobs past their end time are treated as ready;
+their original status is retained in JSON/CSV and shown in the tables below.
+
+{% macro counts(value) -%}
+{{ value.total }}/{{ value.active }}/{{ value.ready }}/{{ value.paused }}
+{%- endmacro %}
+{% if context.summaries %}
+| Character | Manufacturing (T/A/R/P) | Research (T/A/R/P) | Copying (T/A/R/P) | Invention (T/A/R/P) | ME (T/A/R/P) | TE (T/A/R/P) | Reactions (T/A/R/P) |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+{% for summary in context.summaries %}
+| {{ cell(summary.installer_name) }} ({{ summary.installer_id }}) | {{ counts(summary.manufacturing) }} | {{ counts(summary.research) }} | {{ counts(summary.copying) }} | {{ counts(summary.invention) }} | {{ counts(summary.me) }} | {{ counts(summary.te) }} | {{ counts(summary.reactions) }} |
+{% endfor %}
+{% else %}
+No character jobs.
+{% endif %}
+
+{% for table in context.tables %}
+## {{ table.title }}
+
+{% if table.jobs %}
+| Job ID | Character | Activity | Blueprint | Market Path | Product | Runs | Blueprint Location | Output Location | Facility | Location | Original Status | End |{% if table.status == "paused" %} Paused At |{% elif table.status == "delivered" %} Completed At / By |{% elif table.status == "active" %} Time Remaining |{% endif +%}
+| --- | --- | --- | --- | --- | --- | ---: | --- | --- | --- | --- | --- | --- |{% if table.status in ("paused", "delivered", "active") %} --- |{% endif +%}
+{% for job in table.jobs %}
+| {{ job.job_id }} | {{ cell(job.installer_name) }} | {{ cell(job.activity_name) }} | {{ cell(job.blueprint_name) }} | {{ cell((job.blueprint_market_path | join("/")) if job.blueprint_market_path is not none else "Not in market") }} | {{ cell(job.product_name if job.product_name is not none else "-") }} | {{ job.runs }} | {{ cell(job.blueprint_location_name) }} ({{ job.blueprint_location_id }}) | {{ cell(job.output_location_name) }} ({{ job.output_location_id }}) | {{ cell(job.facility_name) }} ({{ job.facility_id }}) | {{ cell(job.location_name) }} ({{ job.location_id }}) | {{ cell(job.status) }} | {{ cell(job.end_date) }} |{% if table.status == "paused" %} {{ cell(job.pause_date or "-") }} |{% elif table.status == "delivered" %} {{ cell(job.completed_date or "-") }} / {{ cell(job.completed_character_name or "-") }} |{% elif table.status == "active" %} {{ remaining(job.remaining_seconds) }} |{% endif +%}
+{% endfor %}
+{% else %}
+No {{ table.status }} jobs.
+{% endif %}
+
+{% endfor %}

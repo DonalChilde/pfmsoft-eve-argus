@@ -1,5 +1,5 @@
 version = 1
-revision = 3
+revision = 5
 requires-python = ">=3.14"
 
 [options]
@@ -8,10 +8,10 @@ exclude-newer-span = "P1W"
 
 [options.exclude-newer-package]
 pfmsoft-api-request = false
-pfmsoft-eve-snippets = false
-pfmsoft-eve-link = false
 pfmsoft-eve-auth-manager = false
+pfmsoft-eve-link = false
 pfmsoft-eve-sd = false
+pfmsoft-eve-snippets = false
 
 [[package]]
 name = "aiolimiter"
@@ -597,6 +597,8 @@ version = "0.1.0"
 source = { editable = "." }
 dependencies = [
     { name = "jinja2" },
+    { name = "mdformat" },
+    { name = "mdformat-gfm" },
     { name = "pfmsoft-eve-link" },
     { name = "pfmsoft-eve-sd" },
     { name = "pfmsoft-eve-snippets" },
@@ -616,6 +618,8 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "jinja2", specifier = ">=3.1.6" },
+    { name = "mdformat", specifier = ">=1.0.0" },
+    { name = "mdformat-gfm", specifier = ">=1.0.0" },
     { name = "pfmsoft-eve-link", specifier = ">=0.4.10" },
     { name = "pfmsoft-eve-sd", specifier = ">=0.4.6" },
     { name = "pfmsoft-eve-snippets", specifier = ">=0.1.8" },

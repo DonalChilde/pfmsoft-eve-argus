@@ -22,13 +22,13 @@ from pfmsoft.eve_argus.data_loaders.esd_datasets import EsdDatasetsLoader
 from pfmsoft.eve_argus.data_loaders.esi_responses import EsiResponseLoader
 from pfmsoft.eve_argus.data_transform.market_groups import transform_market_groups
 from pfmsoft.eve_argus.models.esi import esi_response_models
-from pfmsoft.eve_argus.reports.corp_missing_bpo import (
+from pfmsoft.eve_argus.reports.old.corp_missing_bpo import (
     CorpBpoReport,
     CorpBpoReportRoot,
     collect_bpo_type_ids,
     generate_corp_missing_bpo_report,
 )
-from pfmsoft.eve_argus.reports.corp_missing_bpo_markdown import (
+from pfmsoft.eve_argus.reports.old.corp_missing_bpo_markdown import (
     render_corp_bpo_report_markdown,
 )
 

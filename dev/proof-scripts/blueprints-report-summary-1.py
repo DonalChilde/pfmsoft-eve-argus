@@ -8,7 +8,7 @@ from pfmsoft.eve_argus.data_loaders.esd_datasets import EsdDatasetsLoader
 from pfmsoft.eve_argus.eve_argus import EveArgusResources
 from pfmsoft.eve_argus.models.esd import esd_datasets
 from pfmsoft.eve_argus.models.esi import argus_response_models
-from pfmsoft.eve_argus.reports.blueprint_summary_1 import (
+from pfmsoft.eve_argus.reports.old.blueprint_summary_1 import (
     BlueprintSummary1Report,
     generate_blueprint_summary_1_report,
 )

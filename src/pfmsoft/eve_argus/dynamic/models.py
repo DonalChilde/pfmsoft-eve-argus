@@ -79,10 +79,29 @@ class MarketsPricesResponse(ResponseMetadata):
 
 @dataclass(slots=True, kw_only=True, frozen=True)
 class CorporationIndustryJobRow:
+    """A stored industry job, including IDs from several unrelated namespaces.
+
+    Do not send all ID fields to PostUniverseNames. blueprint_id identifies an item,
+    job_id identifies a job, and response_metadata_id is local database metadata.
+    activity_id belongs to the static industry activities dataset; small activity or
+    response IDs may resolve to unrelated inventory types without an API error.
+    blueprint_type_id and product_type_id have names in the static types dataset.
+
+    blueprint_location_id and output_location_id may identify private corporation
+    locations. In the development snapshot probed on 2026-10-18, these were 64-bit
+    IDs rejected with HTTP 400 because PostUniverseNames requires int32 IDs. Exclude
+    these fields from report name lookups and retain their raw IDs with UNKNOWN names.
+    facility_id and location_id resolved as public stations in that sample, but may
+    instead identify private structures, which also cannot be sent as int32 IDs.
+    This sample does not establish that every in-range location is publicly resolvable.
+    """
+
     corporation_id: int
     activity_id: int
+    """The activity ID associated with the industry job. From industry_activities table."""
     blueprint_id: int
     blueprint_location_id: int
+    """The location ID of the blueprint. Not a valid target for universe_names."""
     blueprint_type_id: int
     completed_character_id: int | None
     completed_date: str | None
@@ -95,6 +114,7 @@ class CorporationIndustryJobRow:
     licensed_runs: int | None
     location_id: int
     output_location_id: int
+    """The output location ID. Not a valid target for universe_names."""
     pause_date: str | None
     probability: float | None
     product_type_id: int | None
@@ -103,6 +123,7 @@ class CorporationIndustryJobRow:
     status: str
     successful_runs: int | None
     response_metadata_id: int
+    """The response metadata ID associated with the industry job."""
 
 
 @dataclass(slots=True, kw_only=True, frozen=True)
@@ -120,6 +141,23 @@ class CorporationIndustryJobsResponse(ResponseMetadata):
 
 @dataclass(slots=True, kw_only=True, frozen=True)
 class CorporationBlueprintRecord:
+    """A stored original, original stack, or copy, preserving raw ESI sentinels.
+
+    quantity -1 means one original, -2 means one copy, and positive values count
+    stacked originals. runs is not an item count and remains unmodified.
+    item_id and response_metadata_id are not universe-name lookup identifiers.
+    location_id may identify a station, private structure, or container; only
+    eligible station IDs are submitted to public name lookup by blueprint reports.
+    """
+
+    """Represents a corporation blueprint record.
+
+    Note that `quantity` is -1 for a blueprint original, -2 for a blueprint copy,
+    and a positive integer for an unprocessed stack of originals (e.g. fresh from the
+    market). `runs` is -1 for an original, otherwise the number of runs remaining
+    on the copy.
+    """
+
     corporation_id: int
     item_id: int
     type_id: int

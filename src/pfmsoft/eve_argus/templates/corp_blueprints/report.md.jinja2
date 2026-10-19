@@ -1,0 +1,93 @@
+# {{ cell(context.report.corporation_name) }} Blueprints
+
+Corporation ID: `{{ context.report.corporation_id }}`
+
+Generated at (UTC): `{{ context.report.generated_at }}`
+
+Source response ID: `{{ context.report.response_metadata_id }}`
+
+Received at (UTC): `{{ context.report.received_at }}`
+
+ESI expires at (UTC): `{{ context.report.expires_at or "Unavailable" }}`
+
+Argus expires at (UTC): `{{ context.report.argus_expires_at or "Unavailable" }}`
+
+{% if context.report.is_stale is none %}
+Freshness: unavailable (no source expiration).
+{% elif context.report.is_stale %}
+**STALE:** This stored snapshot has expired. Inventory has not been refreshed.
+{% else %}
+Freshness: current at report generation time.
+{% endif %}
+
+## Owned Blueprint Originals
+
+Includes all owned originals, including unpublished/nonmarket types. Comparison
+eligibility means a published type beneath blueprint market group 2, not proof
+of NPC or live sale availability. Best ME/TE is one actual item's pair.
+
+{% for group in context.owned %}
+### {{ cell(group.market_path | join("/") if group.market_path is not none else "Not in market") }}
+
+| Type ID | Blueprint | Originals | Best ME | Best TE | Selected Item ID | Comparison Eligible |
+| --- | --- | ---: | ---: | ---: | --- | --- |
+{% for row in group.rows %}
+| {{ row.type_id }} | {{ cell(row.name) }} | {{ row.quantity }} | {{ row.material_efficiency }} | {{ row.time_efficiency }} | {{ row.selected_item_id }} | {{ "Yes" if row.in_comparison_universe else "No" }} |
+{% endfor %}
+
+{% else %}
+No owned blueprint originals.
+
+{% endfor %}
+## Missing Blueprint Originals
+
+Copies alone do not satisfy original ownership. Base price is a nullable static
+reference value, not a market quote.
+
+{% for group in context.missing %}
+### {{ cell(group.market_path | join("/")) }}
+
+| Type ID | Blueprint | Base Price |
+| --- | --- | ---: |
+{% for row in group.rows %}
+| {{ row.type_id }} | {{ cell(row.name) }} | {{ row.base_price if row.base_price is not none else "-" }} |
+{% endfor %}
+
+{% else %}
+No missing blueprint originals in the comparison universe.
+
+{% endfor %}
+## Originals and Stacks Inventory
+
+Count reflects physical originals; raw quantities and runs remain in JSON/CSV.
+
+{% for group in context.originals %}
+### {{ cell(group.market_path | join("/") if group.market_path is not none else "Not in market") }}
+
+| Item ID | Type ID | Blueprint | Kind | Count | ME | TE | Location | Location Flag |
+| --- | --- | --- | --- | ---: | ---: | ---: | --- | --- |
+{% for row in group.rows %}
+| {{ row.item_id }} | {{ row.type_id }} | {{ cell(row.type_name) }} | {{ row.blueprint_kind }} | {{ row.item_count }} | {{ row.material_efficiency }} | {{ row.time_efficiency }} | {{ cell(row.location_name) }} ({{ row.location_id }}) | {{ cell(row.location_flag) }} |
+{% endfor %}
+
+{% else %}
+No originals or stacks in this snapshot.
+
+{% endfor %}
+## Blueprint Copies Inventory
+
+Each copy is one item. Runs are remaining licensed runs, not a copy count.
+
+{% for group in context.copies %}
+### {{ cell(group.market_path | join("/") if group.market_path is not none else "Not in market") }}
+
+| Item ID | Type ID | Blueprint | Count | ME | TE | Runs | Location | Location Flag |
+| --- | --- | --- | ---: | ---: | ---: | ---: | --- | --- |
+{% for row in group.rows %}
+| {{ row.item_id }} | {{ row.type_id }} | {{ cell(row.type_name) }} | {{ row.item_count }} | {{ row.material_efficiency }} | {{ row.time_efficiency }} | {{ row.runs }} | {{ cell(row.location_name) }} ({{ row.location_id }}) | {{ cell(row.location_flag) }} |
+{% endfor %}
+
+{% else %}
+No blueprint copies in this snapshot.
+
+{% endfor %}
