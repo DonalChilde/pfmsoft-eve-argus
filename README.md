@@ -1,5 +1,71 @@
 # Pfmsoft Eve Argus
 
+## Market hub price summaries
+
+```bash
+uv run eve-argus reports hub-prices --to ./reports
+```
+
+Exports the newest stored **system-scoped** price summary for each configured hub:
+Jita, Amarr, Dodixie, Hek, and Rens. These are not regional or primary-station
+prices. Inputs are opened read-only; no network, credentials, order fetching, or
+summary recalculation is required. The configured static database build (latest
+when unspecified) must already contain types and market groups.
+
+Each hub produces CSV and JSON with a shared source-timestamp stem, for example:
+
+```text
+price-summary-Jita-2026-10-17T22_07_37_553890662Z.csv
+price-summary-Jita-2026-10-17T22_07_37_553890662Z.json
+```
+
+Names and timestamps use the existing filename sanitizer. Hubs may have different
+source timestamps; this is not a synchronized cross-hub snapshot. Missing hub
+summaries fail with the complete list before any output is written. A newer
+empty snapshot does not fall back to an older populated one. The separate
+`fetch hub-orders` command saves summaries when fresh order data arrives; rerunning
+a cached fetch does not necessarily recreate a missing summary.
+
+JSON schema version `1` contains metadata and a `records` array sorted by
+`type_id`. Each record has type and market-group IDs/names, nullable
+`market_path_ids` / `market_path_names` arrays, and nested `buy_summary` /
+`sell_summary` objects (or null). Unpublished stored types are included. Types
+with neither side are omitted; a missing side is not a zero price.
+
+CSV has one record per exported type, with both sides on the same row. It uses
+UTF-8 without a BOM, comma delimiters, standard quoting, LF record terminators,
+and `/`-joined paths. Embedded newlines in names remain quoted field content.
+The fixed columns, in order, are:
+
+1. `response_metadata_id`, `received_at`, `expires_at`, `argus_expires_at`,
+   `schema_version`, `scope`, `region_id`, `region_name`, `system_id`,
+   `system_name`, `order_summary_response_id`, `generated_at`, `is_stale`.
+2. `type_id`, `type_name`, `market_group_id`, `market_group_name`,
+   `market_path_ids`, `market_path_names`, `has_buy_summary`, `has_sell_summary`.
+3. Each metric below with `buy_` prefixes, then the same with `sell_` prefixes:
+   `five_price`, `five_orders`, `five_items`, `lowest`, `highest`, `average`,
+   `total_items`, `total_orders`, `filtered_items`, `filtered_orders`.
+
+Prices are exact plain decimal strings, never binary floats; counts are
+integers. JSON absent values are null; CSV absent values are empty cells, and
+flags use `True` / `False`. Empty exports retain CSV headers and JSON metadata.
+The summary response ID and source response metadata ID are separate provenance
+keys, both preserved.
+
+Metrics retain their stored meanings: `five_price` is the price threshold
+reaching 5% of valid volume, including all orders tied at that cutoff—not a 5%
+price band. `average` is volume-weighted over valid orders. `total_items` /
+`total_orders` count valid orders; `filtered_items` / `filtered_orders` count
+excluded outliers. The historical filter factor is not stored and is not
+invented in exports.
+
+Argus expiry overrides source expiry; absent expiry means unknown freshness.
+Expired snapshots remain exportable with visible warnings. `--quiet` hides
+progress, not errors or stale-data warnings. Use `--overwrite` to replace
+existing files. All hub snapshots, paths, static references and renderings are
+validated before writes; filesystem failures may still leave partial output
+and return a nonzero exit status. No Markdown report is generated.
+
 ## Corporation blueprints report
 
 ```bash

@@ -1,5 +1,32 @@
 # Market hub system price summary exports: planning prompt
 
+## Approved implementation decisions
+
+Implementation requested on 2026-10-18:
+
+- Command: `eve-argus reports hub-prices --to ./reports`.
+- All configured hubs; no hub-selection option or Markdown output.
+- Fail before writing and list every hub missing a stored system summary.
+- **Omit types with neither buy nor sell summaries**, overriding the original
+  preservation recommendation below.
+- UTF-8 without BOM, JSON schema version 1.
+- Filenames: `price-summary-<file_safe_system_name>-<file_safe_received_at>`.
+  The source receipt timestamp, including fractional seconds, uses the existing
+  helper and is not replaced by generation time.
+
+Implemented with offline read-only loading, typed collection, pure CSV/JSON
+renderers, registered CLI, focused tests, and README schema documentation.
+The original planning material below is retained as rationale; the approved
+decisions above take precedence over its open proposals.
+
+Validation includes synthetic collector/renderer contracts and registered CLI
+tests using real local SQLite readers/writers, alongside the existing corporation
+report and summary-calculation regressions. The collector and CLI have 100%
+focused coverage; combined export coverage is 99%. A read-only smoke test against
+the configured databases generated ten temporary files and verified matching
+CSV/JSON type sets: Jita 19,000; Amarr 14,148; Dodixie 11,896; Hek 9,691;
+Rens 8,163. Temporary outputs were removed after verification.
+
 Develop an evidence-based implementation plan for exporting the current stored
 market hub system pricing summaries as CSV and JSON. Read applicable repository
 instructions and current code first. Do not implement application changes until
