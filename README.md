@@ -1,5 +1,20 @@
 # Pfmsoft Eve Argus
 
+## Fetch market history
+
+```bash
+uv run eve-argus fetch market-history --region-id 10000002 --type-id 34
+```
+
+Fetches history for one region and item type into the configured market-history
+database. Both IDs are required. Unexpired stored responses skip fetching; Argus
+expiry overrides ESI expiry, and missing expiry triggers a refresh.
+
+Successful updates store response metadata and daily history transactionally.
+Overlapping dates are replaced and older dates remain stored. Empty responses
+still record metadata. Failures are reported with a nonzero exit status.
+Use `--quiet` to suppress progress and success messages, but not update errors.
+
 ## Market hub price summaries
 
 ```bash
