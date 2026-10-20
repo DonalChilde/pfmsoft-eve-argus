@@ -1,11 +1,24 @@
 """Helpers for the CLI."""
 
 import sys
+from pathlib import Path
 from typing import cast
 
 import typer
 
 from pfmsoft.eve_argus.settings import SETTINGS_KEY, EveArgusSettings
+from pfmsoft.eve_argus.static.store import StaticStore
+
+
+def get_static_database_path(settings: EveArgusSettings) -> Path:
+    """Resolve the configured build through StaticStore without creating a manifest."""
+    store = StaticStore(store_path=settings.static_database_store)
+    entry = store.get_entry(settings.static_database_build_number)
+    if entry is None:
+        raise ValueError(
+            f"No static database manifest entry for build {settings.static_database_build_number}"
+        )
+    return store.get_file_path_for_entry(build_number=entry.build_number)
 
 
 def get_stdin() -> str:

@@ -9,7 +9,10 @@ import typer
 from rich.console import Console
 from whenever import Instant
 
-from pfmsoft.eve_argus.cli.helpers import get_eve_argus_settings_from_context
+from pfmsoft.eve_argus.cli.helpers import (
+    get_eve_argus_settings_from_context,
+    get_static_database_path,
+)
 from pfmsoft.eve_argus.dynamic import read as dynamic_read
 from pfmsoft.eve_argus.helpers.connection_helpers import db_connection_manager
 from pfmsoft.eve_argus.helpers.file_safe_string import file_safe_string
@@ -21,7 +24,6 @@ from pfmsoft.eve_argus.reports.market_hub_prices_render import (
 )
 from pfmsoft.eve_argus.settings import EveArgusSettings
 from pfmsoft.eve_argus.static import read as static_read
-from pfmsoft.eve_argus.static.store import StaticManifest
 
 logger = logging.getLogger(__name__)
 app = typer.Typer(no_args_is_help=True)
@@ -60,21 +62,6 @@ def hub_prices(
         raise typer.Exit(code=1) from error
 
 
-def _static_database_path(settings: EveArgusSettings) -> Path:
-    """Select an existing manifest entry without creating a store or its manifest."""
-    manifest_path = settings.static_database_store / "manifest.json"
-    manifest = StaticManifest.deserialize(manifest_path.read_text(encoding="utf-8"))
-    build = settings.static_database_build_number
-    if build is None:
-        if not manifest.entries:
-            raise ValueError("No static database builds are available in the manifest.")
-        build = max(manifest.entries)
-    entry = manifest.entries.get(build)
-    if entry is None:
-        raise ValueError(f"No static database manifest entry for build {build}.")
-    return settings.static_database_store / entry.file_name
-
-
 def _generate_reports(
     *,
     settings: EveArgusSettings,
@@ -93,7 +80,7 @@ def _generate_reports(
             settings.argus_dynamic_database, read_only=True
         ) as dynamic,
         db_connection_manager(
-            _static_database_path(settings), read_only=True
+            get_static_database_path(settings), read_only=True
         ) as static,
     ):
         selected = [

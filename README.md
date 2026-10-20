@@ -1,5 +1,35 @@
 # Pfmsoft Eve Argus
 
+## Export market groups
+
+```bash
+uv run eve-argus export market-groups --to ./exports
+```
+
+Exports all market groups from the configured **Argus static database** (market
+groups are not stored in the dynamic database). Uses the configured static build,
+or the latest build in the store manifest when unspecified. The source is opened
+read-only; no network requests, credentials, or data refresh are required.
+
+The destination directory is created if needed and receives:
+
+- `market-groups.json`: the complete dataset keyed by market-group ID, with native
+  JSON arrays for `int_path`, `str_path`, and `types`.
+- `market-groups.csv`: one row per market group, with all record fields.
+  `str_path` uses the default `/`-joined string path. The other container fields
+  (`int_path`, `types`) contain JSON strings, including `[]` for empty containers,
+  rather than Python representations.
+
+Both outputs are UTF-8. JSON is ordered by market-group ID; CSV rows are sorted
+by the rendered `str_path` string. CSV uses standard quoting
+and LF record terminators, preserves embedded newlines, writes booleans as
+`True` / `False`, and represents absent scalar values as empty cells. JSON uses
+`null` for absent values. An empty dataset produces `{}` and a header-only CSV.
+Use `--overwrite` to replace existing files and `--quiet` to suppress success
+messages without hiding errors. Missing sources and existing outputs fail before
+writing either file; filesystem failures during writing may leave partial output
+and return a nonzero exit status.
+
 ## Fetch market history
 
 ```bash
