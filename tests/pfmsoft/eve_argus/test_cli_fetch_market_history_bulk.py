@@ -1,13 +1,20 @@
 """Tests for bulk market-history selection, validation, and CLI reporting."""
 
+import asyncio
 from dataclasses import dataclass
+from io import StringIO
 from unittest.mock import AsyncMock, Mock
 
 import pytest
+from rich.console import Console
+from rich.progress import Progress, SpinnerColumn
 from typer.testing import CliRunner
 
 from pfmsoft.eve_argus.cli import app
 from pfmsoft.eve_argus.cli.fetch import market_history_bulk as command
+from pfmsoft.eve_argus.cli.fetch.market_history_bulk import (
+    _fetch_market_history_bulk,  # pyright: ignore[reportPrivateUsage]
+)
 from pfmsoft.eve_argus.fetch_esi import market_history_bulk as bulk
 from pfmsoft.eve_argus.fetch_esi.update import UpdateResult, UpdateStatus
 from pfmsoft.eve_argus.settings import SETTINGS_KEY, EveArgusSettings
@@ -29,10 +36,13 @@ class Environment:
     manager: Mock
     groups: MarketGroupsDataset
     types_reader: Mock
+    command_name: str
 
 
-@pytest.fixture
-def environment(monkeypatch: pytest.MonkeyPatch) -> Environment:
+@pytest.fixture(params=["market-history-bulk", "market-history-bulk-progress"])
+def environment(
+    monkeypatch: pytest.MonkeyPatch, request: pytest.FixtureRequest
+) -> Environment:
     """Use real path records and mocked static readers/resources."""
     groups = {
         group_id: MarketGroupsRecord(
@@ -86,6 +96,7 @@ def environment(monkeypatch: pytest.MonkeyPatch) -> Environment:
         manager=manager,
         groups=groups,
         types_reader=types_reader,
+        command_name=request.param,
     )
 
 
@@ -109,7 +120,7 @@ def test_selects_published_market_types(
         app,
         [
             "fetch",
-            "market-history-bulk",
+            environment.command_name,
             "--region-id",
             "100",
             "--region-id",
@@ -163,7 +174,7 @@ def test_invalid_inputs_prevent_updates(
     """Invalid regions and filters fail before any history request."""
     result = CliRunner().invoke(
         app,
-        ["fetch", "market-history-bulk", *arguments],
+        ["fetch", environment.command_name, *arguments],
         obj={SETTINGS_KEY: environment.settings},
     )
     assert result.exit_code != 0
@@ -189,7 +200,7 @@ def test_partial_failure_and_abort_reporting(
         app,
         [
             "fetch",
-            "market-history-bulk",
+            environment.command_name,
             "--region-id",
             "100",
             *(["--quiet"] if quiet else []),
@@ -211,7 +222,7 @@ def test_quiet_success(environment: Environment) -> None:
     """Quiet mode produces no routine output."""
     result = CliRunner().invoke(
         app,
-        ["fetch", "market-history-bulk", "--region-id", "100", "--quiet"],
+        ["fetch", environment.command_name, "--region-id", "100", "--quiet"],
         obj={SETTINGS_KEY: environment.settings},
     )
     assert result.exit_code == 0, result.output
@@ -223,7 +234,7 @@ def test_broken_group_reference(environment: Environment) -> None:
     environment.groups[2].types = (10, 14)
     result = CliRunner().invoke(
         app,
-        ["fetch", "market-history-bulk", "--region-id", "100"],
+        ["fetch", environment.command_name, "--region-id", "100"],
         obj={SETTINGS_KEY: environment.settings},
     )
     assert result.exit_code != 0
@@ -239,7 +250,7 @@ def test_missing_static_data(
     monkeypatch.setattr(command.static_read, dataset, Mock(return_value={}))
     result = CliRunner().invoke(
         app,
-        ["fetch", "market-history-bulk", "--region-id", "100", "--quiet"],
+        ["fetch", environment.command_name, "--region-id", "100", "--quiet"],
         obj={SETTINGS_KEY: environment.settings},
     )
     assert result.exit_code != 0
@@ -258,7 +269,7 @@ def test_failure_below_limit_continues(environment: Environment) -> None:
     ]
     result = CliRunner().invoke(
         app,
-        ["fetch", "market-history-bulk", "--region-id", "100"],
+        ["fetch", environment.command_name, "--region-id", "100"],
         obj={SETTINGS_KEY: environment.settings},
     )
     assert result.exit_code == 1
@@ -276,9 +287,151 @@ def test_invalid_market_path(environment: Environment) -> None:
     environment.groups[2].int_path = (999, 2)
     result = CliRunner().invoke(
         app,
-        ["fetch", "market-history-bulk", "--region-id", "100"],
+        ["fetch", environment.command_name, "--region-id", "100"],
         obj={SETTINGS_KEY: environment.settings},
     )
     assert result.exit_code != 0
     assert "Invalid market path" in result.output
     environment.updater.assert_not_awaited()
+
+
+def test_spinner_tracks_live_updates_and_stops(
+    environment: Environment, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The spinner runs during updates, tracks every pair, and stops afterward."""
+    output = StringIO()
+    progress = Progress(
+        SpinnerColumn(),
+        console=Console(file=output, force_terminal=True),
+        transient=True,
+    )
+    factory = Mock(return_value=progress)
+    monkeypatch.setattr(command, "Progress", factory)
+    seen: list[int] = []
+
+    async def update(
+        *args: object, region_id: int, type_id: int
+    ) -> UpdateResult[object]:
+        assert progress.live.is_started
+        assert progress.live.auto_refresh
+        seen.append(int(progress.tasks[0].completed))
+        return UpdateResult(status=UpdateStatus.SKIPPED, previous_state=None)
+
+    environment.updater.side_effect = update
+    result = CliRunner().invoke(
+        app,
+        ["fetch", "market-history-bulk-progress", "--region-id", "100"],
+        obj={SETTINGS_KEY: environment.settings},
+    )
+    factory.assert_called_once()
+    assert factory.call_args.kwargs["disable"] is False
+    assert any(isinstance(column, SpinnerColumn) for column in factory.call_args.args)
+    assert not progress.live.is_started
+    assert result.exit_code == 0, result.output
+    assert seen == [0, 1, 2]
+    task = progress.tasks[0]
+    assert task.completed == task.total == 3
+    assert task.fields["skipped"] == 3
+    assert task.fields["updated"] == task.fields["failed"] == 0
+    assert str(task.fields["last_pair"]) == "First Region (100), type 13"
+    progress.columns = factory.call_args.args
+    terminal_output = StringIO()
+    Console(file=terminal_output, width=200).print(progress)
+    rendered = terminal_output.getvalue()
+    assert "3/3" in rendered
+    assert "updated=0 skipped=3 failed=0" in rendered
+    assert "First Region (100), type 13" in rendered
+    environment.manager.__aexit__.assert_awaited_once()
+
+
+def test_interruption_stops_spinner_and_awaits_updates(
+    environment: Environment, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Parent cancellation cleans up the live display before resources close."""
+    progress = Progress(
+        SpinnerColumn(), console=Console(file=StringIO()), transient=True
+    )
+    monkeypatch.setattr(command, "Progress", Mock(return_value=progress))
+
+    async def scenario() -> None:
+        ready = asyncio.Event()
+        blocked = asyncio.Event()
+        cleaned: set[int] = set()
+
+        async def update(
+            *args: object, region_id: int, type_id: int
+        ) -> UpdateResult[object]:
+            assert progress.live.is_started
+            ready.set()
+            try:
+                await blocked.wait()
+            finally:
+                cleaned.add(type_id)
+            return UpdateResult(status=UpdateStatus.SKIPPED, previous_state=None)
+
+        environment.updater.side_effect = update
+        task = asyncio.create_task(
+            _fetch_market_history_bulk(
+                settings=environment.settings,
+                region_ids={100},
+                include=set(),
+                exclude=set(),
+                quiet=False,
+                show_progress=True,
+            )
+        )
+        await ready.wait()
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+        assert cleaned == {10, 12, 13}
+        assert not progress.live.is_started
+        assert progress.tasks[0].completed == 0
+        environment.manager.__aexit__.assert_awaited_once()
+
+    asyncio.run(asyncio.wait_for(scenario(), timeout=5))
+
+
+def test_quiet_disables_spinner(
+    environment: Environment, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Quiet execution disables live rendering, not just ordinary print output."""
+    factory = Mock(wraps=Progress)
+    monkeypatch.setattr(command, "Progress", factory)
+    result = CliRunner().invoke(
+        app,
+        ["fetch", "market-history-bulk-progress", "--region-id", "100", "--quiet"],
+        obj={SETTINGS_KEY: environment.settings},
+    )
+    assert result.exit_code == 0, result.output
+    assert result.output == ""
+    assert factory.call_args.kwargs["disable"] is True
+
+
+def test_abort_leaves_progress_incomplete(
+    environment: Environment, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Aborting stops the spinner without counting cancelled pairs as completed."""
+    progress = Progress(
+        SpinnerColumn(), console=Console(file=StringIO()), transient=True
+    )
+    monkeypatch.setattr(command, "Progress", Mock(return_value=progress))
+    monkeypatch.setattr(bulk, "MARKET_HISTORY_FAILURE_LIMIT", 1)
+    monkeypatch.setattr(bulk, "MARKET_HISTORY_BATCH_SIZE", 2)
+    environment.updater.return_value = UpdateResult(
+        status=UpdateStatus.FAILED, previous_state=None, failure_message="abort test"
+    )
+    result = CliRunner().invoke(
+        app,
+        ["fetch", "market-history-bulk-progress", "--region-id", "100"],
+        obj={SETTINGS_KEY: environment.settings},
+    )
+    assert result.exit_code == 1
+    assert "abort test" in result.output
+    assert "cancelled=1" in result.output
+    assert "not_started=1" in result.output
+    assert not progress.live.is_started
+    task = progress.tasks[0]
+    assert task.completed == 1
+    assert task.total == 3
+    assert task.fields["failed"] == 1

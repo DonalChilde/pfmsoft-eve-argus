@@ -5,6 +5,14 @@ from typing import Annotated
 
 import typer
 from rich.console import Console
+from rich.progress import (
+    MofNCompleteColumn,
+    Progress,
+    SpinnerColumn,
+    TextColumn,
+    TimeElapsedColumn,
+)
+from rich.text import Text
 
 from pfmsoft.eve_argus.cli.helpers import get_eve_argus_settings_from_context
 from pfmsoft.eve_argus.eve_argus import EveArgusResources
@@ -117,6 +125,7 @@ async def _fetch_market_history_bulk(
     include: set[int],
     exclude: set[int],
     quiet: bool,
+    show_progress: bool = False,
 ) -> None:
     """Validate static inputs, execute the bulk run, and report accurate totals."""
     messenger = Console(stderr=True, quiet=quiet)
@@ -149,30 +158,66 @@ async def _fetch_market_history_bulk(
         if not type_ids:
             messenger.print("No market types selected; nothing to update.")
             return
-        completed = 0
+        with Progress(
+            SpinnerColumn(),
+            TextColumn("{task.description}"),
+            MofNCompleteColumn(),
+            TimeElapsedColumn(),
+            TextColumn(
+                "updated={task.fields[updated]} skipped={task.fields[skipped]} "
+                "failed={task.fields[failed]}"
+            ),
+            TextColumn("{task.fields[last_pair]}", markup=False),
+            console=errors,
+            disable=quiet or not show_progress,
+            transient=True,
+        ) as progress:
+            task_id = progress.add_task(
+                "Market history",
+                total=total,
+                updated=0,
+                skipped=0,
+                failed=0,
+                last_pair=Text("Waiting for updates"),
+            )
+            completed = 0
+            counts = dict.fromkeys(UpdateStatus, 0)
 
-        def report(
-            region_id: int, type_id: int, result: MarketHistoryUpdateResult
-        ) -> None:
-            nonlocal completed
-            completed += 1
-            if result.status is UpdateStatus.FAILED:
-                errors.print(
-                    f"Failed: {regions[region_id].name} ({region_id}), type {type_id}: "
-                    f"{result.failure_message or 'Update failed.'}",
-                    markup=False,
-                )
-            if completed % bulk.MARKET_HISTORY_BATCH_SIZE == 0:
-                messenger.print(f"Completed {completed}/{total} pairs.")
+            def report(
+                region_id: int, type_id: int, result: MarketHistoryUpdateResult
+            ) -> None:
+                nonlocal completed
+                completed += 1
+                counts[result.status] += 1
+                pair = f"{regions[region_id].name} ({region_id}), type {type_id}"
+                if show_progress:
+                    progress.update(
+                        task_id,
+                        advance=1,
+                        updated=counts[UpdateStatus.UPDATED],
+                        skipped=counts[UpdateStatus.SKIPPED],
+                        failed=counts[UpdateStatus.FAILED],
+                        last_pair=Text(pair),
+                    )
+                if result.status is UpdateStatus.FAILED:
+                    errors.print(
+                        f"Failed: {pair}: {result.failure_message or 'Update failed.'}",
+                        markup=False,
+                    )
+                if (
+                    not show_progress
+                    and completed % bulk.MARKET_HISTORY_BATCH_SIZE == 0
+                ):
+                    messenger.print(f"Completed {completed}/{total} pairs.")
 
-        summary = await bulk.update_market_histories(
-            resources.esi_link,
-            resources.esi_schema,
-            resources.market_history_db_connection,
-            region_ids=region_ids,
-            type_ids=type_ids,
-            on_result=report,
-        )
+            summary = await bulk.update_market_histories(
+                resources.esi_link,
+                resources.esi_schema,
+                resources.market_history_db_connection,
+                region_ids=region_ids,
+                type_ids=type_ids,
+                on_result=report,
+            )
         messenger.print(
             f"Market history: updated={summary.updated}, skipped={summary.skipped}, "
             f"failed={summary.failed}, cancelled={summary.cancelled}, "
@@ -186,3 +231,43 @@ async def _fetch_market_history_bulk(
             )
         if summary.failed:
             raise typer.Exit(code=1)
+
+
+@app.command(name="market-history-bulk-progress")
+def fetch_market_history_bulk_progress(
+    ctx: typer.Context,
+    region_id: Annotated[
+        list[int],
+        typer.Option(
+            "--region-id", help="Region ID to update; repeat for multiple regions."
+        ),
+    ],
+    include: Annotated[
+        list[int] | None,
+        typer.Option(
+            "--include", help="Include a market-group subtree; repeat to combine."
+        ),
+    ] = None,
+    exclude: Annotated[
+        list[int] | None,
+        typer.Option(
+            "--exclude", help="Exclude a market-group subtree after includes."
+        ),
+    ] = None,
+    quiet: Annotated[
+        bool,
+        typer.Option("--quiet", help="Suppress progress messages, but not errors."),
+    ] = False,
+) -> None:
+    """Compare bulk fetching with a live spinner, pair counts, and elapsed time."""
+    settings = get_eve_argus_settings_from_context(ctx)
+    asyncio.run(
+        _fetch_market_history_bulk(
+            settings=settings,
+            region_ids=set(region_id),
+            include=set(include or ()),
+            exclude=set(exclude or ()),
+            quiet=quiet,
+            show_progress=True,
+        )
+    )

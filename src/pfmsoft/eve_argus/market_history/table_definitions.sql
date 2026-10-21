@@ -15,6 +15,9 @@ CREATE TABLE IF NOT EXISTS market_history_response (
     UNIQUE(received_at, region_id, type_id)
 ) STRICT;
 
+CREATE INDEX IF NOT EXISTS market_history_response_pair_received
+ON market_history_response (region_id, type_id, received_at DESC, id DESC);
+
 CREATE TABLE IF NOT EXISTS market_history (
     ID INTEGER PRIMARY KEY AUTOINCREMENT,
     received_at TEXT NOT NULL,

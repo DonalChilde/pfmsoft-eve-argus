@@ -321,3 +321,36 @@ def test_update_reports_failure_without_partial_writes(
         read.read_market_history(connection, region_id=10, type_id=20)
         == previous_records
     )
+
+
+def test_update_uses_only_targeted_metadata_queries(
+    connection: sqlite3.Connection, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Success and older duplicate detection never load all stored metadata."""
+    _seed(connection, received_at=_RECEIVED)
+    _seed(connection, received_at="2026-10-19T00:00:00Z")
+    monkeypatch.setattr(
+        read,
+        "read_market_history_responses",
+        Mock(side_effect=AssertionError("Full metadata reads are not allowed")),
+    )
+    esi_link = Mock(spec=EsiLink)
+    esi_link.make_request = AsyncMock(return_value=_response())
+    schema = Mock(spec=EsiSchema)
+
+    duplicate = asyncio.run(
+        update_market_history(esi_link, schema, connection, region_id=10, type_id=20)
+    )
+    assert duplicate.status is UpdateStatus.FAILED
+    assert duplicate.failure_message is not None
+    assert "previously stored" in duplicate.failure_message
+    assert duplicate.previous_state is not None
+    assert duplicate.previous_state.received_at == "2026-10-19T00:00:00Z"
+
+    esi_link.make_request.return_value = _response(received_at="2026-10-20T00:00:00Z")
+    updated = asyncio.run(
+        update_market_history(esi_link, schema, connection, region_id=10, type_id=20)
+    )
+    assert updated.status is UpdateStatus.UPDATED
+    assert updated.new_state is not None
+    assert updated.new_state.received_at == "2026-10-20T00:00:00Z"

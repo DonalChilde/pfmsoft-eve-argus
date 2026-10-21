@@ -166,6 +166,58 @@ def read_market_history_latest(
 
 
 @log_timing(logger=logger, level=_timing_log_level)
+def read_market_history_latest_response(
+    connection: Connection, *, region_id: int, type_id: int
+) -> models.MarketHistoryResponse | None:
+    """Read only the newest response metadata for a region/type pair.
+
+    Returns:
+        Latest metadata ordered by received time and then ID descending, or None
+        if no response exists for the pair.
+    """
+    with connection:
+        row = connection.execute(
+            """
+            SELECT id, received_at, expires_at, argus_expires_at, region_id,
+                type_id
+            FROM market_history_response
+            WHERE region_id = ? AND type_id = ?
+            ORDER BY received_at DESC, id DESC
+            LIMIT 1
+            """,
+            (region_id, type_id),
+        ).fetchone()
+        if row is None:
+            return None
+        return models.MarketHistoryResponse(
+            response_metadata_id=row[0],
+            received_at=row[1],
+            expires_at=row[2],
+            argus_expires_at=row[3],
+            region_id=row[4],
+            type_id=row[5],
+        )
+
+
+@log_timing(logger=logger, level=_timing_log_level)
+def market_history_response_exists(
+    connection: Connection, *, region_id: int, type_id: int, received_at: str
+) -> bool:
+    """Check for an exact stored region/type/received-time response."""
+    with connection:
+        row = connection.execute(
+            """
+            SELECT EXISTS (
+                SELECT 1 FROM market_history_response
+                WHERE received_at = ? AND region_id = ? AND type_id = ?
+            )
+            """,
+            (received_at, region_id, type_id),
+        ).fetchone()
+        return bool(row[0])
+
+
+@log_timing(logger=logger, level=_timing_log_level)
 def read_market_history_responses(
     connection: Connection,
     *,

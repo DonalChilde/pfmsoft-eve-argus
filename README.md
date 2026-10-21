@@ -45,6 +45,12 @@ Overlapping dates are replaced and older dates remain stored. Empty responses
 still record metadata. Failures are reported with a nonzero exit status.
 Use `--quiet` to suppress progress and success messages, but not update errors.
 
+History database initialization adds a region/type/received-time metadata index
+to both new and existing databases without changing stored records. The first
+initialization of an existing large database may take longer while the index is
+built. Updates use indexed single-row latest-response lookups and exact duplicate
+existence checks rather than loading all metadata for each pair.
+
 ### Bulk market history
 
 ```bash
@@ -82,6 +88,27 @@ Output reports progress and final updated, skipped, failed, cancelled, and
 not-started totals. Any failed update produces a nonzero exit status; below the
 limit, other pairs continue. `--quiet` hides routine output, but failures and
 abort notices remain visible.
+
+### Bulk market history with live progress (comparison)
+
+```bash
+uv run eve-argus fetch market-history-bulk-progress \
+  --region-id 10000002 --region-id 10000043 \
+  --include 4 --include 9 --exclude 187
+```
+
+This side-by-side alternative accepts the same options and uses the same bulk
+runner, filters, batches of 100, and global failure limit of 20. The existing
+`market-history-bulk` command keeps its batch-completion messages.
+
+The progress variant displays a live spinner while requests are pending, completed
+and total pair counts, elapsed time, updated/skipped/failed counts, and the latest
+completed region name/ID and type ID. Completion counts include cached skips and
+failures, not just network fetches. Live animation requires an interactive terminal;
+redirected output retains the final summary and errors without animation.
+The transient display clears when execution ends, including on abort or interruption,
+so cancelled and unstarted pairs are not presented as successful completion.
+`--quiet` disables the spinner and routine output, but keeps errors and abort notices.
 
 ## Market hub price summaries
 

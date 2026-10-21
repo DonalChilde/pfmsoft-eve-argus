@@ -17,7 +17,7 @@ from pfmsoft.eve_argus.fetch_esi.update import UpdateResult, UpdateStatus
 
 logger = logging.getLogger(__name__)
 
-MARKET_HISTORY_BATCH_SIZE = 100
+MARKET_HISTORY_BATCH_SIZE = 200
 MARKET_HISTORY_FAILURE_LIMIT = 20
 
 type ResultReporter = Callable[[int, int, MarketHistoryUpdateResult], None]
@@ -57,6 +57,8 @@ async def update_market_histories(
     region_ids: set[int],
     type_ids: set[int],
     on_result: ResultReporter | None = None,
+    batch_size: int = MARKET_HISTORY_BATCH_SIZE,
+    failure_limit: int = MARKET_HISTORY_FAILURE_LIMIT,
 ) -> MarketHistoryBulkResult:
     """Update unique region/type pairs in concurrent, nonoverlapping batches.
 
@@ -105,7 +107,7 @@ async def update_market_histories(
             case UpdateStatus.FAILED:
                 summary.failed += 1
 
-        if summary.failed >= MARKET_HISTORY_FAILURE_LIMIT and not summary.aborted:
+        if summary.failed >= failure_limit and not summary.aborted:
             summary.aborted = True
             current = asyncio.current_task()
             for task in tasks:
@@ -114,7 +116,7 @@ async def update_market_histories(
         if on_result is not None:
             on_result(region_id, type_id, result)
 
-    for batch in batched(pairs, MARKET_HISTORY_BATCH_SIZE, strict=False):
+    for batch in batched(pairs, batch_size, strict=False):
         async with asyncio.TaskGroup() as group:
             tasks = [
                 group.create_task(update_pair(region_id, type_id))

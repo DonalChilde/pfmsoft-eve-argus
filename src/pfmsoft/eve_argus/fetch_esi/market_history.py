@@ -18,10 +18,9 @@ def _current_state(
     connection: Connection, *, region_id: int, type_id: int
 ) -> MarketHistoryResponse | None:
     """Return the latest stored response for a region and type."""
-    responses = read.read_market_history_responses(
+    return read.read_market_history_latest_response(
         connection, region_id=region_id, type_id=type_id
     )
-    return responses[0] if responses else None
 
 
 def _store(
@@ -33,10 +32,12 @@ def _store(
         ValueError: If ESI returned a response already stored for this pair.
     """
     history = EsiValidate.market_history(response)
-    stored_responses = read.read_market_history_responses(
-        connection, region_id=region_id, type_id=type_id
-    )
-    if any(stored.received_at == history.received_at for stored in stored_responses):
+    if read.market_history_response_exists(
+        connection,
+        region_id=region_id,
+        type_id=type_id,
+        received_at=history.received_at,
+    ):
         raise ValueError(
             "ESI returned a previously stored market-history response "
             "without a new received_at."
