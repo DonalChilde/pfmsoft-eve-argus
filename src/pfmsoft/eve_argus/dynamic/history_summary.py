@@ -1,5 +1,8 @@
+"""Calculate market-history summaries from stored market-history records."""
+
 from collections.abc import Sequence
 from datetime import date, timedelta
+from decimal import Decimal
 
 from pfmsoft.eve_argus.dynamic.models import HistorySummaryRecord
 from pfmsoft.eve_argus.market_history.models import MarketHistoryRecord
@@ -69,6 +72,49 @@ def calculate_history_summary(
     Notes:
         - The per-day price values are weighted by that day's traded volume.
         - `missing` counts dates in the requested window that are absent from the history.
-        - If the total valid volume is zero, all weighted price fields are reported as 0.0.
+        - If the total valid volume is zero, all weighted price fields are reported as 0.
+        - Records with dates outside `dates` are ignored.
+        - `start` is the newest requested date and `end` is the oldest, regardless of
+          the order of `dates`.
+        - Response metadata (received/expiry timestamps) is taken from the most
+          recently received record.
     """
-    ...
+    if not dates:
+        raise ValueError("The dates sequence is empty; cannot calculate summary.")
+    if not records:
+        raise ValueError("Market history records are empty; cannot calculate summary.")
+    region_ids = {record.region_id for record in records}
+    if len(region_ids) > 1:
+        raise ValueError(f"Records contain multiple region_id values: {region_ids}")
+    type_ids = {record.type_id for record in records}
+    if len(type_ids) > 1:
+        raise ValueError(f"Records contain multiple type_id values: {type_ids}")
+    indexed_records = {record.date: record for record in records}
+    missing = order_count = volume = 0
+    average = highest = lowest = Decimal(0)
+    for date_key in dates:
+        record = indexed_records.get(date_key)
+        if record is None:
+            missing += 1
+            continue
+        average += record.average * record.volume
+        highest += record.highest * record.volume
+        lowest += record.lowest * record.volume
+        order_count += record.order_count
+        volume += record.volume
+    metadata = max(records, key=lambda record: record.received_at)
+    return HistorySummaryRecord(
+        received_at=metadata.received_at,
+        expires_at=metadata.expires_at,
+        argus_expires_at=metadata.argus_expires_at,
+        region_id=metadata.region_id,
+        type_id=metadata.type_id,
+        start=max(dates),
+        end=min(dates),
+        missing=missing,
+        highest=highest / volume if volume > 0 else Decimal(0),
+        average=average / volume if volume > 0 else Decimal(0),
+        lowest=lowest / volume if volume > 0 else Decimal(0),
+        order_count=order_count // len(dates),
+        volume=Decimal(volume) / len(dates),
+    )
