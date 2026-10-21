@@ -122,38 +122,6 @@ def test_fetch_failure_is_visible(
     environment.manager.__aexit__.assert_awaited_once()
 
 
-@pytest.mark.parametrize("quiet", [False, True])
-def test_fetch_reports_empty_success(
-    environment: CommandEnvironment, *, quiet: bool
-) -> None:
-    """An empty history response is successful even though no history row exists."""
-    environment.updater.return_value = UpdateResult(
-        status=UpdateStatus.UPDATED,
-        previous_state=None,
-        new_state=None,
-    )
-    result = CliRunner().invoke(
-        app,
-        [
-            "fetch",
-            "market-history",
-            "--region-id",
-            "10000002",
-            "--type-id",
-            "34",
-            *(["--quiet"] if quiet else []),
-        ],
-        obj={SETTINGS_KEY: environment.settings},
-    )
-
-    assert result.exit_code == 0
-    if quiet:
-        assert result.output == ""
-    else:
-        assert "contained no market history records" in result.output
-    environment.manager.__aexit__.assert_awaited_once()
-
-
 @pytest.mark.parametrize(
     "arguments",
     [

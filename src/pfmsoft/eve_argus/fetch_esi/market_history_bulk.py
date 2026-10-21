@@ -75,6 +75,7 @@ async def update_market_histories(
     Returns:
         Totals after all pairs finish or the global failure limit is reached.
         On abort, pending tasks are cancelled and awaited before returning.
+        Unexpired responses are skipped even when they contain no history.
 
     Ordinary updater exceptions are logged and counted as failed pairs. External
     cancellation propagates after child cleanup and is not an update failure.

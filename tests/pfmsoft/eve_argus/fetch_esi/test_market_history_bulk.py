@@ -277,8 +277,11 @@ def test_reconciles_updates_finishing_during_abort(
     asyncio.run(asyncio.wait_for(scenario(), timeout=5))
 
 
-def test_real_updater_persists_pairs_and_skips_current_data() -> None:
-    """Concurrent mocked ESI responses use the production validator and writer."""
+@pytest.mark.parametrize("empty_history", [False, True])
+def test_real_updater_persists_pairs_and_skips_current_data(
+    *, empty_history: bool
+) -> None:
+    """Both populated and empty responses remain current on a second bulk run."""
 
     async def scenario(connection: sqlite3.Connection) -> None:
         gate = asyncio.Event()
@@ -306,6 +309,8 @@ def test_real_updater_persists_pairs_and_skips_current_data() -> None:
                     "volume": 3,
                 }
             ]
+            if empty_history and esi_request.query_parameters["type_id"] == 21:
+                response.response_data = []
             return response
 
         esi_link = Mock(spec=EsiLink)
@@ -320,10 +325,18 @@ def test_real_updater_persists_pairs_and_skips_current_data() -> None:
         )
         assert summary.updated == 4
         assert summary.failed == 0
-        assert connection.execute(
-            "SELECT region_id, type_id, average FROM market_history "
-            "ORDER BY region_id, type_id"
-        ).fetchall() == [(10, 20, 125), (10, 21, 125), (11, 20, 125), (11, 21, 125)]
+        expected_rows = (
+            [(10, 20, 125), (11, 20, 125)]
+            if empty_history
+            else [(10, 20, 125), (10, 21, 125), (11, 20, 125), (11, 21, 125)]
+        )
+        assert (
+            connection.execute(
+                "SELECT region_id, type_id, average FROM market_history "
+                "ORDER BY region_id, type_id"
+            ).fetchall()
+            == expected_rows
+        )
         assert connection.execute(
             "SELECT COUNT(*) FROM market_history_response"
         ).fetchone() == (4,)
@@ -335,8 +348,27 @@ def test_real_updater_persists_pairs_and_skips_current_data() -> None:
             type_ids={20, 21},
         )
         assert cached.skipped == 4
+        assert cached.updated == 0
         assert cached.failed == 0
         assert esi_link.make_request.await_count == 4
+        with connection:
+            connection.execute(
+                """
+                UPDATE market_history_response
+                SET expires_at = '2000-01-01T00:00:00Z',
+                    argus_expires_at = '2000-01-01T00:00:00Z'
+                """
+            )
+        refreshed = await bulk.update_market_histories(
+            esi_link,
+            schema,
+            connection,
+            region_ids={10, 11},
+            type_ids={20, 21},
+        )
+        assert refreshed.updated == 4
+        assert refreshed.skipped == refreshed.failed == 0
+        assert esi_link.make_request.await_count == 8
 
     with sqlite3.connect(":memory:") as connection:
         connection.executescript(load_table_definitions())

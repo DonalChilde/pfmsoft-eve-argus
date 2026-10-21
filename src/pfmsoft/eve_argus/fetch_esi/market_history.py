@@ -9,16 +9,16 @@ from pfmsoft.eve_argus.esi import fetch as EsiFetch
 from pfmsoft.eve_argus.esi import validate as EsiValidate
 from pfmsoft.eve_argus.fetch_esi.update import UpdateResult, update_if_expired
 from pfmsoft.eve_argus.market_history import read, write
-from pfmsoft.eve_argus.market_history.models import MarketHistoryRecord
+from pfmsoft.eve_argus.market_history.models import MarketHistoryResponse
 
-type MarketHistoryUpdateResult = UpdateResult[MarketHistoryRecord]
+type MarketHistoryUpdateResult = UpdateResult[MarketHistoryResponse]
 
 
 def _current_state(
     connection: Connection, *, region_id: int, type_id: int
-) -> MarketHistoryRecord | None:
-    """Return the most recent history record for a region and type."""
-    records = read.read_market_history(
+) -> MarketHistoryResponse | None:
+    """Return the newest response metadata, including empty history responses."""
+    records = read.read_market_history_responses(
         connection, region_id=region_id, type_id=type_id, count=1
     )
     return records[0] if records else None
@@ -50,7 +50,8 @@ async def update_market_history(
     Returns:
         Update outcome with previous metadata and, on success, new metadata.
         Current data skips fetching. Missing expiration triggers a refresh;
-        Argus expiration overrides ESI expiration when present.
+        Argus expiration overrides ESI expiration when present. Freshness comes
+        from the newest response, even when no history records were returned.
     """
     return await update_if_expired(
         read_current=partial(
