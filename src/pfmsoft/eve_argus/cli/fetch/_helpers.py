@@ -9,6 +9,29 @@ from whenever import Instant
 
 from pfmsoft.eve_argus.fetch_esi.update import Expirable, UpdateResult, UpdateStatus
 from pfmsoft.eve_argus.settings import EveArgusSettings
+from pfmsoft.eve_argus.static.models import TypesRecord
+
+
+def report_market_history_failure(
+    *,
+    messenger: Console,
+    region_label: str,
+    type_id: int,
+    type_record: TypesRecord | None,
+    failure_message: str | None,
+) -> None:
+    """Report a history failure with static type details when available."""
+    type_name = type_record.name if type_record is not None else "Unknown type"
+    status = (
+        ", Not Published"
+        if type_record is not None and not type_record.published
+        else ""
+    )
+    messenger.print(
+        f"Failed: {region_label}, {type_name} ({type_id}){status}. "
+        f"Error Message: {failure_message or 'Update failed.'}",
+        markup=False,
+    )
 
 
 def report_update_result[T: Expirable](

@@ -6,12 +6,16 @@ from typing import Annotated
 import typer
 from rich.console import Console
 
-from pfmsoft.eve_argus.cli.fetch._helpers import report_update_result
+from pfmsoft.eve_argus.cli.fetch._helpers import (
+    report_market_history_failure,
+    report_update_result,
+)
 from pfmsoft.eve_argus.cli.helpers import get_eve_argus_settings_from_context
 from pfmsoft.eve_argus.eve_argus import EveArgusResources
 from pfmsoft.eve_argus.fetch_esi import update_market_history
 from pfmsoft.eve_argus.fetch_esi.update import UpdateStatus
 from pfmsoft.eve_argus.settings import EveArgusSettings
+from pfmsoft.eve_argus.static import read as static_read
 
 app = typer.Typer(no_args_is_help=True)
 
@@ -57,10 +61,22 @@ async def _fetch_market_history(
             region_id=region_id,
             type_id=type_id,
         )
+        if result.status is UpdateStatus.FAILED:
+            connection = resources.argus_static_db_connection
+            region = static_read.map_regions(connection).get(region_id)
+            report_market_history_failure(
+                messenger=Console(stderr=True),
+                region_label=f"{region.name if region is not None else 'Unknown region'} "
+                f"({region_id})",
+                type_id=type_id,
+                type_record=static_read.types(connection, only_published=False).get(
+                    type_id
+                ),
+                failure_message=result.failure_message,
+            )
+            raise typer.Exit(code=1)
         report_update_result(
             result,
-            messenger=Console(stderr=True)
-            if result.status is UpdateStatus.FAILED
-            else messenger,
+            messenger=messenger,
             dataset_name=f"market history for region {region_id}, type {type_id}",
         )

@@ -17,8 +17,8 @@ from pfmsoft.eve_argus.fetch_esi.update import UpdateResult, UpdateStatus
 
 logger = logging.getLogger(__name__)
 
-MARKET_HISTORY_BATCH_SIZE = 200
-MARKET_HISTORY_FAILURE_LIMIT = 20
+MARKET_HISTORY_BATCH_SIZE = 100
+MARKET_HISTORY_FAILURE_LIMIT = 50
 
 type ResultReporter = Callable[[int, int, MarketHistoryUpdateResult], None]
 
@@ -67,7 +67,7 @@ async def update_market_histories(
         schema: ESI request schema.
         connection: History connection used only on the event-loop thread.
         region_ids: Validated region IDs.
-        type_ids: Selected published market type IDs.
+        type_ids: Selected market type IDs.
         on_result: Optional synchronous reporter called for each completed pair.
         batch_size: Number of pairs to process concurrently.
         failure_limit: Maximum number of failed pairs before aborting.

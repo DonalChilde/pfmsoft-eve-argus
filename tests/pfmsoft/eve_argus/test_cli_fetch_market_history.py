@@ -32,6 +32,8 @@ def environment(monkeypatch: pytest.MonkeyPatch) -> CommandEnvironment:
     manager.__aenter__ = AsyncMock(return_value=resources)
     manager.__aexit__ = AsyncMock(return_value=False)
     monkeypatch.setattr(command, "EveArgusResources", Mock(return_value=manager))
+    monkeypatch.setattr(command.static_read, "types", Mock(return_value={}))
+    monkeypatch.setattr(command.static_read, "map_regions", Mock(return_value={}))
     updater = AsyncMock()
     monkeypatch.setattr(command, "update_market_history", updater)
     return CommandEnvironment(
@@ -118,7 +120,10 @@ def test_fetch_failure_is_visible(
     )
 
     assert result.exit_code == 1
-    assert "ESI unavailable" in result.output
+    output = " ".join(result.output.split())
+    assert "ESI unavailable" in output
+    assert "Unknown region (10000002), Unknown type (34)." in output
+    assert "Not Published" not in output
     environment.manager.__aexit__.assert_awaited_once()
 
 

@@ -14,6 +14,7 @@ from rich.progress import (
 )
 from rich.text import Text
 
+from pfmsoft.eve_argus.cli.fetch._helpers import report_market_history_failure
 from pfmsoft.eve_argus.cli.helpers import get_eve_argus_settings_from_context
 from pfmsoft.eve_argus.eve_argus import EveArgusResources
 from pfmsoft.eve_argus.fetch_esi import market_history_bulk as bulk
@@ -136,10 +137,11 @@ async def _fetch_market_history_bulk(
         unknown_regions = region_ids - regions.keys()
         if unknown_regions:
             raise typer.BadParameter(f"Unknown region IDs: {sorted(unknown_regions)}")
+        types = static_read.types(connection, only_published=True)
         try:
             type_ids = _select_type_ids(
                 market_groups=static_read.market_groups(connection),
-                types=static_read.types(connection, only_published=True),
+                types=types,
                 include=include,
                 exclude=exclude,
             )
@@ -200,9 +202,12 @@ async def _fetch_market_history_bulk(
                         last_pair=Text(pair),
                     )
                 if result.status is UpdateStatus.FAILED:
-                    errors.print(
-                        f"Failed: {pair}: {result.failure_message or 'Update failed.'}",
-                        markup=False,
+                    report_market_history_failure(
+                        messenger=errors,
+                        region_label=f"{regions[region_id].name} ({region_id})",
+                        type_id=type_id,
+                        type_record=types.get(type_id),
+                        failure_message=result.failure_message,
                     )
                 if (
                     not show_progress

@@ -67,6 +67,7 @@ def environment(
     for type_id, group_id in ((10, 2), (12, 3), (13, 4), (14, None)):
         record = Mock(spec=TypesRecord)
         record.type_id = type_id
+        record.name = f"Type {type_id}"
         record.market_group_id = group_id
         record.published = True
         types[type_id] = record

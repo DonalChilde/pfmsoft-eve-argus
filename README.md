@@ -45,6 +45,19 @@ Overlapping dates are replaced and older dates remain stored. Empty responses
 still record metadata. Failures are reported with a nonzero exit status.
 Use `--quiet` to suppress progress and success messages, but not update errors.
 
+All market-history fetch commands include the region and type names and IDs in
+history-update failures, using static database records. Unpublished types include
+`, Not Published`; published types have no publication label. For example:
+
+```text
+Failed: The Forge (10000002), Compressed Arkonor Blueprint (28368), Not Published. Error Message: HTTP 404 Not Found
+```
+
+Types absent from the static dataset are labeled `Unknown type` with their ID;
+their publication status is unknown and is not labeled. For the single-pair
+command, regions absent from static data are labeled `Unknown region` with their
+ID. These labels do not change selection, expiry checks, or failure exit statuses.
+
 History database initialization adds a region/type/received-time metadata index
 to both new and existing databases without changing stored records. The first
 initialization of an existing large database may take longer while the index is
@@ -109,6 +122,54 @@ redirected output retains the final summary and errors without animation.
 The transient display clears when execution ends, including on abort or interruption,
 so cancelled and unstarted pairs are not presented as successful completion.
 `--quiet` disables the spinner and routine output, but keeps errors and abort notices.
+
+### Active market history
+
+```bash
+uv run eve-argus fetch market-history-active \
+  --region-id 10000002 --region-id 10000043
+
+uv run eve-argus fetch market-history-active --hubs
+
+uv run eve-argus fetch market-history-active --region-id 10000064 --hubs
+```
+
+Provide at least one `--region-id`, `--hubs`, or both. The hubs flag adds the
+defined market hub regions for Jita, Amarr, Dodixie, Hek, and Rens, in that order.
+Explicit regions run first in command-line order, followed by hub regions, with
+duplicates removed across both selections. All region IDs are validated against
+the static map-regions dataset before any network requests. Static market groups
+are not used for selection; this command has no include/exclude filters.
+
+For each region, ESI's regional market-types endpoint supplies the active type
+IDs through the existing client's paginated request flow. "Active" means listed
+by that endpoint, not every type with historical trades. That endpoint can return
+unpublished type IDs, so active types marked unpublished in the static types
+dataset are excluded and counted. Active IDs missing from the static types
+dataset are **still fetched**, counted as unknown, and listed in a warning
+(shown even with `--quiet`) suggesting a static database update; their failure
+messages use `Unknown type`. Type IDs are
+deduplicated and scheduled in **ascending numeric order** in concurrent batches of
+`MARKET_HISTORY_BATCH_SIZE`; completion order can differ. Each pair uses the same
+expiry-aware history updater and database as the other history commands. An empty
+active-type list, or one with no published types after filtering, is a successful
+regional no-op.
+
+Each region has its own progress bar, counters, summary, and
+`MARKET_HISTORY_FAILURE_LIMIT` budget. Both limits use the shared bulk runner's
+current constants. A region's pending history tasks are cancelled and awaited
+when it reaches its limit, retaining committed updates. Failures finishing during
+cancellation can exceed the limit. Only after that region finishes or aborts does
+discovery for the next region begin.
+ESI client caching and rate limiting remain shared; update failure counts do not.
+
+Discovery failures and regional aborts are reported without stopping later
+regions. Any discovery or history-update failure produces a nonzero exit status
+after all regions have been processed. Progress reports updated, skipped, and
+failed counts; regional summaries also report cancelled and not-started pairs.
+The transient progress display clears on completion, abort, or interruption.
+`--quiet` hides routine output and progress, but not failures or abort notices.
+User interruption stops the entire command after pending history tasks clean up.
 
 ## Market hub price summaries
 
