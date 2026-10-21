@@ -11,8 +11,26 @@ from pfmsoft.eve_argus.static.store import StaticStore
 
 
 def get_static_database_path(settings: EveArgusSettings) -> Path:
-    """Resolve the configured build through StaticStore without creating a manifest."""
-    store = StaticStore(store_path=settings.static_database_store)
+    """Resolve the configured static build's database path without writing to the store.
+
+    The configured build number is used, or the latest manifest build when unset.
+
+    Args:
+        settings: Settings providing the static store path and build number.
+
+    Returns:
+        The database file path for the resolved build.
+
+    Raises:
+        FileNotFoundError: If the store exists but has no manifest file; a manifest is
+            never created by this read-only lookup.
+        ValueError: If the manifest has no entry for the configured build.
+    """
+    store_path = settings.static_database_store
+    manifest_path = store_path / StaticStore.MANIFEST_FILE_NAME
+    if store_path.is_dir() and not manifest_path.exists():
+        raise FileNotFoundError(f"Manifest file not found at {manifest_path}")
+    store = StaticStore(store_path=store_path)
     entry = store.get_entry(settings.static_database_build_number)
     if entry is None:
         raise ValueError(

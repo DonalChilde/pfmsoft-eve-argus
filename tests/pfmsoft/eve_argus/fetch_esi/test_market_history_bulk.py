@@ -26,9 +26,9 @@ def _result(
 
 
 def test_constants() -> None:
-    """Production limits are 100 tasks and 20 failures."""
+    """Production limits are 100 tasks and 50 failures."""
     assert bulk.MARKET_HISTORY_BATCH_SIZE == 100
-    assert bulk.MARKET_HISTORY_FAILURE_LIMIT == 20
+    assert bulk.MARKET_HISTORY_FAILURE_LIMIT == 50
 
 
 def test_batches_overlap_but_never_exceed_limit(
@@ -86,7 +86,6 @@ def test_global_failure_threshold(
     monkeypatch: pytest.MonkeyPatch, *, failures: int
 ) -> None:
     """Nineteen failures continue across regions/batches; twenty abort."""
-    monkeypatch.setattr(bulk, "MARKET_HISTORY_BATCH_SIZE", 5)
     calls: list[tuple[int, int]] = []
 
     async def update(
@@ -109,6 +108,8 @@ def test_global_failure_threshold(
             region_ids={11, 10},
             type_ids=set(range(12)),
             on_result=lambda region_id, type_id, result: reported.append(result.status),
+            batch_size=5,
+            failure_limit=20,
         )
     )
     assert summary.failed == failures
@@ -128,8 +129,6 @@ def test_abort_cancels_pending_and_preserves_commits(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Abort awaits cleanup and does not roll back already committed updates."""
-    monkeypatch.setattr(bulk, "MARKET_HISTORY_BATCH_SIZE", 5)
-    monkeypatch.setattr(bulk, "MARKET_HISTORY_FAILURE_LIMIT", 2)
 
     async def scenario(connection: sqlite3.Connection) -> None:
         ready = asyncio.Event()
@@ -165,6 +164,8 @@ def test_abort_cancels_pending_and_preserves_commits(
             connection,
             region_ids={10},
             type_ids=set(range(8)),
+            batch_size=5,
+            failure_limit=2,
         )
         assert summary.aborted
         assert summary.updated == 1
@@ -243,7 +244,6 @@ def test_reconciles_updates_finishing_during_abort(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """In-flight outcomes are counted even if cancellation cannot stop them."""
-    monkeypatch.setattr(bulk, "MARKET_HISTORY_FAILURE_LIMIT", 1)
 
     async def scenario() -> None:
         started = asyncio.Event()
@@ -269,6 +269,7 @@ def test_reconciles_updates_finishing_during_abort(
             Mock(spec=sqlite3.Connection),
             region_ids={10},
             type_ids={0, 1},
+            failure_limit=1,
         )
         assert summary.aborted
         assert summary.total == summary.failed == 2

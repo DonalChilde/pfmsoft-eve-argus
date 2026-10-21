@@ -209,13 +209,14 @@ def test_partial_failure_and_abort_reporting(
         obj={SETTINGS_KEY: environment.settings},
     )
     assert result.exit_code == 1
-    assert "boom" in result.output
-    assert "fetch exception" in result.output
-    assert "First Region (100)" in result.output
-    assert "Aborted" in result.output
+    output = " ".join(result.output.split())
+    assert "Type 12 (12). Error Message: boom" in output
+    assert "Type 13 (13). Error Message: RuntimeError: fetch exception" in output
+    assert "First Region (100)" in output
+    assert "Aborted: reached the global limit of 2 failed updates." in output
     if not quiet:
-        assert "updated=1" in result.output
-        assert "failed=2" in result.output
+        assert "updated=1" in output
+        assert "failed=2" in output
     environment.manager.__aexit__.assert_awaited_once()
 
 

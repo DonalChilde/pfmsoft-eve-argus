@@ -15,7 +15,7 @@ from pfmsoft.eve_argus.cli import helpers as cli_helpers
 from pfmsoft.eve_argus.helpers import connection_helpers
 from pfmsoft.eve_argus.settings import SETTINGS_KEY, EveArgusSettings
 from pfmsoft.eve_argus.static.query_helpers import load_table_definitions
-from pfmsoft.eve_argus.static.store import ManifestEntry, StaticManifest
+from pfmsoft.eve_argus.static.store import ManifestEntry, StaticManifest, StaticStore
 
 
 @pytest.fixture
@@ -304,15 +304,20 @@ def test_database_is_opened_read_only(
     )
 
 
-@pytest.mark.parametrize("build_number", [None, 1])
+@pytest.mark.parametrize(
+    ("build_number", "resolved"), [(None, 2), (1, 1)], ids=["latest", "explicit"]
+)
 def test_database_path_is_resolved_through_static_store(
     settings: EveArgusSettings,
     monkeypatch: pytest.MonkeyPatch,
     build_number: int | None,
+    resolved: int,
 ) -> None:
-    """Delegate default and explicit build selection to the store."""
+    """Resolve the manifest entry, then request its path by resolved build number."""
     settings.static_database_build_number = build_number
     factory = Mock()
+    factory.MANIFEST_FILE_NAME = StaticStore.MANIFEST_FILE_NAME
+    factory.return_value.get_entry.return_value = Mock(build_number=resolved)
     expected = settings.static_database_store / "selected.sqlite"
     factory.return_value.get_file_path_for_entry.return_value = expected
     monkeypatch.setattr(cli_helpers, "StaticStore", factory)
@@ -320,9 +325,20 @@ def test_database_path_is_resolved_through_static_store(
     assert cli_helpers.get_static_database_path(settings) == expected
 
     factory.assert_called_once_with(store_path=settings.static_database_store)
+    factory.return_value.get_entry.assert_called_once_with(build_number)
     factory.return_value.get_file_path_for_entry.assert_called_once_with(
-        build_number=build_number
+        build_number=resolved
     )
+
+
+def test_unknown_build_is_explicit_error(settings: EveArgusSettings) -> None:
+    """A build absent from the manifest names the configured build number."""
+    settings.static_database_build_number = 99
+
+    with pytest.raises(
+        ValueError, match="No static database manifest entry for build 99"
+    ):
+        cli_helpers.get_static_database_path(settings)
 
 
 def test_missing_manifest_is_not_created(

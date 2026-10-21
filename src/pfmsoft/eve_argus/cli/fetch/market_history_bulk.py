@@ -222,6 +222,8 @@ async def _fetch_market_history_bulk(
                 region_ids=region_ids,
                 type_ids=type_ids,
                 on_result=report,
+                batch_size=bulk.MARKET_HISTORY_BATCH_SIZE,
+                failure_limit=bulk.MARKET_HISTORY_FAILURE_LIMIT,
             )
         messenger.print(
             f"Market history: updated={summary.updated}, skipped={summary.skipped}, "
