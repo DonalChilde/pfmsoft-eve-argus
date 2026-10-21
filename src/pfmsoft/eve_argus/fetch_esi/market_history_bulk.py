@@ -69,6 +69,8 @@ async def update_market_histories(
         region_ids: Validated region IDs.
         type_ids: Selected published market type IDs.
         on_result: Optional synchronous reporter called for each completed pair.
+        batch_size: Number of pairs to process concurrently.
+        failure_limit: Maximum number of failed pairs before aborting.
 
     Returns:
         Totals after all pairs finish or the global failure limit is reached.

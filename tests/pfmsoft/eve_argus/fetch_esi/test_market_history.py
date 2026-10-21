@@ -86,6 +86,23 @@ def _seed(
             """,
             (received_at, expires_at, argus_expires_at, region_id, type_id),
         )
+        connection.execute(
+            """
+            INSERT INTO market_history (
+                received_at, expires_at, argus_expires_at, region_id, type_id,
+                average, date_, highest, lowest, order_count, volume
+            )
+            VALUES (?, ?, ?, ?, ?, 100, ?, 200, 50, 1, 2)
+            """,
+            (
+                received_at,
+                expires_at,
+                argus_expires_at,
+                region_id,
+                type_id,
+                received_at[:10],
+            ),
+        )
 
 
 def test_update_persists_validated_history(connection: sqlite3.Connection) -> None:
@@ -103,7 +120,7 @@ def test_update_persists_validated_history(connection: sqlite3.Connection) -> No
     assert result.new_state is not None
     assert (
         result.new_state
-        == read.read_market_history_responses(connection, region_id=10, type_id=20)[0]
+        == read.read_market_history(connection, region_id=10, type_id=20, count=1)[0]
     )
     assert result.new_state.received_at == _RECEIVED
     assert result.new_state.expires_at == _FUTURE
@@ -138,7 +155,7 @@ def test_update_respects_expiration(
 ) -> None:
     """Argus expiration overrides ESI expiration for the selected pair."""
     _seed(connection, expires_at=expires_at, argus_expires_at=argus_expires_at)
-    previous = read.read_market_history_responses(connection, region_id=10, type_id=20)[
+    previous = read.read_market_history(connection, region_id=10, type_id=20, count=1)[
         0
     ]
     esi_link = Mock(spec=EsiLink)
@@ -159,13 +176,50 @@ def test_update_respects_expiration(
         esi_link.make_request.assert_awaited_once()
 
 
+@pytest.mark.parametrize(
+    ("history_expiration", "occurrence_expiration", "expected"),
+    [
+        (_PAST, _FUTURE, UpdateStatus.UPDATED),
+        (_FUTURE, _PAST, UpdateStatus.SKIPPED),
+    ],
+)
+def test_update_uses_history_row_expiration(
+    connection: sqlite3.Connection,
+    *,
+    history_expiration: str,
+    occurrence_expiration: str,
+    expected: UpdateStatus,
+) -> None:
+    """Request occurrence metadata does not control market-history freshness."""
+    _seed(connection, expires_at=occurrence_expiration)
+    with connection:
+        connection.execute(
+            "UPDATE market_history SET expires_at = ? WHERE region_id = 10 AND type_id = 20",
+            (history_expiration,),
+        )
+    esi_link = Mock(spec=EsiLink)
+    esi_link.make_request = AsyncMock(return_value=_response())
+
+    result = asyncio.run(
+        update_market_history(
+            esi_link, Mock(spec=EsiSchema), connection, region_id=10, type_id=20
+        )
+    )
+
+    assert result.status is expected
+    if expected is UpdateStatus.SKIPPED:
+        esi_link.make_request.assert_not_awaited()
+    else:
+        esi_link.make_request.assert_awaited_once()
+
+
 @pytest.mark.parametrize("existing_pair", [False, True])
 def test_update_isolates_pairs_and_selects_latest(
     connection: sqlite3.Connection, *, existing_pair: bool
 ) -> None:
-    """Other pairs and older unexpired metadata cannot suppress an update."""
+    """Expiry follows the latest history date and ignores other pairs."""
     if existing_pair:
-        _seed(connection, expires_at=_FUTURE)
+        _seed(connection, expires_at=_FUTURE, received_at="2026-10-02T00:00:00Z")
         _seed(connection, received_at="2026-10-01T00:00:00Z")
     _seed(connection, expires_at=_FUTURE, region_id=11)
     _seed(connection, expires_at=_FUTURE, type_id=21)
@@ -178,10 +232,12 @@ def test_update_isolates_pairs_and_selects_latest(
         )
     )
 
-    assert result.status is UpdateStatus.UPDATED
+    assert result.status is (
+        UpdateStatus.SKIPPED if existing_pair else UpdateStatus.UPDATED
+    )
     if existing_pair:
         assert result.previous_state is not None
-        assert result.previous_state.received_at == "2026-10-01T00:00:00Z"
+        assert result.previous_state.received_at == "2026-10-02T00:00:00Z"
     else:
         assert result.previous_state is None
     for region_id, type_id in ((11, 20), (10, 21)):
@@ -252,18 +308,24 @@ def test_update_stores_empty_response(connection: sqlite3.Connection) -> None:
     )
 
     assert result.status is UpdateStatus.UPDATED
-    assert result.new_state is not None
+    assert result.new_state is None
     assert read.read_market_history(connection, region_id=10, type_id=20) == ()
+    assert (
+        read.read_market_history_responses(connection, region_id=10, type_id=20)[
+            0
+        ].received_at
+        == _RECEIVED
+    )
 
 
-@pytest.mark.parametrize("failure", ["esi", "validation", "duplicate", "write"])
+@pytest.mark.parametrize("failure", ["esi", "validation", "write"])
 def test_update_reports_failure_without_partial_writes(
     connection: sqlite3.Connection,
     *,
-    failure: Literal["esi", "validation", "duplicate", "write"],
+    failure: Literal["esi", "validation", "write"],
 ) -> None:
     """Failures preserve existing data and report a failed result."""
-    _seed(connection, received_at=_RECEIVED if failure == "duplicate" else _PAST)
+    _seed(connection)
     previous = read.read_market_history_responses(connection, region_id=10, type_id=20)
     response = _response()
     match failure:
@@ -272,8 +334,6 @@ def test_update_reports_failure_without_partial_writes(
             response.failed_response.error_messages = ["ESI unavailable"]
         case "validation":
             response.response_data = [{"average": "invalid"}]
-        case "duplicate":
-            pass
         case "write":
             with connection:
                 connection.execute(
@@ -308,11 +368,9 @@ def test_update_reports_failure_without_partial_writes(
     )
 
     assert result.status is UpdateStatus.FAILED
-    assert result.previous_state == previous[0]
+    assert result.previous_state == previous_records[0]
     assert result.new_state is None
     assert result.failure_message
-    if failure == "duplicate":
-        assert "previously stored" in result.failure_message
     assert (
         read.read_market_history_responses(connection, region_id=10, type_id=20)
         == previous
@@ -323,31 +381,45 @@ def test_update_reports_failure_without_partial_writes(
     )
 
 
-def test_update_uses_only_targeted_metadata_queries(
-    connection: sqlite3.Connection, monkeypatch: pytest.MonkeyPatch
+def test_update_reads_only_latest_history_and_replaces_repeat_occurrence(
+    connection: sqlite3.Connection,
 ) -> None:
-    """Success and older duplicate detection never load all stored metadata."""
+    """Repeated request timestamps replace occurrences without metadata reads."""
     _seed(connection, received_at=_RECEIVED)
     _seed(connection, received_at="2026-10-19T00:00:00Z")
-    monkeypatch.setattr(
-        read,
-        "read_market_history_responses",
-        Mock(side_effect=AssertionError("Full metadata reads are not allowed")),
-    )
     esi_link = Mock(spec=EsiLink)
     esi_link.make_request = AsyncMock(return_value=_response())
     schema = Mock(spec=EsiSchema)
+    statements: list[str] = []
+    connection.set_trace_callback(statements.append)
 
-    duplicate = asyncio.run(
+    repeated = asyncio.run(
         update_market_history(esi_link, schema, connection, region_id=10, type_id=20)
     )
-    assert duplicate.status is UpdateStatus.FAILED
-    assert duplicate.failure_message is not None
-    assert "previously stored" in duplicate.failure_message
-    assert duplicate.previous_state is not None
-    assert duplicate.previous_state.received_at == "2026-10-19T00:00:00Z"
+    assert repeated.status is UpdateStatus.UPDATED
+    assert repeated.previous_state is not None
+    assert repeated.previous_state.received_at == "2026-10-19T00:00:00Z"
+    queries = [sql for sql in statements if sql.lstrip().startswith("SELECT")]
+    assert len(queries) == 2
+    assert all("FROM market_history\n" in sql and "LIMIT 1" in sql for sql in queries)
+    assert (
+        len(read.read_market_history_responses(connection, region_id=10, type_id=20))
+        == 2
+    )
 
-    esi_link.make_request.return_value = _response(received_at="2026-10-20T00:00:00Z")
+    esi_link.make_request.return_value = _response(
+        received_at="2026-10-20T00:00:00Z",
+        history=[
+            {
+                "average": 123.45,
+                "date": "2026-10-20",
+                "highest": 130.00,
+                "lowest": 120.00,
+                "order_count": 5,
+                "volume": 100,
+            }
+        ],
+    )
     updated = asyncio.run(
         update_market_history(esi_link, schema, connection, region_id=10, type_id=20)
     )

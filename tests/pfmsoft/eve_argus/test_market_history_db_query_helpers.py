@@ -1,6 +1,7 @@
 """Tests for market-history database readers."""
 
 import sqlite3
+from collections.abc import Iterator
 from contextlib import closing
 from decimal import Decimal
 
@@ -9,8 +10,192 @@ import pytest
 from pfmsoft.eve_argus.market_history import models, read, util
 
 
-def test_targeted_response_queries() -> None:
-    """Find only the newest pair metadata and exact duplicate timestamps."""
+@pytest.fixture
+def connection() -> Iterator[sqlite3.Connection]:
+    """Provide a schema-initialized database and close it after the test."""
+    with closing(sqlite3.connect(":memory:")) as database:
+        database.executescript(util.load_table_definitions())
+        yield database
+
+
+@pytest.mark.parametrize("count", [None, 1, 2, 10])
+@pytest.mark.parametrize("start", [None, "2026-10-02", "2026-10-01", "2026-09-30"])
+def test_read_market_history_limits_matching_pair(
+    *, start: str | None, count: int | None
+) -> None:
+    """Filter one pair before applying inclusive date bounds and SQL limits."""
+    with closing(sqlite3.connect(":memory:")) as connection:
+        connection.executescript(util.load_table_definitions())
+        connection.executemany(
+            """
+            INSERT INTO market_history (
+                received_at, expires_at, argus_expires_at, region_id, type_id,
+                average, date_, highest, lowest, order_count, volume
+            )
+            VALUES ('2026-10-05', '2026-10-06', '2026-10-07', ?, ?,
+                12345, ?, 13000, 12000, 5, 100)
+            """,
+            [
+                (10, 20, "2026-10-01"),
+                (11, 20, "2026-10-03"),
+                (10, 21, "2026-10-03"),
+                (10, 20, "2026-10-03"),
+                (10, 20, "2026-10-02"),
+            ],
+        )
+
+        records = read.read_market_history(
+            connection, region_id=10, type_id=20, start=start, count=count
+        )
+
+        expected_dates = [
+            date
+            for date in ("2026-10-03", "2026-10-02", "2026-10-01")
+            if start is None or date <= start
+        ][:count]
+        assert isinstance(records, tuple)
+        assert [record.date for record in records] == expected_dates
+        for record in records:
+            assert record == models.MarketHistoryRecord(
+                received_at="2026-10-05",
+                expires_at="2026-10-06",
+                argus_expires_at="2026-10-07",
+                region_id=10,
+                type_id=20,
+                average=Decimal("123.45"),
+                date=record.date,
+                highest=Decimal("130.00"),
+                lowest=Decimal("120.00"),
+                order_count=5,
+                volume=100,
+            )
+        assert (
+            read.read_market_history(
+                connection, region_id=99, type_id=20, start=start, count=count
+            )
+            == ()
+        )
+
+
+@pytest.mark.parametrize(
+    ("start", "end", "expected_dates"),
+    [
+        (None, None, ["2026-10-03", "2026-10-02", "2026-10-01"]),
+        ("2026-10-02", None, ["2026-10-02", "2026-10-01"]),
+        (None, "2026-10-02", ["2026-10-03", "2026-10-02"]),
+        ("2026-10-02", "2026-10-02", ["2026-10-02"]),
+        ("2026-10-01", "2026-10-03", []),
+        ("2026-09-30", None, []),
+        (None, "2026-10-04", []),
+    ],
+)
+def test_read_market_history_date_range_bounds(
+    *, start: str | None, end: str | None, expected_dates: list[str]
+) -> None:
+    """Date ranges are inclusive and do not include records from other pairs."""
+    with closing(sqlite3.connect(":memory:")) as connection:
+        connection.executescript(util.load_table_definitions())
+        connection.executemany(
+            """
+            INSERT INTO market_history (
+                received_at, region_id, type_id, average, date_, highest,
+                lowest, order_count, volume
+            )
+            VALUES ('2026-10-05', ?, ?, 100, ?, 200, 50, 1, 2)
+            """,
+            [
+                (10, 20, "2026-10-01"),
+                (10, 20, "2026-10-03"),
+                (10, 20, "2026-10-02"),
+                (11, 20, "2026-10-02"),
+                (10, 21, "2026-10-02"),
+            ],
+        )
+
+        records = read.read_market_history_date_range(
+            connection, region_id=10, type_id=20, start=start, end=end
+        )
+
+        assert isinstance(records, tuple)
+        assert [record.date for record in records] == expected_dates
+        assert all(
+            record.region_id == 10 and record.type_id == 20 for record in records
+        )
+
+
+@pytest.mark.parametrize("count", [None, 1, 2, 10])
+@pytest.mark.parametrize("start", [None, "2026-10-02", "2026-10-01", "2026-09-30"])
+def test_read_market_history_by_region(*, start: str | None, count: int | None) -> None:
+    """Filter dates before limiting each type and preserve complete record data."""
+    with closing(sqlite3.connect(":memory:")) as connection:
+        connection.executescript(util.load_table_definitions())
+        connection.executemany(
+            """
+            INSERT INTO market_history (
+                received_at, expires_at, argus_expires_at, region_id, type_id,
+                average, date_, highest, lowest, order_count, volume
+            )
+            VALUES ('2026-10-05', '2026-10-06', '2026-10-07', ?, ?,
+                12345, ?, 13000, 12000, 5, 100)
+            """,
+            [
+                (10, 20, "2026-10-01"),
+                (11, 20, "2026-10-02"),
+                (10, 21, "2026-10-03"),
+                (10, 20, "2026-10-02"),
+                (10, 21, "2026-10-01"),
+            ],
+        )
+
+        records = read.read_market_history_by_region(
+            connection, region_id=10, start=start, count=count
+        )
+
+        expected: dict[int, tuple[models.MarketHistoryRecord, ...]] = {}
+        for type_id, dates in (
+            (20, ["2026-10-02", "2026-10-01"]),
+            (21, ["2026-10-03", "2026-10-01"]),
+        ):
+            selected_dates = [date for date in dates if start is None or date <= start][
+                :count
+            ]
+            if selected_dates:
+                expected[type_id] = tuple(
+                    models.MarketHistoryRecord(
+                        received_at="2026-10-05",
+                        expires_at="2026-10-06",
+                        argus_expires_at="2026-10-07",
+                        region_id=10,
+                        type_id=type_id,
+                        average=Decimal("123.45"),
+                        date=date,
+                        highest=Decimal("130.00"),
+                        lowest=Decimal("120.00"),
+                        order_count=5,
+                        volume=100,
+                    )
+                    for date in selected_dates
+                )
+        assert records == expected
+        assert (
+            read.read_market_history_by_region(
+                connection, region_id=99, start=start, count=count
+            )
+            == {}
+        )
+
+
+@pytest.mark.parametrize("count", [0, -1])
+def test_read_market_history_by_region_rejects_nonpositive_count(count: int) -> None:
+    """Reject invalid per-type limits even when the database has no history."""
+    with closing(sqlite3.connect(":memory:")) as connection:
+        connection.executescript(util.load_table_definitions())
+        with pytest.raises(ValueError, match="count must be positive"):
+            read.read_market_history_by_region(connection, region_id=10, count=count)
+
+
+def test_read_market_history_responses_uses_pair_index() -> None:
+    """Read the newest response using the pair index without a temporary sort."""
     with closing(sqlite3.connect(":memory:")) as connection:
         connection.executescript(util.load_table_definitions())
         connection.executemany(
@@ -28,15 +213,17 @@ def test_targeted_response_queries() -> None:
         )
         statements: list[str] = []
         connection.set_trace_callback(statements.append)
-        assert read.read_market_history_latest_response(
-            connection, region_id=10, type_id=20
-        ) == models.MarketHistoryResponse(
-            response_metadata_id=1,
-            received_at="2026-10-02",
-            expires_at=None,
-            argus_expires_at="2026-10-03",
-            region_id=10,
-            type_id=20,
+        assert read.read_market_history_responses(
+            connection, region_id=10, type_id=20, count=1
+        ) == (
+            models.MarketHistoryResponse(
+                response_metadata_id=1,
+                received_at="2026-10-02",
+                expires_at=None,
+                argus_expires_at="2026-10-03",
+                region_id=10,
+                type_id=20,
+            ),
         )
         latest_query = next(sql for sql in statements if "SELECT" in sql)
         assert "LIMIT 1" in latest_query
@@ -48,33 +235,6 @@ def test_targeted_response_queries() -> None:
             for step in plan
         )
         assert not any("SCAN" in step or "TEMP B-TREE" in step for step in plan)
-        assert (
-            read.read_market_history_latest_response(
-                connection, region_id=99, type_id=20
-            )
-            is None
-        )
-        statements.clear()
-        assert read.market_history_response_exists(
-            connection, region_id=10, type_id=20, received_at="2026-10-01"
-        )
-        exists_query = next(sql for sql in statements if "SELECT" in sql)
-        assert "EXISTS" in exists_query
-        plan = [
-            row[3] for row in connection.execute("EXPLAIN QUERY PLAN " + exists_query)
-        ]
-        assert any("SEARCH market_history_response" in step for step in plan)
-        for region_id, type_id, received_at in (
-            (11, 20, "2026-10-01"),
-            (10, 21, "2026-10-01"),
-            (10, 20, "2026-10-06"),
-        ):
-            assert not read.market_history_response_exists(
-                connection,
-                region_id=region_id,
-                type_id=type_id,
-                received_at=received_at,
-            )
 
 
 def test_schema_adds_index_to_existing_database() -> None:
@@ -110,10 +270,10 @@ def test_schema_adds_index_to_existing_database() -> None:
         ]
 
 
-def test_read_market_history_filters_and_orders_records() -> None:
+def test_read_market_history_filters_and_orders_records(
+    connection: sqlite3.Connection,
+) -> None:
     """Read matching history newest first and convert prices from cents."""
-    connection = sqlite3.connect(":memory:")
-    connection.executescript(util.load_table_definitions())
     connection.executemany(
         """
         INSERT INTO market_history (
@@ -135,6 +295,8 @@ def test_read_market_history_filters_and_orders_records() -> None:
     assert records == (
         models.MarketHistoryRecord(
             received_at="2026-10-01",
+            expires_at=None,
+            argus_expires_at=None,
             region_id=10,
             type_id=20,
             average=Decimal("123.45"),
@@ -146,6 +308,8 @@ def test_read_market_history_filters_and_orders_records() -> None:
         ),
         models.MarketHistoryRecord(
             received_at="2026-10-01",
+            expires_at=None,
+            argus_expires_at=None,
             region_id=10,
             type_id=20,
             average=Decimal("110.00"),
@@ -157,122 +321,145 @@ def test_read_market_history_filters_and_orders_records() -> None:
         ),
     )
 
-    bounded_records = read.read_market_history_date_range(
-        connection,
-        region_id=10,
-        type_id=20,
-        start="2026-09-30",
-        end="2026-09-29",
-    )
-    assert bounded_records == records
-
-    assert [
-        record.date
-        for record in read.read_market_history_date_range(
-            connection,
-            region_id=10,
-            type_id=20,
-            start="2026-09-29",
-            end=None,
-        )
-    ] == ["2026-09-29"]
-    assert [
-        record.date
-        for record in read.read_market_history_date_range(
-            connection,
-            region_id=10,
-            type_id=20,
-            start=None,
-            end="2026-09-30",
-        )
-    ] == ["2026-09-30"]
-    assert [
-        record.date
-        for record in read.read_market_history_date_range(
-            connection,
-            region_id=10,
-            type_id=20,
-            start=None,
-            end=None,
-        )
-    ] == ["2026-09-30", "2026-09-29"]
-
-    assert [
-        record.date
-        for record in read.read_market_history_date_count(
-            connection, region_id=10, type_id=20
-        )
-    ] == ["2026-09-30", "2026-09-29"]
-    assert [
-        record.date
-        for record in read.read_market_history_date_count(
+    assert (
+        read.read_market_history_date_range(
             connection,
             region_id=10,
             type_id=20,
             start="2026-09-30",
-            count=1,
+            end="2026-09-29",
         )
-    ] == ["2026-09-30"]
-    assert [
-        record.date
-        for record in read.read_market_history_date_count(
-            connection,
-            region_id=10,
-            type_id=20,
-            start="2026-09-29",
-            count=2,
-        )
-    ] == ["2026-09-29"]
-    assert (
-        read.read_market_history_date_count(
-            connection,
-            region_id=10,
-            type_id=20,
-            start="2026-09-28",
-            count=5,
-        )
-        == ()
+        == records
     )
 
-    plan = [
-        row[3]
-        for row in connection.execute(
-            """
-            EXPLAIN QUERY PLAN
-            SELECT received_at, region_id, type_id, average, date_, highest,
-                lowest, order_count, volume
-            FROM market_history
-            WHERE region_id = ? AND type_id = ? AND date_ <= ?
-            ORDER BY date_ DESC
-            LIMIT ?
-            """,
-            (10, 20, "2026-09-30", 1),
-        )
-    ]
+    statements: list[str] = []
+    connection.set_trace_callback(statements.append)
+    assert read.read_market_history(
+        connection, region_id=10, type_id=20, start="2026-09-30", count=1
+    ) == (records[0],)
+    query = next(sql for sql in statements if "SELECT" in sql)
+    assert "LIMIT 1" in query
+    plan = [row[3] for row in connection.execute("EXPLAIN QUERY PLAN " + query)]
     assert any("SEARCH market_history USING INDEX" in step for step in plan)
     assert not any("TEMP B-TREE" in step for step in plan)
 
-    assert read.read_market_history_latest(
-        connection, region_id=10, type_id=20, count=1
-    ) == (records[0],)
-    with pytest.raises(ValueError, match="count must be positive"):
-        read.read_market_history_latest(connection, region_id=10, type_id=20, count=0)
-    with pytest.raises(ValueError, match="count must be positive"):
-        read.read_market_history_latest(connection, region_id=10, type_id=20, count=-1)
-    with pytest.raises(ValueError, match="count must be positive"):
-        read.read_market_history_date_count(
-            connection, region_id=10, type_id=20, count=0
+
+@pytest.mark.parametrize("count", [0, -1])
+def test_read_market_history_rejects_nonpositive_count(count: int) -> None:
+    """Reject nonpositive limits using the current pair reader."""
+    with closing(sqlite3.connect(":memory:")) as connection:
+        connection.executescript(util.load_table_definitions())
+        with pytest.raises(ValueError, match="count must be positive"):
+            read.read_market_history(connection, region_id=10, type_id=20, count=count)
+
+
+@pytest.mark.parametrize("count", [None, 1, 2, 10])
+def test_read_market_history_responses_limits_records(count: int | None) -> None:
+    """Apply the optional limit in SQL without changing pair filtering or order."""
+    with closing(sqlite3.connect(":memory:")) as connection:
+        connection.executescript(util.load_table_definitions())
+        connection.executemany(
+            """
+            INSERT INTO market_history_response (received_at, region_id, type_id)
+            VALUES (?, ?, ?)
+            """,
+            [
+                ("2026-10-01", 10, 20),
+                ("2026-10-03", 11, 20),
+                ("2026-10-02", 10, 20),
+                ("2026-10-04", 10, 21),
+            ],
         )
-    with pytest.raises(ValueError, match="count must be positive"):
-        read.read_market_history_date_count(
-            connection, region_id=10, type_id=20, count=-1
+        statements: list[str] = []
+        connection.set_trace_callback(statements.append)
+
+        responses = read.read_market_history_responses(
+            connection, region_id=10, type_id=20, count=count
+        )
+
+        expected = ["2026-10-02", "2026-10-01"]
+        assert [response.received_at for response in responses] == expected[:count]
+        query = next(sql for sql in statements if "SELECT" in sql)
+        if count is None:
+            assert "LIMIT" not in query
+        else:
+            assert f"LIMIT {count}" in query
+        assert (
+            read.read_market_history_responses(
+                connection, region_id=99, type_id=20, count=count
+            )
+            == ()
         )
 
 
-def test_read_market_history_responses_filter_order_and_group_by_region() -> None:
+@pytest.mark.parametrize("count", [0, -1])
+def test_read_market_history_responses_rejects_nonpositive_count(count: int) -> None:
+    """Reject invalid limits rather than returning misleading query results."""
+    with closing(sqlite3.connect(":memory:")) as connection:
+        connection.executescript(util.load_table_definitions())
+        with pytest.raises(ValueError, match="count must be positive"):
+            read.read_market_history_responses(
+                connection, region_id=10, type_id=20, count=count
+            )
+
+
+@pytest.mark.parametrize("count", [None, 1, 2, 10])
+def test_read_market_history_responses_by_region_limits_each_type(
+    count: int | None,
+) -> None:
+    """Limit each type independently while preserving newest-first ordering."""
+    with closing(sqlite3.connect(":memory:")) as connection:
+        connection.executescript(util.load_table_definitions())
+        connection.executemany(
+            """
+            INSERT INTO market_history_response (received_at, region_id, type_id)
+            VALUES (?, ?, ?)
+            """,
+            [
+                ("2026-10-01", 10, 20),
+                ("2026-10-03", 11, 20),
+                ("2026-10-02", 10, 20),
+                ("2026-10-04", 10, 21),
+                ("2026-10-03", 10, 21),
+            ],
+        )
+
+        responses = read.read_market_history_responses_by_region(
+            connection, region_id=10, count=count
+        )
+
+        assert {
+            type_id: [response.received_at for response in records]
+            for type_id, records in responses.items()
+        } == {
+            20: ["2026-10-02", "2026-10-01"][:count],
+            21: ["2026-10-04", "2026-10-03"][:count],
+        }
+        assert (
+            read.read_market_history_responses_by_region(
+                connection, region_id=99, count=count
+            )
+            == {}
+        )
+
+
+@pytest.mark.parametrize("count", [0, -1])
+def test_read_market_history_responses_by_region_rejects_nonpositive_count(
+    count: int,
+) -> None:
+    """Reject nonpositive per-type limits."""
+    with closing(sqlite3.connect(":memory:")) as connection:
+        connection.executescript(util.load_table_definitions())
+        with pytest.raises(ValueError, match="count must be positive"):
+            read.read_market_history_responses_by_region(
+                connection, region_id=10, count=count
+            )
+
+
+def test_read_market_history_responses_filter_order_and_group_by_region(
+    connection: sqlite3.Connection,
+) -> None:
     """Read response metadata newest first and group region data by type."""
-    connection = sqlite3.connect(":memory:")
-    connection.executescript(util.load_table_definitions())
     connection.executemany(
         """
         INSERT INTO market_history_response (

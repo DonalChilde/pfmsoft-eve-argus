@@ -9,39 +9,24 @@ from pfmsoft.eve_argus.esi import fetch as EsiFetch
 from pfmsoft.eve_argus.esi import validate as EsiValidate
 from pfmsoft.eve_argus.fetch_esi.update import UpdateResult, update_if_expired
 from pfmsoft.eve_argus.market_history import read, write
-from pfmsoft.eve_argus.market_history.models import MarketHistoryResponse
+from pfmsoft.eve_argus.market_history.models import MarketHistoryRecord
 
-type MarketHistoryUpdateResult = UpdateResult[MarketHistoryResponse]
+type MarketHistoryUpdateResult = UpdateResult[MarketHistoryRecord]
 
 
 def _current_state(
     connection: Connection, *, region_id: int, type_id: int
-) -> MarketHistoryResponse | None:
-    """Return the latest stored response for a region and type."""
-    return read.read_market_history_latest_response(
-        connection, region_id=region_id, type_id=type_id
+) -> MarketHistoryRecord | None:
+    """Return the most recent history record for a region and type."""
+    records = read.read_market_history(
+        connection, region_id=region_id, type_id=type_id, count=1
     )
+    return records[0] if records else None
 
 
-def _store(
-    connection: Connection, response: EsiResponse, *, region_id: int, type_id: int
-) -> None:
-    """Validate and write a market-history response.
-
-    Raises:
-        ValueError: If ESI returned a response already stored for this pair.
-    """
+def _store(connection: Connection, response: EsiResponse) -> None:
+    """Validate and write a market-history response."""
     history = EsiValidate.market_history(response)
-    if read.market_history_response_exists(
-        connection,
-        region_id=region_id,
-        type_id=type_id,
-        received_at=history.received_at,
-    ):
-        raise ValueError(
-            "ESI returned a previously stored market-history response "
-            "without a new received_at."
-        )
     write.write_market_history(connection, history=history)
 
 
@@ -78,5 +63,5 @@ async def update_market_history(
             region_id=region_id,
             type_id=type_id,
         ),
-        store=partial(_store, connection, region_id=region_id, type_id=type_id),
+        store=partial(_store, connection),
     )

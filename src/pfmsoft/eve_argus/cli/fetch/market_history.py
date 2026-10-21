@@ -57,6 +57,9 @@ async def _fetch_market_history(
             region_id=region_id,
             type_id=type_id,
         )
+        if result.status is UpdateStatus.UPDATED and result.new_state is None:
+            messenger.print("The ESI response contained no market history records.")
+            return
         report_update_result(
             result,
             messenger=Console(stderr=True)

@@ -13,6 +13,7 @@ CREATE TABLE IF NOT EXISTS market_history_response (
     region_id INTEGER NOT NULL,
     type_id INTEGER NOT NULL,
     UNIQUE(received_at, region_id, type_id)
+    ON CONFLICT REPLACE
 ) STRICT;
 
 CREATE INDEX IF NOT EXISTS market_history_response_pair_received
