@@ -21,6 +21,8 @@ ON market_history_response (region_id, type_id, received_at DESC, id DESC);
 CREATE TABLE IF NOT EXISTS market_history (
     ID INTEGER PRIMARY KEY AUTOINCREMENT,
     received_at TEXT NOT NULL,
+    expires_at TEXT,
+    argus_expires_at TEXT, -- included to allow custom expiration handling
     region_id INTEGER NOT NULL,
     type_id INTEGER NOT NULL,
     average INTEGER NOT NULL, -- stored as an integer for precision. Values are assumed to be 0.00 format

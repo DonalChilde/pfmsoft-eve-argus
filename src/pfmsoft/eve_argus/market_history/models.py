@@ -17,6 +17,8 @@ class MarketHistoryResponse:
 @dataclass(slots=True, kw_only=True, frozen=True)
 class MarketHistoryRecord:
     received_at: str
+    expires_at: str | None
+    argus_expires_at: str | None
     region_id: int
     type_id: int
     average: Decimal

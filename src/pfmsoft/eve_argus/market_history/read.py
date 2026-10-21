@@ -32,7 +32,7 @@ def read_market_history(
     with connection:
         cursor = connection.execute(
             """
-            SELECT received_at, region_id, type_id, average, date_, highest,
+            SELECT received_at,expires_at, argus_expires_at, region_id, type_id, average, date_, highest,
                 lowest, order_count, volume
             FROM market_history
             WHERE region_id = ? AND type_id = ?
@@ -43,14 +43,16 @@ def read_market_history(
         return tuple(
             models.MarketHistoryRecord(
                 received_at=row[0],
-                region_id=row[1],
-                type_id=row[2],
-                average=from_cents(row[3]),
-                date=row[4],
-                highest=from_cents(row[5]),
-                lowest=from_cents(row[6]),
-                order_count=row[7],
-                volume=row[8],
+                expires_at=row[1],
+                argus_expires_at=row[2],
+                region_id=row[3],
+                type_id=row[4],
+                average=from_cents(row[5]),
+                date=row[6],
+                highest=from_cents(row[7]),
+                lowest=from_cents(row[8]),
+                order_count=row[9],
+                volume=row[10],
             )
             for row in cursor
         )
@@ -80,7 +82,7 @@ def read_market_history_date_range(
         Market history records ordered by date descending, most recent first.
     """
     query = """
-        SELECT received_at, region_id, type_id, average, date_, highest,
+        SELECT received_at, expires_at, argus_expires_at, region_id, type_id, average, date_, highest,
             lowest, order_count, volume
         FROM market_history
         WHERE region_id = ? AND type_id = ?
@@ -99,14 +101,16 @@ def read_market_history_date_range(
         return tuple(
             models.MarketHistoryRecord(
                 received_at=row[0],
-                region_id=row[1],
-                type_id=row[2],
-                average=from_cents(row[3]),
-                date=row[4],
-                highest=from_cents(row[5]),
-                lowest=from_cents(row[6]),
-                order_count=row[7],
-                volume=row[8],
+                expires_at=row[1],
+                argus_expires_at=row[2],
+                region_id=row[3],
+                type_id=row[4],
+                average=from_cents(row[5]),
+                date=row[6],
+                highest=from_cents(row[7]),
+                lowest=from_cents(row[8]),
+                order_count=row[9],
+                volume=row[10],
             )
             for row in cursor
         )
@@ -141,7 +145,7 @@ def read_market_history_date_count(
         raise ValueError("count must be positive")
 
     query = """
-        SELECT received_at, region_id, type_id, average, date_, highest,
+        SELECT received_at,expires_at, argus_expires_at, region_id, type_id, average, date_, highest,
             lowest, order_count, volume
         FROM market_history
         WHERE region_id = ? AND type_id = ?
@@ -160,14 +164,16 @@ def read_market_history_date_count(
         return tuple(
             models.MarketHistoryRecord(
                 received_at=row[0],
-                region_id=row[1],
-                type_id=row[2],
-                average=from_cents(row[3]),
-                date=row[4],
-                highest=from_cents(row[5]),
-                lowest=from_cents(row[6]),
-                order_count=row[7],
-                volume=row[8],
+                expires_at=row[1],
+                argus_expires_at=row[2],
+                region_id=row[3],
+                type_id=row[4],
+                average=from_cents(row[5]),
+                date=row[6],
+                highest=from_cents(row[7]),
+                lowest=from_cents(row[8]),
+                order_count=row[9],
+                volume=row[10],
             )
             for row in cursor
         )
@@ -201,7 +207,7 @@ def read_market_history_latest(
     with connection:
         cursor = connection.execute(
             """
-            SELECT received_at, region_id, type_id, average, date_, highest,
+            SELECT received_at, expires_at, argus_expires_at, region_id, type_id, average, date_, highest,
                 lowest, order_count, volume
             FROM market_history
             WHERE region_id = ? AND type_id = ?
@@ -213,14 +219,16 @@ def read_market_history_latest(
         return tuple(
             models.MarketHistoryRecord(
                 received_at=row[0],
-                region_id=row[1],
-                type_id=row[2],
-                average=from_cents(row[3]),
-                date=row[4],
-                highest=from_cents(row[5]),
-                lowest=from_cents(row[6]),
-                order_count=row[7],
-                volume=row[8],
+                expires_at=row[1],
+                argus_expires_at=row[2],
+                region_id=row[3],
+                type_id=row[4],
+                average=from_cents(row[5]),
+                date=row[6],
+                highest=from_cents(row[7]),
+                lowest=from_cents(row[8]),
+                order_count=row[9],
+                volume=row[10],
             )
             for row in cursor
         )

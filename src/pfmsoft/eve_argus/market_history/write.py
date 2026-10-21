@@ -31,11 +31,12 @@ def write_market_history(
         # This should fail early if the response is already in the DB
         connection.execute(
             """
-            INSERT INTO market_history_response (received_at,expires_at, region_id, type_id)
-            VALUES (?, ?, ?, ?)
+            INSERT INTO market_history_response (received_at,expires_at,argus_expires_at, region_id, type_id)
+            VALUES (?, ?, ?, ?, ?)
             """,
             (
                 history.received_at,
+                history.expires_at,
                 history.expires_at,
                 history.region_id,
                 history.type_id,
@@ -44,12 +45,14 @@ def write_market_history(
         # Insert each history detail into the database
         connection.executemany(
             """
-            INSERT INTO market_history (received_at, region_id, type_id, average,date_,highest,lowest,order_count,volume)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO market_history (received_at, expires_at, argus_expires_at, region_id, type_id, average,date_,highest,lowest,order_count,volume)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             [
                 (
                     history.received_at,
+                    history.expires_at,
+                    history.expires_at,
                     history.region_id,
                     history.type_id,
                     to_cents(detail.average),
