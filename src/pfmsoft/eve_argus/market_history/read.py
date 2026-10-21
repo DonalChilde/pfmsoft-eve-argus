@@ -113,6 +113,67 @@ def read_market_history_date_range(
 
 
 @log_timing(logger=logger, level=_timing_log_level)
+def read_market_history_date_count(
+    connection: Connection,
+    *,
+    region_id: int,
+    type_id: int,
+    start: str | None = None,
+    count: int | None = None,
+) -> tuple[models.MarketHistoryRecord, ...]:
+    """Read market history starting at the given date, limited by count.
+
+    Args:
+        connection: Database connection.
+        region_id: Region ID.
+        type_id: Type ID.
+        start: Inclusive ISO date bound for the most recent date, or None to
+            start at the beginning of available history.
+        count: Maximum number of records to count, or None for no limit.
+
+    Returns:
+        Market history records ordered by date descending, most recent first.
+
+    Raises:
+        ValueError: If count is zero or negative.
+    """
+    if count is not None and count <= 0:
+        raise ValueError("count must be positive")
+
+    query = """
+        SELECT received_at, region_id, type_id, average, date_, highest,
+            lowest, order_count, volume
+        FROM market_history
+        WHERE region_id = ? AND type_id = ?
+    """
+    parameters: list[int | str] = [region_id, type_id]
+    if start is not None:
+        query += " AND date_ <= ?"
+        parameters.append(start)
+    query += " ORDER BY date_ DESC"
+    if count is not None:
+        query += " LIMIT ?"
+        parameters.append(count)
+
+    with connection:
+        cursor = connection.execute(query, tuple(parameters))
+        return tuple(
+            models.MarketHistoryRecord(
+                received_at=row[0],
+                region_id=row[1],
+                type_id=row[2],
+                average=from_cents(row[3]),
+                date=row[4],
+                highest=from_cents(row[5]),
+                lowest=from_cents(row[6]),
+                order_count=row[7],
+                volume=row[8],
+            )
+            for row in cursor
+        )
+
+
+@log_timing(logger=logger, level=_timing_log_level)
 def read_market_history_latest(
     connection: Connection,
     *,

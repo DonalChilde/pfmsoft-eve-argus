@@ -197,6 +197,61 @@ def test_read_market_history_filters_and_orders_records() -> None:
         )
     ] == ["2026-09-30", "2026-09-29"]
 
+    assert [
+        record.date
+        for record in read.read_market_history_date_count(
+            connection, region_id=10, type_id=20
+        )
+    ] == ["2026-09-30", "2026-09-29"]
+    assert [
+        record.date
+        for record in read.read_market_history_date_count(
+            connection,
+            region_id=10,
+            type_id=20,
+            start="2026-09-30",
+            count=1,
+        )
+    ] == ["2026-09-30"]
+    assert [
+        record.date
+        for record in read.read_market_history_date_count(
+            connection,
+            region_id=10,
+            type_id=20,
+            start="2026-09-29",
+            count=2,
+        )
+    ] == ["2026-09-29"]
+    assert (
+        read.read_market_history_date_count(
+            connection,
+            region_id=10,
+            type_id=20,
+            start="2026-09-28",
+            count=5,
+        )
+        == ()
+    )
+
+    plan = [
+        row[3]
+        for row in connection.execute(
+            """
+            EXPLAIN QUERY PLAN
+            SELECT received_at, region_id, type_id, average, date_, highest,
+                lowest, order_count, volume
+            FROM market_history
+            WHERE region_id = ? AND type_id = ? AND date_ <= ?
+            ORDER BY date_ DESC
+            LIMIT ?
+            """,
+            (10, 20, "2026-09-30", 1),
+        )
+    ]
+    assert any("SEARCH market_history USING INDEX" in step for step in plan)
+    assert not any("TEMP B-TREE" in step for step in plan)
+
     assert read.read_market_history_latest(
         connection, region_id=10, type_id=20, count=1
     ) == (records[0],)
@@ -204,6 +259,14 @@ def test_read_market_history_filters_and_orders_records() -> None:
         read.read_market_history_latest(connection, region_id=10, type_id=20, count=0)
     with pytest.raises(ValueError, match="count must be positive"):
         read.read_market_history_latest(connection, region_id=10, type_id=20, count=-1)
+    with pytest.raises(ValueError, match="count must be positive"):
+        read.read_market_history_date_count(
+            connection, region_id=10, type_id=20, count=0
+        )
+    with pytest.raises(ValueError, match="count must be positive"):
+        read.read_market_history_date_count(
+            connection, region_id=10, type_id=20, count=-1
+        )
 
 
 def test_read_market_history_responses_filter_order_and_group_by_region() -> None:
