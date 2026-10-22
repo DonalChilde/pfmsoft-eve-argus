@@ -13,7 +13,7 @@ dependencies = [
     "pfmsoft-eve-sd>=0.4.6",
     "pfmsoft-eve-snippets>=0.1.8",
     "pydantic>=2.13.5",
-    "whenever>=0.10.5",
+    "whenever>=0.11",
 ]
 
 [project.scripts]

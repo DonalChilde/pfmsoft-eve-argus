@@ -3,9 +3,16 @@
 import logging
 from sqlite3 import Connection
 
+from pfmsoft.eve_snippets.eve.eve_dates import downtime_bracket
+from whenever import Instant
+
 from pfmsoft.eve_argus.helpers.currency import from_cents
 from pfmsoft.eve_argus.helpers.timing import log_timing
 from pfmsoft.eve_argus.market_history import models
+from pfmsoft.eve_argus.market_history.history_summary import (
+    calculate_history_summary,
+    date_range_days,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -68,6 +75,68 @@ def market_history_date_range(
             )
             for row in cursor
         )
+
+
+@log_timing(logger=logger, level=_timing_log_level)
+def history_summary(
+    connection: Connection,
+    *,
+    region_id: int,
+    type_id: int,
+    start: str | None = None,
+    count: int | None = 10,
+) -> models.HistorySummaryRecord | None:
+    """Calculate a market history summary for the specified date range.
+
+    Args:
+        connection: Database connection.
+        region_id: Region ID.
+        type_id: Type ID.
+        start: Inclusive ISO date bound for the most recent date, or None to start at
+            the beginning of available history.
+        count: Maximum number of records to include in the summary window, or None for
+            all. Defaults to 10.
+
+    Returns:
+        A HistorySummaryRecord containing the aggregated market history metrics.
+    """
+    if start is None:
+        most_recent_record = market_history(
+            connection,
+            region_id=region_id,
+            type_id=type_id,
+            start=None,
+            count=1,
+        )
+        if not most_recent_record:
+            return None
+        previous_dt, _ = downtime_bracket(
+            Instant.parse_iso(most_recent_record[0].received_at)
+        )
+        start = previous_dt.to_stdlib().date().isoformat()
+    if count is None:
+        # Get count of total records available for the given region and type
+        query = """
+            SELECT COUNT(*)
+            FROM market_history
+            WHERE region_id = ? AND type_id = ?
+        """
+        parameters: list[int | str] = [region_id, type_id]
+        with connection:
+            cursor = connection.execute(query, tuple(parameters))
+            count = cursor.fetchone()[0]
+        if count == 0 or count is None:
+            return None
+    dates = date_range_days(start, count)
+    records = market_history_date_range(
+        connection,
+        region_id=region_id,
+        type_id=type_id,
+        start=start,
+        end=dates[-1] if dates else start,
+    )
+    summary = calculate_history_summary(records=records, dates=dates)
+    return summary
 
 
 @log_timing(logger=logger, level=_timing_log_level)
