@@ -57,6 +57,7 @@ def test_fetch_reports_success(
         argus_expires_at=None,
         region_id=10000002,
         type_id=34,
+        response_count=1,
     )
     environment.updater.return_value = UpdateResult(
         status=status,

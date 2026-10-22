@@ -13,7 +13,7 @@ _timing_log_level = logging.INFO
 
 
 @log_timing(logger=logger, level=_timing_log_level)
-def read_market_history_date_range(
+def market_history_date_range(
     connection: Connection,
     *,
     region_id: int,
@@ -71,7 +71,7 @@ def read_market_history_date_range(
 
 
 @log_timing(logger=logger, level=_timing_log_level)
-def read_market_history(
+def market_history(
     connection: Connection,
     *,
     region_id: int,
@@ -134,7 +134,7 @@ def read_market_history(
 
 
 @log_timing(logger=logger, level=_timing_log_level)
-def read_market_history_by_region(
+def market_history_by_region(
     connection: Connection,
     *,
     region_id: int,
@@ -209,7 +209,7 @@ def read_market_history_by_region(
 
 
 @log_timing(logger=logger, level=_timing_log_level)
-def read_market_history_responses(
+def market_history_responses(
     connection: Connection, *, region_id: int, type_id: int, count: int | None = None
 ) -> tuple[models.MarketHistoryResponse, ...]:
     """Read response metadata for a region and type, newest first.
@@ -234,7 +234,7 @@ def read_market_history_responses(
 
     query = """
         SELECT id, received_at, expires_at, argus_expires_at, region_id,
-            type_id
+            type_id, response_count
         FROM market_history_response
         WHERE region_id = ? AND type_id = ?
         ORDER BY received_at DESC, id DESC
@@ -254,13 +254,14 @@ def read_market_history_responses(
                 argus_expires_at=row[3],
                 region_id=row[4],
                 type_id=row[5],
+                response_count=row[6],
             )
             for row in cursor
         )
 
 
 @log_timing(logger=logger, level=_timing_log_level)
-def read_market_history_responses_by_region(
+def market_history_responses_by_region(
     connection: Connection, *, region_id: int, count: int | None = None
 ) -> dict[int, tuple[models.MarketHistoryResponse, ...]]:
     """Read responses for a region, grouped by type.
@@ -282,7 +283,7 @@ def read_market_history_responses_by_region(
 
     query = """
         SELECT id, received_at, expires_at, argus_expires_at, region_id,
-            type_id
+            type_id, response_count
         FROM market_history_response
         WHERE region_id = ?
     """
@@ -291,14 +292,14 @@ def read_market_history_responses_by_region(
         query = """
             WITH ranked_responses AS (
                 SELECT id, received_at, expires_at, argus_expires_at, region_id,
-                    type_id, ROW_NUMBER() OVER (
+                    type_id, response_count, ROW_NUMBER() OVER (
                         PARTITION BY type_id ORDER BY received_at DESC, id DESC
                     ) AS response_rank
                 FROM market_history_response
                 WHERE region_id = ?
             )
             SELECT id, received_at, expires_at, argus_expires_at, region_id,
-                type_id
+                type_id, response_count
             FROM ranked_responses
             WHERE response_rank <= ?
         """
@@ -316,6 +317,7 @@ def read_market_history_responses_by_region(
                 argus_expires_at=row[3],
                 region_id=row[4],
                 type_id=row[5],
+                response_count=row[6],
             )
             responses_by_type.setdefault(response.type_id, []).append(response)
 

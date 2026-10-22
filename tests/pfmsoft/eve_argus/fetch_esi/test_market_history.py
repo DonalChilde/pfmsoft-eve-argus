@@ -81,10 +81,11 @@ def _seed(
         connection.execute(
             """
             INSERT INTO market_history_response
-                (received_at, expires_at, argus_expires_at, region_id, type_id)
-            VALUES (?, ?, ?, ?, ?)
+                (received_at, expires_at, argus_expires_at, region_id, type_id,
+                    response_count)
+            VALUES (?, ?, ?, ?, ?, ?)
             """,
-            (received_at, expires_at, argus_expires_at, region_id, type_id),
+            (received_at, expires_at, argus_expires_at, region_id, type_id, 1),
         )
         connection.execute(
             """
@@ -120,9 +121,9 @@ def test_update_persists_validated_history(connection: sqlite3.Connection) -> No
     assert result.new_state is not None
     assert (
         result.new_state
-        == read.read_market_history_responses(
-            connection, region_id=10, type_id=20, count=1
-        )[0]
+        == read.market_history_responses(connection, region_id=10, type_id=20, count=1)[
+            0
+        ]
     )
     assert result.new_state.received_at == _RECEIVED
     assert result.new_state.expires_at == _FUTURE
@@ -131,7 +132,7 @@ def test_update_persists_validated_history(connection: sqlite3.Connection) -> No
     assert request.path_parameters == {"region_id": 10}
     assert request.query_parameters == {"type_id": 20}
     esi_link.make_request.assert_awaited_once_with(esi_request=request, schema=schema)
-    record = read.read_market_history(connection, region_id=10, type_id=20)[0]
+    record = read.market_history(connection, region_id=10, type_id=20)[0]
     assert record.average == Decimal("123.45")
     assert record.highest == Decimal("130.00")
     assert record.lowest == Decimal("120.00")
@@ -162,7 +163,7 @@ def test_update_respects_expiration(
     if not has_history:
         with connection:
             connection.execute("DELETE FROM market_history")
-    previous = read.read_market_history_responses(
+    previous = read.market_history_responses(
         connection, region_id=10, type_id=20, count=1
     )[0]
     esi_link = Mock(spec=EsiLink)
@@ -250,7 +251,7 @@ def test_update_isolates_pairs_and_selects_latest(
     for region_id, type_id in ((11, 20), (10, 21)):
         assert (
             len(
-                read.read_market_history_responses(
+                read.market_history_responses(
                     connection, region_id=region_id, type_id=type_id
                 )
             )
@@ -294,13 +295,10 @@ def test_update_preserves_older_dates(connection: sqlite3.Connection) -> None:
     )
 
     assert result.status is UpdateStatus.UPDATED
-    records = read.read_market_history(connection, region_id=10, type_id=20)
+    records = read.market_history(connection, region_id=10, type_id=20)
     assert [record.date for record in records] == ["2026-10-17", "2026-10-16"]
     assert [record.average for record in records] == [Decimal("123.45"), Decimal("1")]
-    assert (
-        len(read.read_market_history_responses(connection, region_id=10, type_id=20))
-        == 2
-    )
+    assert len(read.market_history_responses(connection, region_id=10, type_id=20)) == 2
 
 
 def test_update_stores_empty_response(connection: sqlite3.Connection) -> None:
@@ -317,9 +315,9 @@ def test_update_stores_empty_response(connection: sqlite3.Connection) -> None:
     assert result.status is UpdateStatus.UPDATED
     assert result.new_state is not None
     assert result.new_state.expires_at == _FUTURE
-    assert read.read_market_history(connection, region_id=10, type_id=20) == ()
+    assert read.market_history(connection, region_id=10, type_id=20) == ()
     assert (
-        read.read_market_history_responses(connection, region_id=10, type_id=20)[
+        read.market_history_responses(connection, region_id=10, type_id=20)[
             0
         ].received_at
         == _RECEIVED
@@ -342,7 +340,7 @@ def test_update_reports_failure_without_partial_writes(
 ) -> None:
     """Failures preserve existing data and report a failed result."""
     _seed(connection)
-    previous = read.read_market_history_responses(connection, region_id=10, type_id=20)
+    previous = read.market_history_responses(connection, region_id=10, type_id=20)
     response = _response()
     match failure:
         case "esi":
@@ -362,7 +360,10 @@ def test_update_reports_failure_without_partial_writes(
                     (_PAST,),
                 )
             response.response_data.append(
-                {**response.response_data[0], "date": "2026-10-18"}
+                {
+                    **response.response_data[0],
+                    "date": "2026-10-18",
+                }
             )
             connection.executescript(
                 """
@@ -373,7 +374,7 @@ def test_update_reports_failure_without_partial_writes(
                 END;
                 """
             )
-    previous_records = read.read_market_history(connection, region_id=10, type_id=20)
+    previous_records = read.market_history(connection, region_id=10, type_id=20)
     esi_link = Mock(spec=EsiLink)
     esi_link.make_request = AsyncMock(return_value=response)
 
@@ -388,13 +389,9 @@ def test_update_reports_failure_without_partial_writes(
     assert result.new_state is None
     assert result.failure_message
     assert (
-        read.read_market_history_responses(connection, region_id=10, type_id=20)
-        == previous
+        read.market_history_responses(connection, region_id=10, type_id=20) == previous
     )
-    assert (
-        read.read_market_history(connection, region_id=10, type_id=20)
-        == previous_records
-    )
+    assert read.market_history(connection, region_id=10, type_id=20) == previous_records
 
 
 def test_update_reads_only_latest_response_and_replaces_repeat_occurrence(
@@ -420,10 +417,7 @@ def test_update_reads_only_latest_response_and_replaces_repeat_occurrence(
     assert all(
         "FROM market_history_response\n" in sql and "LIMIT 1" in sql for sql in queries
     )
-    assert (
-        len(read.read_market_history_responses(connection, region_id=10, type_id=20))
-        == 2
-    )
+    assert len(read.market_history_responses(connection, region_id=10, type_id=20)) == 2
 
     esi_link.make_request.return_value = _response(
         received_at="2026-10-20T00:00:00Z",

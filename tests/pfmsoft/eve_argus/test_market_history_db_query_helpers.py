@@ -44,7 +44,7 @@ def test_read_market_history_limits_matching_pair(
             ],
         )
 
-        records = read.read_market_history(
+        records = read.market_history(
             connection, region_id=10, type_id=20, start=start, count=count
         )
 
@@ -70,7 +70,7 @@ def test_read_market_history_limits_matching_pair(
                 volume=100,
             )
         assert (
-            read.read_market_history(
+            read.market_history(
                 connection, region_id=99, type_id=20, start=start, count=count
             )
             == ()
@@ -112,7 +112,7 @@ def test_read_market_history_date_range_bounds(
             ],
         )
 
-        records = read.read_market_history_date_range(
+        records = read.market_history_date_range(
             connection, region_id=10, type_id=20, start=start, end=end
         )
 
@@ -147,7 +147,7 @@ def test_read_market_history_by_region(*, start: str | None, count: int | None) 
             ],
         )
 
-        records = read.read_market_history_by_region(
+        records = read.market_history_by_region(
             connection, region_id=10, start=start, count=count
         )
 
@@ -178,7 +178,7 @@ def test_read_market_history_by_region(*, start: str | None, count: int | None) 
                 )
         assert records == expected
         assert (
-            read.read_market_history_by_region(
+            read.market_history_by_region(
                 connection, region_id=99, start=start, count=count
             )
             == {}
@@ -191,7 +191,7 @@ def test_read_market_history_by_region_rejects_nonpositive_count(count: int) -> 
     with closing(sqlite3.connect(":memory:")) as connection:
         connection.executescript(util.load_table_definitions())
         with pytest.raises(ValueError, match="count must be positive"):
-            read.read_market_history_by_region(connection, region_id=10, count=count)
+            read.market_history_by_region(connection, region_id=10, count=count)
 
 
 def test_read_market_history_responses_uses_pair_index() -> None:
@@ -201,19 +201,20 @@ def test_read_market_history_responses_uses_pair_index() -> None:
         connection.executemany(
             """
             INSERT INTO market_history_response
-                (received_at, expires_at, argus_expires_at, region_id, type_id)
-            VALUES (?, ?, ?, ?, ?)
+                (received_at, expires_at, argus_expires_at, region_id, type_id,
+                    response_count)
+            VALUES (?, ?, ?, ?, ?, ?)
             """,
             [
-                ("2026-10-02", None, "2026-10-03", 10, 20),
-                ("2026-10-01", "2026-10-02", None, 10, 20),
-                ("2026-10-04", None, None, 11, 20),
-                ("2026-10-05", None, None, 10, 21),
+                ("2026-10-02", None, "2026-10-03", 10, 20, 3),
+                ("2026-10-01", "2026-10-02", None, 10, 20, 2),
+                ("2026-10-04", None, None, 11, 20, 4),
+                ("2026-10-05", None, None, 10, 21, 5),
             ],
         )
         statements: list[str] = []
         connection.set_trace_callback(statements.append)
-        assert read.read_market_history_responses(
+        assert read.market_history_responses(
             connection, region_id=10, type_id=20, count=1
         ) == (
             models.MarketHistoryResponse(
@@ -223,6 +224,7 @@ def test_read_market_history_responses_uses_pair_index() -> None:
                 argus_expires_at="2026-10-03",
                 region_id=10,
                 type_id=20,
+                response_count=3,
             ),
         )
         latest_query = next(sql for sql in statements if "SELECT" in sql)
@@ -290,7 +292,7 @@ def test_read_market_history_filters_and_orders_records(
         ],
     )
 
-    records = read.read_market_history(connection, region_id=10, type_id=20)
+    records = read.market_history(connection, region_id=10, type_id=20)
 
     assert records == (
         models.MarketHistoryRecord(
@@ -322,7 +324,7 @@ def test_read_market_history_filters_and_orders_records(
     )
 
     assert (
-        read.read_market_history_date_range(
+        read.market_history_date_range(
             connection,
             region_id=10,
             type_id=20,
@@ -334,7 +336,7 @@ def test_read_market_history_filters_and_orders_records(
 
     statements: list[str] = []
     connection.set_trace_callback(statements.append)
-    assert read.read_market_history(
+    assert read.market_history(
         connection, region_id=10, type_id=20, start="2026-09-30", count=1
     ) == (records[0],)
     query = next(sql for sql in statements if "SELECT" in sql)
@@ -350,7 +352,7 @@ def test_read_market_history_rejects_nonpositive_count(count: int) -> None:
     with closing(sqlite3.connect(":memory:")) as connection:
         connection.executescript(util.load_table_definitions())
         with pytest.raises(ValueError, match="count must be positive"):
-            read.read_market_history(connection, region_id=10, type_id=20, count=count)
+            read.market_history(connection, region_id=10, type_id=20, count=count)
 
 
 @pytest.mark.parametrize("count", [None, 1, 2, 10])
@@ -360,20 +362,22 @@ def test_read_market_history_responses_limits_records(count: int | None) -> None
         connection.executescript(util.load_table_definitions())
         connection.executemany(
             """
-            INSERT INTO market_history_response (received_at, region_id, type_id)
-            VALUES (?, ?, ?)
+            INSERT INTO market_history_response (
+                received_at, region_id, type_id, response_count
+            )
+            VALUES (?, ?, ?, ?)
             """,
             [
-                ("2026-10-01", 10, 20),
-                ("2026-10-03", 11, 20),
-                ("2026-10-02", 10, 20),
-                ("2026-10-04", 10, 21),
+                ("2026-10-01", 10, 20, 2),
+                ("2026-10-03", 11, 20, 1),
+                ("2026-10-02", 10, 20, 3),
+                ("2026-10-04", 10, 21, 4),
             ],
         )
         statements: list[str] = []
         connection.set_trace_callback(statements.append)
 
-        responses = read.read_market_history_responses(
+        responses = read.market_history_responses(
             connection, region_id=10, type_id=20, count=count
         )
 
@@ -385,7 +389,7 @@ def test_read_market_history_responses_limits_records(count: int | None) -> None
         else:
             assert f"LIMIT {count}" in query
         assert (
-            read.read_market_history_responses(
+            read.market_history_responses(
                 connection, region_id=99, type_id=20, count=count
             )
             == ()
@@ -398,7 +402,7 @@ def test_read_market_history_responses_rejects_nonpositive_count(count: int) -> 
     with closing(sqlite3.connect(":memory:")) as connection:
         connection.executescript(util.load_table_definitions())
         with pytest.raises(ValueError, match="count must be positive"):
-            read.read_market_history_responses(
+            read.market_history_responses(
                 connection, region_id=10, type_id=20, count=count
             )
 
@@ -412,19 +416,21 @@ def test_read_market_history_responses_by_region_limits_each_type(
         connection.executescript(util.load_table_definitions())
         connection.executemany(
             """
-            INSERT INTO market_history_response (received_at, region_id, type_id)
-            VALUES (?, ?, ?)
+            INSERT INTO market_history_response (
+                received_at, region_id, type_id, response_count
+            )
+            VALUES (?, ?, ?, ?)
             """,
             [
-                ("2026-10-01", 10, 20),
-                ("2026-10-03", 11, 20),
-                ("2026-10-02", 10, 20),
-                ("2026-10-04", 10, 21),
-                ("2026-10-03", 10, 21),
+                ("2026-10-01", 10, 20, 2),
+                ("2026-10-03", 11, 20, 1),
+                ("2026-10-02", 10, 20, 3),
+                ("2026-10-04", 10, 21, 4),
+                ("2026-10-03", 10, 21, 5),
             ],
         )
 
-        responses = read.read_market_history_responses_by_region(
+        responses = read.market_history_responses_by_region(
             connection, region_id=10, count=count
         )
 
@@ -435,8 +441,15 @@ def test_read_market_history_responses_by_region_limits_each_type(
             20: ["2026-10-02", "2026-10-01"][:count],
             21: ["2026-10-04", "2026-10-03"][:count],
         }
+        assert {
+            type_id: [response.response_count for response in records]
+            for type_id, records in responses.items()
+        } == {
+            20: [3, 2][:count],
+            21: [4, 5][:count],
+        }
         assert (
-            read.read_market_history_responses_by_region(
+            read.market_history_responses_by_region(
                 connection, region_id=99, count=count
             )
             == {}
@@ -451,7 +464,7 @@ def test_read_market_history_responses_by_region_rejects_nonpositive_count(
     with closing(sqlite3.connect(":memory:")) as connection:
         connection.executescript(util.load_table_definitions())
         with pytest.raises(ValueError, match="count must be positive"):
-            read.read_market_history_responses_by_region(
+            read.market_history_responses_by_region(
                 connection, region_id=10, count=count
             )
 
@@ -463,19 +476,20 @@ def test_read_market_history_responses_filter_order_and_group_by_region(
     connection.executemany(
         """
         INSERT INTO market_history_response (
-            received_at, expires_at, argus_expires_at, region_id, type_id
+            received_at, expires_at, argus_expires_at, region_id, type_id,
+            response_count
         )
-        VALUES (?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?)
         """,
         [
-            ("2026-10-01", "2026-10-02", None, 10, 20),
-            ("2026-10-02", None, "2026-10-03", 10, 20),
-            ("2026-10-03", "2026-10-04", None, 10, 21),
-            ("2026-10-04", None, None, 11, 20),
+            ("2026-10-01", "2026-10-02", None, 10, 20, 1),
+            ("2026-10-02", None, "2026-10-03", 10, 20, 2),
+            ("2026-10-03", "2026-10-04", None, 10, 21, 3),
+            ("2026-10-04", None, None, 11, 20, 4),
         ],
     )
 
-    responses = read.read_market_history_responses(connection, region_id=10, type_id=20)
+    responses = read.market_history_responses(connection, region_id=10, type_id=20)
 
     assert responses == (
         models.MarketHistoryResponse(
@@ -485,6 +499,7 @@ def test_read_market_history_responses_filter_order_and_group_by_region(
             argus_expires_at="2026-10-03",
             region_id=10,
             type_id=20,
+            response_count=2,
         ),
         models.MarketHistoryResponse(
             response_metadata_id=1,
@@ -493,10 +508,11 @@ def test_read_market_history_responses_filter_order_and_group_by_region(
             argus_expires_at=None,
             region_id=10,
             type_id=20,
+            response_count=1,
         ),
     )
 
-    assert read.read_market_history_responses_by_region(connection, region_id=10) == {
+    assert read.market_history_responses_by_region(connection, region_id=10) == {
         20: responses,
         21: (
             models.MarketHistoryResponse(
@@ -506,6 +522,7 @@ def test_read_market_history_responses_filter_order_and_group_by_region(
                 argus_expires_at=None,
                 region_id=10,
                 type_id=21,
+                response_count=3,
             ),
         ),
     }

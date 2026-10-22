@@ -12,6 +12,7 @@ CREATE TABLE IF NOT EXISTS market_history_response (
     argus_expires_at TEXT, -- included to allow custom expiration handling
     region_id INTEGER NOT NULL,
     type_id INTEGER NOT NULL,
+    response_count INTEGER NOT NULL,
     UNIQUE(received_at, region_id, type_id)
     ON CONFLICT REPLACE
 ) STRICT;
@@ -35,3 +36,23 @@ CREATE TABLE IF NOT EXISTS market_history (
     UNIQUE(region_id, type_id, date_)
     ON CONFLICT REPLACE
 ) STRICT;
+
+CREATE TABLE IF NOT EXISTS market_history_summary (
+    ID INTEGER PRIMARY KEY AUTOINCREMENT,
+    received_at TEXT NOT NULL,
+    expires_at TEXT,
+    argus_expires_at TEXT,
+    region_id INTEGER NOT NULL,
+    type_id INTEGER NOT NULL,
+    start TEXT NOT NULL,
+    end TEXT NOT NULL,
+    missing INTEGER NOT NULL,
+    highest INTEGER NOT NULL,
+    average INTEGER NOT NULL,
+    lowest INTEGER NOT NULL,
+    order_count INTEGER NOT NULL,
+    volume INTEGER NOT NULL,
+    UNIQUE(region_id, type_id, start, end)
+    ON CONFLICT REPLACE
+) STRICT;
+

@@ -1,10 +1,10 @@
-"""Tests for dynamic market-history summary calculations."""
+"""Tests for market-history summary calculations."""
 
 from decimal import Decimal
 
 import pytest
 
-from pfmsoft.eve_argus.dynamic.history_summary import (
+from pfmsoft.eve_argus.market_history.history_summary import (
     calculate_history_summary,
     date_range_days,
 )

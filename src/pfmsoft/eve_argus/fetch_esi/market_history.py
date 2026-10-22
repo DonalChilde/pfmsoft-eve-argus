@@ -18,7 +18,7 @@ def _current_state(
     connection: Connection, *, region_id: int, type_id: int
 ) -> MarketHistoryResponse | None:
     """Return the newest response metadata, including empty history responses."""
-    records = read.read_market_history_responses(
+    records = read.market_history_responses(
         connection, region_id=region_id, type_id=type_id, count=1
     )
     return records[0] if records else None
