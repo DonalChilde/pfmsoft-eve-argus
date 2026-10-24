@@ -45,11 +45,13 @@ StaticManifestRoot = RootModel[StaticManifest]
 class StaticStore:
     """Class for managing the static db store."""
 
+    MANIFEST_FILE_NAME = "manifest.json"
+
     def __init__(self, store_path: Path):
         """Initialize the static store with the given directory path."""
         self.store_path = store_path
         self._ensure_store_path()
-        self.manifest_path = self.store_path / "manifest.json"
+        self.manifest_path = self.store_path / self.MANIFEST_FILE_NAME
         self._ensure_manifest_file()
         self.manifest = self._load_manifest()
         self._ensure_entries_exist()

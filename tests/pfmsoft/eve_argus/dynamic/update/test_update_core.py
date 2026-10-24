@@ -4,6 +4,7 @@ import asyncio
 from dataclasses import dataclass
 from unittest.mock import AsyncMock, MagicMock
 
+import pytest
 from pfmsoft.eve_link import FailedEsiResponse
 
 from pfmsoft.eve_argus.fetch_esi.update import (
@@ -22,12 +23,6 @@ class _Stored:
 
 _FUTURE = "2999-01-01T00:00:00Z"
 _PAST = "2000-01-01T00:00:00Z"
-
-
-def _failed_response() -> MagicMock:
-    response = MagicMock(spec=FailedEsiResponse)
-    response.failed_response.error_messages = ["boom"]
-    return response
 
 
 def test_is_expired() -> None:
@@ -82,20 +77,38 @@ def test_update_stores_and_rereads() -> None:
     assert result.succeeded
 
 
-def test_update_reports_failed_fetch() -> None:
-    """A FailedEsiResponse becomes a FAILED result and nothing is stored."""
+@pytest.mark.parametrize(
+    ("error_messages", "expected"),
+    [
+        (["boom"], "boom"),
+        (["first failure", "second failure"], "first failure; second failure"),
+        (["", "  boom \n", "\t"], "boom"),
+        ([], "ESI request failed without an error reason from pfmsoft.api_request."),
+        ([""], "ESI request failed without an error reason from pfmsoft.api_request."),
+        (
+            [" ", "\n", ""],
+            "ESI request failed without an error reason from pfmsoft.api_request.",
+        ),
+    ],
+)
+def test_update_reports_failed_fetch(
+    *, error_messages: list[str], expected: str
+) -> None:
+    """Report useful reasons or an explicit fallback without list formatting."""
     store = MagicMock()
+    response = MagicMock(spec=FailedEsiResponse)
+    response.failed_response.error_messages = error_messages
 
     result = asyncio.run(
         update_if_expired(
             read_current=lambda: None,
-            fetch=AsyncMock(return_value=_failed_response()),
+            fetch=AsyncMock(return_value=response),
             store=store,
         )
     )
 
     assert result.status is UpdateStatus.FAILED
-    assert result.failure_message == "['boom']"
+    assert result.failure_message == expected
     assert not result.succeeded
     store.assert_not_called()
 

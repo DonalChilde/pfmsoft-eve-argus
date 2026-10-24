@@ -12,7 +12,7 @@ from pfmsoft.eve_argus.dynamic.util import (
     load_table_definitions as load_argus_dynamic_table_definitions,
 )
 from pfmsoft.eve_argus.helpers.connection_helpers import create_read_write_connection
-from pfmsoft.eve_argus.market.history.db.query_helpers import (
+from pfmsoft.eve_argus.market_history.util import (
     load_table_definitions as load_history_table_definitions,
 )
 from pfmsoft.eve_argus.settings import EveArgusSettings

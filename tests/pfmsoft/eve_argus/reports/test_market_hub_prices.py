@@ -604,7 +604,7 @@ def test_empty_manifest_is_explicit_error(
     manifest.write_text(content)
     result = invoke(environment, tmp_path / "reports")
     assert result.exit_code == 1
-    assert "No static database builds" in result.output
+    assert "No static database manifest entry for build None" in result.output
     assert manifest.read_text() == content
 
 

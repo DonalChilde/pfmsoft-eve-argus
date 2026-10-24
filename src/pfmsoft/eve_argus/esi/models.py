@@ -414,3 +414,11 @@ class GetUniverseTypes(EsiResponseBaseModel):
 
     type_ids: list[int]
     """A list of universe type IDs."""
+
+
+class GetMarketsRegionIdTypes(EsiResponseBaseModel):
+    """Response model for types in market for a region."""
+
+    region_id: int
+    type_ids: list[int]
+    """A list of type IDs available in the market for the region."""

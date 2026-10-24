@@ -1,4 +1,4 @@
-"""Shared update-if-expired workflow for ESI data stored in the dynamic database."""
+"""Shared update-if-expired workflow for ESI data stored in Argus databases."""
 
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
@@ -81,6 +81,10 @@ async def update_if_expired[T: Expirable, R](
         fetch: Fetches fresh data from ESI.
         store: Validates and writes a successful ESI response. Any exception it
             raises is reported as a failed update.
+
+    Returns:
+        Update outcome. Failed fetch reasons are joined after removing blank
+        entries, with an explicit explanation when no reason was supplied.
     """
     previous = read_current()
     if not is_expired(previous):
@@ -88,10 +92,16 @@ async def update_if_expired[T: Expirable, R](
 
     response = await fetch()
     if isinstance(response, FailedEsiResponse):
+        reasons = [
+            message.strip()
+            for message in response.failed_response.error_messages
+            if message.strip()
+        ]
         return UpdateResult(
             status=UpdateStatus.FAILED,
             previous_state=previous,
-            failure_message=str(response.failed_response.error_messages),
+            failure_message="; ".join(reasons)
+            or "ESI request failed without an error reason from pfmsoft.api_request.",
         )
 
     try:

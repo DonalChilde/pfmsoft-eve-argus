@@ -1,5 +1,183 @@
 # Pfmsoft Eve Argus
 
+## Export market groups
+
+```bash
+uv run eve-argus export market-groups --to ./exports
+```
+
+Exports all market groups from the configured **Argus static database** (market
+groups are not stored in the dynamic database). Uses the configured static build,
+or the latest build in the store manifest when unspecified. The source is opened
+read-only; no network requests, credentials, or data refresh are required.
+
+The destination directory is created if needed and receives:
+
+- `market-groups.json`: the complete dataset keyed by market-group ID, with native
+  JSON arrays for `int_path`, `str_path`, and `types`.
+- `market-groups.csv`: one row per market group, with all record fields.
+  `str_path` uses the default `/`-joined string path. The other container fields
+  (`int_path`, `types`) contain JSON strings, including `[]` for empty containers,
+  rather than Python representations.
+
+Both outputs are UTF-8. JSON is ordered by market-group ID; CSV rows are sorted
+by the rendered `str_path` string. CSV uses standard quoting
+and LF record terminators, preserves embedded newlines, writes booleans as
+`True` / `False`, and represents absent scalar values as empty cells. JSON uses
+`null` for absent values. An empty dataset produces `{}` and a header-only CSV.
+Use `--overwrite` to replace existing files and `--quiet` to suppress success
+messages without hiding errors. Missing sources and existing outputs fail before
+writing either file; filesystem failures during writing may leave partial output
+and return a nonzero exit status.
+
+## Fetch market history
+
+```bash
+uv run eve-argus fetch market-history --region-id 10000002 --type-id 34
+```
+
+Fetches history into the configured market-history database. Supply at least one
+`--region-id`, `--hubs`, or both, and exactly one type-selection mode:
+
+| Mode | Candidate types | Market-group filters |
+| --- | --- | --- |
+| Repeated `--type-id` | Explicit IDs, including unpublished, nonmarket, and unknown types | Not allowed |
+| `--active` | Active types discovered independently for each region | Allowed |
+| `--market-types` | Published types listed in static market groups | Allowed |
+| `--industry-types` | Reserved for industry-related types; not implemented yet | Accepted by stub |
+
+Explicit regions run in command-line order, followed by hub regions for Jita,
+Amarr, Dodixie, Hek, and Rens, with duplicates removed. Types are deduplicated
+and scheduled in ascending numeric order within each region; completion order
+can differ. Explicit types apply to every selected region.
+
+```bash
+# Explicit types across multiple regions
+uv run eve-argus fetch market-history \
+  --region-id 10000002 --region-id 10000043 --type-id 34 --type-id 35
+
+# Active regional types, restricted by market-group subtrees
+uv run eve-argus fetch market-history \
+  --hubs --active --include 4 --exclude 187
+
+# Published market-listed types, with configurable execution limits
+uv run eve-argus fetch market-history \
+  --hubs --market-types --include 4 --include 9 --exclude 187 \
+  --batch-size 25 --failure-limit 10 --progress plain
+
+# Industry selection stub: reports an error without opening resources
+uv run eve-argus fetch market-history \
+  --hubs --industry-types --include 4 --exclude 187
+```
+
+The industry stub validates argument combinations and positive execution limits,
+then reports `Industry type selection is not implemented yet.` and exits nonzero,
+even with `--quiet`. It does not acquire resources, query static datasets, or make
+network requests. Future implementation will collect industry-related type IDs,
+apply filters, and use the same regional execution and failure budgets.
+
+### Selection and filters
+
+Regions are validated against the static map-regions dataset before network
+requests. The original explicit single-pair invocation still permits regions
+missing from static data; failures label them `Unknown region`.
+
+`--include` and `--exclude` may be repeated with `--active`, `--market-types`,
+and the industry stub, but not `--type-id`. Includes form a union of market-group
+subtrees, including each group's directly assigned types. Excludes apply afterward,
+regardless of option order, and always win. Filters only remove candidates; they
+never introduce inactive or otherwise unselected types. Unknown groups, missing
+required static datasets, and inconsistent market paths fail before network
+requests. An empty selection is a successful regional no-op.
+
+Market selection requires populated static market groups and types and excludes
+unpublished and nonmarket types. Active selection uses ESI's paginated regional
+market-types endpoint, not every type with historical trades. Known unpublished
+active types are excluded and counted. Active IDs missing from static types
+produce a warning, even with `--quiet`. Without includes, those unknown IDs remain
+eligible; they cannot match an include and are not removed by exclusions without
+known membership. Known types without a market group behave the same way for
+filter matching. Unfiltered active selection does not require market-group data.
+
+### Execution, limits, and output
+
+Regions run sequentially using a shared ESI client and resource lifecycle. Each
+region finishes or aborts, and pending-task cleanup completes, before the next
+region begins discovery or history updates.
+
+| Option | Default | Behavior |
+| --- | --- | --- |
+| `--batch-size` | `MARKET_HISTORY_BATCH_SIZE` (currently 100) | Positive integer; maximum concurrent updates in nonoverlapping batches |
+| `--failure-limit` | `MARKET_HISTORY_FAILURE_LIMIT` (currently 50) | Positive integer; independent failure budget for each region |
+| `--progress auto\|live\|plain` | `auto` | Live progress on interactive terminals by default; plain batch messages otherwise |
+| `--quiet` | Off | Hide routine output and progress, but retain warnings, failures, and abort notices |
+
+Defaults resolve from the shared runner's constants. Every implemented selection
+mode uses a separate failure budget per region, including explicit IDs and market
+types. Failed updates, including logged updater exceptions, consume that budget;
+cached skips and cancellation do not. At the limit, pending tasks are cancelled
+and awaited, and later batches for that region do not start. In-flight updates can
+finish during cancellation, so the failure count can exceed the limit. Already
+committed writes remain stored; requests already sent cannot be retracted.
+
+Discovery failures and regional aborts do not stop later regions. Any discovery
+or history-update failure causes a nonzero exit status after all regions finish.
+User interruption stops the whole command after cleanup.
+
+Live progress shows completed/total pairs, elapsed time, updated/skipped/failed
+counts, and the latest type ID. The transient display clears on completion, abort,
+or interruption. Plain output reports completion at the selected batch-size
+interval. Regional and overall summaries reconcile updated, skipped, failed,
+cancelled, and not-started pairs; overall totals separately count discovery-failed
+regions, whose unknown pair counts are not included. Cancelled/unstarted pairs
+are never shown as successfully completed. Explicit single-pair runs also retain
+freshness and expiry details.
+
+### Storage and failure details
+
+Unexpired stored responses skip fetching; Argus expiry overrides ESI expiry, and
+missing expiry triggers a refresh. Existing ESI caching and rate limiting apply.
+
+Successful updates store response metadata and daily history transactionally.
+Overlapping dates are replaced and older dates remain stored. Empty responses
+still record metadata. Failures are reported with a nonzero exit status.
+Use `--quiet` to suppress progress and success messages, but not update errors.
+
+All market-history fetch commands include the region and type names and IDs in
+history-update failures, using static database records. Unpublished types include
+`, Not Published`; published types have no publication label. For example:
+
+```text
+Failed: The Forge (10000002), Compressed Arkonor Blueprint (28368), Not Published. Error Message: HTTP 404 Not Found
+```
+
+Types absent from the static dataset are labeled `Unknown type` with their ID;
+their publication status is unknown and is not labeled. For the single-pair
+command, regions absent from static data are labeled `Unknown region` with their
+ID. These labels do not change selection, expiry checks, or failure exit statuses.
+
+History database initialization adds a region/type/received-time metadata index
+to both new and existing databases without changing stored records. The first
+initialization of an existing large database may take longer while the index is
+built. Updates use indexed single-row latest-response lookups and exact duplicate
+existence checks rather than loading all metadata for each pair.
+
+### Previous history commands
+
+The old commands have been removed. Use the unified command instead; there are no
+compatibility aliases or shims.
+
+| Previous command | Unified replacement |
+| --- | --- |
+| `market-history-active` | `market-history --active` |
+| `market-history-bulk` | `market-history --market-types --progress plain` |
+| `market-history-bulk-progress` | `market-history --market-types --progress live` |
+
+Pass the same region and filter arguments where supported. Active selection now
+also supports filters. The unified command uses independent regional failure
+budgets rather than the old bulk commands' global budget, and accepts
+`--batch-size` and `--failure-limit` overrides.
+
 ## Market hub price summaries
 
 ```bash

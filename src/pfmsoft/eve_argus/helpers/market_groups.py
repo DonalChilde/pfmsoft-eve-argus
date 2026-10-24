@@ -1,6 +1,6 @@
 """Helpers for filtering market-group type IDs by ancestor paths."""
 
-from pfmsoft.eve_argus.models.argus.static import MarketGroupsDataset
+from pfmsoft.eve_argus.static.models import MarketGroupsDataset
 
 
 def filter_type_ids_by_market_path(

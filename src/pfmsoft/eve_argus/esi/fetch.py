@@ -123,3 +123,14 @@ async def universe_type_ids(
     """Fetch universe type IDs."""
     request = EsiRequest(operation_id="GetUniverseTypes")
     return await esi_link.make_request(esi_request=request, schema=schema)
+
+
+async def market_types(
+    esi_link: EsiLink, schema: EsiSchema, *, region_id: int
+) -> EsiResponse | FailedEsiResponse:
+    """Fetch market types for a region."""
+    request = EsiRequest(
+        operation_id="GetMarketsRegionIdTypes",
+        path_parameters={"region_id": region_id},
+    )
+    return await esi_link.make_request(esi_request=request, schema=schema)

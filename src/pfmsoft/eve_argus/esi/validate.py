@@ -120,3 +120,14 @@ def universe_type_ids(
         "type_ids": response.response_data,
     }
     return models.GetUniverseTypes.model_validate(response_dict)
+
+
+def market_types(response: EsiResponse) -> models.GetMarketsRegionIdTypes:
+    """Validates market types for a region."""
+    response_dict: dict[str, Any] = {
+        "received_at": _received_at_from_response(response),
+        "expires_at": _expires_at_from_response(response),
+        "region_id": response.esi_request.path_parameters["region_id"],
+        "type_ids": response.response_data,
+    }
+    return models.GetMarketsRegionIdTypes.model_validate(response_dict)
