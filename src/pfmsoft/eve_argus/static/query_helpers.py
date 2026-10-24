@@ -798,6 +798,12 @@ def write_sde_metadata(
 
 
 @log_timing(logger=logger, level=_timing_log_level)
+def get_blueprints(connection: sqlite3.Connection) -> ASM.BlueprintDataset:
+    """Retrieve all blueprints from the database."""
+    ...
+
+
+@log_timing(logger=logger, level=_timing_log_level)
 def get_market_groups(connection: sqlite3.Connection) -> ASM.MarketGroupsDataset:
     """Retrieve all market groups from the database."""
     rows = connection.execute(
