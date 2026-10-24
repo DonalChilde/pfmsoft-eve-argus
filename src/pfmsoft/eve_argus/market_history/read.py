@@ -116,6 +116,7 @@ def history_summary(
         start = previous_dt.to_stdlib().date().isoformat()
     if count is None:
         # Get count of total records available for the given region and type
+        # FIXME not sure this is doing what I want.
         query = """
             SELECT COUNT(*)
             FROM market_history

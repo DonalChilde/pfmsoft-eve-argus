@@ -14,7 +14,8 @@ Basic functionality complete.
 
 ### Goals for the current Session.
 
-Implementing report output.
+- Cli commands for fetching market orders and history.
+- explore on-demand creation of history summaries, and order summaries.
 
 ### Key Dependencies
 
