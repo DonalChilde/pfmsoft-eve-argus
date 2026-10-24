@@ -65,7 +65,9 @@ def test_calculate_summaries_builds_dataset_from_market_orders() -> None:
         )
     })
 
-    result = order_summary.calculate_summaries(orders, filter_factor=Decimal("10"))
+    result = order_summary.calculate_dataset_summaries(
+        orders, filter_factor=Decimal("10")
+    )
 
     assert isinstance(result, models.OrderSummaryDataset)
     assert (result.response_metadata_id, result.received_at) == (17, orders.received_at)
@@ -143,7 +145,7 @@ def test_calculate_summaries_scopes_orders_and_includes_price_ties(
     })
     original_buy_orders = orders.records[34].buy_orders
 
-    result = order_summary.calculate_summaries(orders, **{scope: scope_id})
+    result = order_summary.calculate_dataset_summaries(orders, **{scope: scope_id})
 
     assert (result.system_id, result.location_id) == (
         scope_id if scope == "system_id" else None,
@@ -176,7 +178,7 @@ def test_calculate_summaries_reaches_exact_five_percent_and_sorts_orders() -> No
         )
     })
 
-    result = order_summary.calculate_summaries(orders)
+    result = order_summary.calculate_dataset_summaries(orders)
 
     assert result.records[34].buy_summary is not None
     assert result.records[34].buy_summary.five_price == Decimal("100.00")
@@ -187,7 +189,7 @@ def test_calculate_summaries_reaches_exact_five_percent_and_sorts_orders() -> No
 
 def test_calculate_summaries_handles_empty_and_nonpositive_books() -> None:
     """Keep type keys, even when neither side produces a summary."""
-    empty = order_summary.calculate_summaries(_dataset({}))
+    empty = order_summary.calculate_dataset_summaries(_dataset({}))
     assert empty.records == {}
 
     orders = _dataset({
@@ -203,7 +205,7 @@ def test_calculate_summaries_handles_empty_and_nonpositive_books() -> None:
         ),
     })
 
-    result = order_summary.calculate_summaries(orders)
+    result = order_summary.calculate_dataset_summaries(orders)
 
     assert set(result.records) == {34, 35}
     assert result.records[34] == models.BuySellSummary(
@@ -213,7 +215,9 @@ def test_calculate_summaries_handles_empty_and_nonpositive_books() -> None:
     assert result.records[35].sell_summary is not None
     assert result.records[35].sell_summary.type_id == 35
     assert list(result.iter_summaries()) == [result.records[35].sell_summary]
-    assert order_summary.calculate_summaries(orders, system_id=30000143).records == {
+    assert order_summary.calculate_dataset_summaries(
+        orders, system_id=30000143
+    ).records == {
         34: models.BuySellSummary(buy_summary=None, sell_summary=None),
         35: models.BuySellSummary(buy_summary=None, sell_summary=None),
     }
@@ -232,7 +236,7 @@ def test_calculate_summaries_rejects_invalid_options(
 ) -> None:
     """Invalid calculation options fail even for an empty book."""
     with pytest.raises(ValueError, match=message):
-        order_summary.calculate_summaries(_dataset({}), **options)
+        order_summary.calculate_dataset_summaries(_dataset({}), **options)
 
 
 @pytest.mark.parametrize(
@@ -251,4 +255,4 @@ def test_calculate_summaries_rejects_invalid_orders(
     })
 
     with pytest.raises(ValueError, match=message):
-        order_summary.calculate_summaries(orders)
+        order_summary.calculate_dataset_summaries(orders)

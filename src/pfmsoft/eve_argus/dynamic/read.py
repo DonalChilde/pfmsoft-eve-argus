@@ -3,9 +3,11 @@
 # All *_responses readers return newest received_at first; IDs break timestamp ties.
 # The definition for this database lives at src/pfmsoft/eve_argus/dynamic/db/table_definitions.sql
 import logging
+from decimal import Decimal
 from sqlite3 import Connection
 
 from pfmsoft.eve_argus.dynamic import models
+from pfmsoft.eve_argus.dynamic.order_summary import FILTER_FACTOR_DEFAULT
 from pfmsoft.eve_argus.helpers.currency import (
     from_cents,
     from_four_places,
@@ -355,6 +357,53 @@ def market_orders(
         region_id=metadata[4],
         records=records,
     )
+
+
+@log_timing(logger=logger, level=_timing_log_level)
+def market_orders_filtered(
+    connection: Connection,
+    response_metadata_id: int,
+    *,
+    type_id: int | None = None,
+    system_id: int | None = None,
+    location_id: int | None = None,
+    is_buy_order: bool | None = None,
+) -> tuple[models.MarketOrderRecord, ...]:
+    """Get the filtered market orders dataset for a response metadata ID.
+
+    This function retrieves market orders filtered by the specified criteria.
+    If a filter parameter is None, it will not be applied.
+
+    Note that response_metadata_id is always required and implies a region_id, as each
+    response metadata ID corresponds to a request for market orders in that region.
+
+    Args:
+        connection: The database connection to use.
+        response_metadata_id: The response metadata ID to filter by.
+        type_id: Optional type ID to filter by.
+        system_id: Optional system ID to filter by.
+        location_id: Optional location ID to filter by.
+        is_buy_order: Optional flag to filter by buy/sell orders. None means no filtering.
+
+    Returns:
+        A tuple of filtered market order records.
+    """
+    ...
+
+
+@log_timing(logger=logger, level=_timing_log_level)
+def calculate_market_order_summary(
+    connection: Connection,
+    response_metadata_id: int,
+    *,
+    type_id: int | None = None,
+    system_id: int | None = None,
+    location_id: int | None = None,
+    is_buy_summary: bool = True,
+    filter_factor: Decimal = FILTER_FACTOR_DEFAULT,
+) -> models.OrderSummaryRecord:
+    """Calculate the market order summary for a response metadata ID."""
+    ...
 
 
 @log_timing(logger=logger, level=_timing_log_level)

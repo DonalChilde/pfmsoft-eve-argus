@@ -6,13 +6,15 @@ from decimal import Decimal
 from pfmsoft.eve_argus.dynamic import models
 from pfmsoft.eve_argus.helpers.currency import as_currency
 
+FILTER_FACTOR_DEFAULT = Decimal("100.00")
 
-def calculate_summaries(
+
+def calculate_dataset_summaries(
     market_orders: models.MarketOrdersDataset,
     *,
     system_id: int | None = None,
     location_id: int | None = None,
-    filter_factor: Decimal = Decimal("100.00"),
+    filter_factor: Decimal = FILTER_FACTOR_DEFAULT,
 ) -> models.OrderSummaryDataset:
     """Summarize the buy and sell orders for each type in a market orders dataset.
 
