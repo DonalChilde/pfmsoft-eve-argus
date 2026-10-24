@@ -3,15 +3,18 @@
 import asyncio
 from dataclasses import dataclass
 from io import StringIO
+from typing import Literal
 from unittest.mock import AsyncMock, Mock
 
 import pytest
+from pfmsoft.eve_link import EsiRequest, EsiResponse, FailedEsiResponse
 from rich.console import Console
 from rich.progress import Progress, ProgressColumn
 from typer.testing import CliRunner, Result
 
 from pfmsoft.eve_argus.cli import app
 from pfmsoft.eve_argus.cli.fetch import market_history as command
+from pfmsoft.eve_argus.cli.fetch._market_history_selection import active_type_ids
 from pfmsoft.eve_argus.fetch_esi import market_history_bulk as bulk
 from pfmsoft.eve_argus.fetch_esi.update import UpdateResult, UpdateStatus
 from pfmsoft.eve_argus.models.market_hubs import MARKET_HUBS
@@ -125,6 +128,158 @@ def test_help_exposes_unified_options(environment: Environment) -> None:
     assert "--all-market-types" not in result.output
     assert "--all-industry-types" not in result.output
     environment.manager.__aenter__.assert_not_awaited()
+
+
+@pytest.mark.parametrize(
+    "name",
+    ["market-history-active", "market-history-bulk", "market-history-bulk-progress"],
+)
+def test_obsolete_commands_are_removed(environment: Environment, name: str) -> None:
+    """Old names are absent from help and rejected rather than aliased."""
+    runner = CliRunner()
+    context = {SETTINGS_KEY: environment.settings}
+    help_result = runner.invoke(app, ["fetch", "--help"], obj=context)
+    assert help_result.exit_code == 0, help_result.output
+    assert "market-history" in help_result.output
+    assert name not in help_result.output
+    result = runner.invoke(app, ["fetch", name, "--help"], obj=context)
+    assert result.exit_code == 2, result.output
+    assert "No such command" in result.output
+    environment.manager.__aenter__.assert_not_awaited()
+
+
+@pytest.mark.parametrize("failure", ["response", "blank", "malformed", "exception"])
+@pytest.mark.parametrize("quiet", [False, True])
+def test_real_discovery_failures_continue(
+    environment: Environment,
+    monkeypatch: pytest.MonkeyPatch,
+    failure: str,
+    quiet: bool,
+) -> None:
+    """Real discovery validates ESI failures and continues to later regions."""
+    response = Mock(spec=EsiResponse)
+    response.esi_request = EsiRequest(
+        operation_id="GetMarketsRegionIdTypes", path_parameters={"region_id": 100}
+    )
+    response.response_data = ["not-an-id"]
+    failed = Mock(spec=FailedEsiResponse)
+    failed.failed_response.error_messages = (
+        [" ", "discovery broke"] if failure == "response" else [" "]
+    )
+    success = Mock(spec=EsiResponse)
+    success.esi_request = EsiRequest(
+        operation_id="GetMarketsRegionIdTypes", path_parameters={"region_id": 200}
+    )
+    success.response.metadata.received_at = "2026-10-21T00:00:00Z"
+    success.response.metadata.expires_at_instant = None
+    success.response_data = [12, 12]
+    first = (
+        RuntimeError("discovery broke")
+        if failure == "exception"
+        else response
+        if failure == "malformed"
+        else failed
+    )
+    environment.resources.esi_link.make_request = AsyncMock(
+        side_effect=[first, success]
+    )
+    monkeypatch.setattr(command, "active_type_ids", active_type_ids)
+    result = _invoke(
+        environment,
+        "--region-id",
+        "100",
+        "--region-id",
+        "200",
+        "--active",
+        *(["--quiet"] if quiet else []),
+    )
+    assert result.exit_code == 1, result.output
+    message = (
+        "without an error reason"
+        if failure == "blank"
+        else "GetMarketsRegionIdTypes"
+        if failure == "malformed"
+        else "discovery broke"
+    )
+    assert message in " ".join(result.output.split())
+    assert [
+        (call.kwargs["region_id"], call.kwargs["type_id"])
+        for call in environment.updater.await_args_list
+    ] == [(200, 12)]
+    environment.manager.__aexit__.assert_awaited_once()
+
+
+@pytest.mark.parametrize("empty_ids", [set[int](), {11}])
+def test_empty_active_region_continues(
+    environment: Environment, empty_ids: set[int]
+) -> None:
+    """Empty or entirely unpublished candidates do not stop later regions."""
+    environment.discovery.side_effect = [empty_ids, {12}]
+    result = _invoke(
+        environment, "--region-id", "100", "--region-id", "200", "--active"
+    )
+    assert result.exit_code == 0, result.output
+    assert "No market types selected" in result.output
+    assert environment.updater.await_count == 1
+    assert environment.updater.await_args is not None
+    assert environment.updater.await_args.kwargs["region_id"] == 200
+
+
+@pytest.mark.parametrize("damage", ["types", "path", "reference", "group"])
+def test_corrupt_static_selection_prevents_updates(
+    environment: Environment,
+    monkeypatch: pytest.MonkeyPatch,
+    damage: Literal["types", "path", "reference", "group"],
+) -> None:
+    """Missing datasets and inconsistent published-type paths fail explicitly."""
+    match damage:
+        case "types":
+            monkeypatch.setattr(command.static_read, "types", Mock(return_value={}))
+        case "path":
+            groups = command.static_read.market_groups(
+                environment.resources.argus_static_db_connection
+            )
+            groups[2].int_path = (999, 2)
+        case "reference":
+            environment.types[10].market_group_id = 3
+        case "group":
+            environment.types[10].market_group_id = 999
+    result = _invoke(environment, "--region-id", "100", "--market-types", "--quiet")
+    assert result.exit_code == 2, result.output
+    assert result.output
+    environment.updater.assert_not_awaited()
+
+
+def test_below_limit_failures_do_not_accumulate_across_regions(
+    environment: Environment,
+) -> None:
+    """Below-limit failures permit remaining pairs and reset for the next region."""
+    environment.updater.side_effect = [
+        UpdateResult(
+            status=UpdateStatus.FAILED, previous_state=None, failure_message="bad"
+        ),
+        UpdateResult(status=UpdateStatus.UPDATED, previous_state=None),
+        RuntimeError("updater broke"),
+        UpdateResult(status=UpdateStatus.SKIPPED, previous_state=None),
+    ]
+    result = _invoke(
+        environment,
+        "--region-id",
+        "100",
+        "--region-id",
+        "200",
+        "--market-types",
+        "--batch-size",
+        "1",
+        "--failure-limit",
+        "2",
+    )
+    assert result.exit_code == 1, result.output
+    assert environment.updater.await_count == 4
+    output = " ".join(result.output.split())
+    assert "RuntimeError: updater broke" in output
+    assert "Aborted" not in output
+    assert "Market history total: updated=1, skipped=1, failed=2" in output
 
 
 @pytest.mark.parametrize(

@@ -164,8 +164,8 @@ existence checks rather than loading all metadata for each pair.
 
 ### Previous history commands
 
-The old commands remain available unchanged until the unified command is reviewed
-and their removal is explicitly confirmed. No compatibility shims are added.
+The old commands have been removed. Use the unified command instead; there are no
+compatibility aliases or shims.
 
 | Previous command | Unified replacement |
 | --- | --- |
@@ -173,10 +173,10 @@ and their removal is explicitly confirmed. No compatibility shims are added.
 | `market-history-bulk` | `market-history --market-types --progress plain` |
 | `market-history-bulk-progress` | `market-history --market-types --progress live` |
 
-Pass the same region and filter arguments where supported. The old active command
-still has no filters. Unlike the unified command, the old bulk commands use a
-global failure budget across all regions; they retain their existing constant-based
-limits and do not accept the new execution-control options.
+Pass the same region and filter arguments where supported. Active selection now
+also supports filters. The unified command uses independent regional failure
+budgets rather than the old bulk commands' global budget, and accepts
+`--batch-size` and `--failure-limit` overrides.
 
 ## Market hub price summaries
 

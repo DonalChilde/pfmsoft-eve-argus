@@ -8,8 +8,7 @@ from rich.console import Console
 from typer.testing import CliRunner
 
 from pfmsoft.eve_argus.cli import app
-from pfmsoft.eve_argus.cli.fetch import market_history, market_history_active
-from pfmsoft.eve_argus.cli.fetch import market_history_bulk as bulk_command
+from pfmsoft.eve_argus.cli.fetch import market_history as command
 from pfmsoft.eve_argus.cli.fetch._helpers import report_market_history_failure
 from pfmsoft.eve_argus.fetch_esi import market_history_bulk as bulk
 from pfmsoft.eve_argus.fetch_esi.update import UpdateResult, UpdateStatus
@@ -43,27 +42,15 @@ def test_failure_message_format(published: bool | None, message: str | None) -> 
 
 
 @pytest.mark.parametrize(
-    "command_name",
-    [
-        "market-history",
-        "market-history-bulk",
-        "market-history-bulk-progress",
-        "market-history-active",
-    ],
+    "selection",
+    ["--type-id", "--active", "--market-types"],
 )
 @pytest.mark.parametrize("quiet", [False, True])
 @pytest.mark.parametrize("published", [True, False])
 def test_commands_report_type_names(
-    monkeypatch: pytest.MonkeyPatch, command_name: str, quiet: bool, published: bool
+    monkeypatch: pytest.MonkeyPatch, selection: str, quiet: bool, published: bool
 ) -> None:
-    """Every command enriches failures without changing filtering or quiet errors."""
-    modules = {
-        "market-history": market_history,
-        "market-history-bulk": bulk_command,
-        "market-history-bulk-progress": bulk_command,
-        "market-history-active": market_history_active,
-    }
-    command = modules[command_name]
+    """Every selection enriches failures without changing filtering or quiet errors."""
     resources = Mock()
     manager = Mock()
     manager.__aenter__ = AsyncMock(return_value=resources)
@@ -81,7 +68,7 @@ def test_commands_report_type_names(
         command.static_read, "map_regions", Mock(return_value={10000002: region})
     )
     monkeypatch.setattr(command.static_read, "types", reader)
-    if command is bulk_command:
+    if selection == "--market-types":
         group = Mock()
         group.market_group_id = 1
         group.int_path = (1,)
@@ -89,10 +76,8 @@ def test_commands_report_type_names(
         monkeypatch.setattr(
             command.static_read, "market_groups", Mock(return_value={1: group})
         )
-    if command is market_history_active:
-        monkeypatch.setattr(
-            command, "_active_type_ids", AsyncMock(return_value={28368})
-        )
+    if selection == "--active":
+        monkeypatch.setattr(command, "active_type_ids", AsyncMock(return_value={28368}))
     updater = AsyncMock(
         return_value=UpdateResult(
             status=UpdateStatus.FAILED,
@@ -101,15 +86,15 @@ def test_commands_report_type_names(
         )
     )
     monkeypatch.setattr(bulk, "update_market_history", updater)
-    arguments = ["fetch", command_name, "--region-id", "10000002"]
-    if command is market_history:
-        arguments.extend(["--type-id", "28368"])
+    arguments = ["fetch", "market-history", "--region-id", "10000002", selection]
+    if selection == "--type-id":
+        arguments.append("28368")
     if quiet:
         arguments.append("--quiet")
     result = CliRunner().invoke(
         app, arguments, obj={SETTINGS_KEY: Mock(spec=EveArgusSettings)}
     )
-    if command in (bulk_command, market_history_active) and not published:
+    if selection != "--type-id" and not published:
         assert result.exit_code == 0, result.output
         updater.assert_not_awaited()
         return
@@ -123,6 +108,6 @@ def test_commands_report_type_names(
         assert "Not Published" not in result.output
     reader.assert_called_once_with(
         resources.argus_static_db_connection,
-        only_published=command is bulk_command,
+        only_published=False,
     )
     manager.__aexit__.assert_awaited_once()

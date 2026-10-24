@@ -13,12 +13,6 @@ from pfmsoft.eve_argus.cli.fetch.industry_systems import (
     app as fetch_industry_systems_app,
 )
 from pfmsoft.eve_argus.cli.fetch.market_history import app as fetch_market_history_app
-from pfmsoft.eve_argus.cli.fetch.market_history_active import (
-    app as fetch_market_history_active_app,
-)
-from pfmsoft.eve_argus.cli.fetch.market_history_bulk import (
-    app as fetch_market_history_bulk_app,
-)
 from pfmsoft.eve_argus.cli.fetch.markets_prices import app as fetch_markets_prices_app
 from pfmsoft.eve_argus.cli.fetch.region_orders import app as fetch_region_orders_app
 
@@ -26,8 +20,6 @@ app = typer.Typer(no_args_is_help=True, help="Commands for fetching data.")
 app.add_typer(fetch_hubs_app)
 app.add_typer(fetch_region_orders_app)
 app.add_typer(fetch_market_history_app)
-app.add_typer(fetch_market_history_active_app)
-app.add_typer(fetch_market_history_bulk_app)
 app.add_typer(fetch_markets_prices_app)
 app.add_typer(fetch_industry_systems_app)
 app.add_typer(fetch_corporation_jobs_app)
