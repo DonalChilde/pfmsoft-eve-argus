@@ -34,6 +34,7 @@ from pfmsoft.eve_argus.helpers.market_groups import filter_type_ids_by_market_pa
 from pfmsoft.eve_argus.models.market_hubs import MARKET_HUBS
 from pfmsoft.eve_argus.settings import EveArgusSettings
 from pfmsoft.eve_argus.static import read as static_read
+from pfmsoft.eve_argus.static.helpers import types_in_blueprint
 from pfmsoft.eve_argus.static.models import TypesDataset
 
 logger = logging.getLogger(__name__)
@@ -96,7 +97,8 @@ def fetch_market_history(
         bool, typer.Option("--hubs", help="Append all defined market hub regions.")
     ] = False,
     active: Annotated[
-        bool, typer.Option("--active", help="Discover active types for each region.")
+        bool,
+        typer.Option("--active", help="Discover published market-listed active types."),
     ] = False,
     market_types: Annotated[
         bool,
@@ -105,7 +107,8 @@ def fetch_market_history(
     industry_types: Annotated[
         bool,
         typer.Option(
-            "--industry-types", help="Select industry-related types (not implemented)."
+            "--industry-types",
+            help="Select published market-listed blueprint, material, and product types.",
         ),
     ] = False,
     include: Annotated[
@@ -151,7 +154,7 @@ def fetch_market_history(
 ) -> None:
     """Fetch history using exactly one type-selection mode, region by region.
 
-    Includes/excludes apply to active, market, and future industry selections,
+    Includes/excludes apply to active, market, and industry selections,
     not explicit type IDs. Each region has an independent failure budget.
     """
     region_ids = list(region_id or ())
@@ -179,10 +182,6 @@ def fetch_market_history(
         raise typer.BadParameter(
             "--include and --exclude cannot be used with --type-id."
         )
-    if selection is SelectionMode.INDUSTRY:
-        Console(stderr=True).print("Industry type selection is not implemented yet.")
-        raise typer.Exit(code=1)
-
     options = HistoryFetchOptions(
         region_ids=list(dict.fromkeys(region_ids)),
         type_ids=set(type_id or ()),
@@ -241,6 +240,18 @@ async def _fetch_market_history(
         unpublished_ids = {
             type_id for type_id, record in types.items() if not record.published
         }
+        market_ids = {
+            type_id
+            for type_id, record in types.items()
+            if record.market_group_id is not None
+        }
+        industry_ids: set[int] = set()
+        if options.selection is SelectionMode.INDUSTRY:
+            blueprints = static_read.blueprints(connection)
+            if not blueprints:
+                raise typer.BadParameter("Static blueprints dataset must be populated.")
+            for blueprint in blueprints.values():
+                industry_ids.update(types_in_blueprint(blueprint))
 
         for region_id in options.region_ids:
             region = regions.get(region_id)
@@ -265,21 +276,33 @@ async def _fetch_market_history(
                     )
                     discovery_failed += 1
                     continue
+            if options.selection in (SelectionMode.ACTIVE, SelectionMode.INDUSTRY):
+                source = (
+                    "active"
+                    if options.selection is SelectionMode.ACTIVE
+                    else "industry"
+                )
+                if options.selection is SelectionMode.INDUSTRY:
+                    type_ids = industry_ids
                 unpublished_count = len(type_ids & unpublished_ids)
                 type_ids = type_ids - unpublished_ids
                 unknown_ids = type_ids - types.keys()
                 if unknown_ids:
                     errors.print(
-                        f"Warning: {label} has {len(unknown_ids)} active type IDs "
+                        f"Warning: {label} has {len(unknown_ids)} {source} type IDs "
                         f"missing from the static types dataset: {sorted(unknown_ids)}. "
+                        "These IDs are excluded because market membership is unknown. "
                         "Consider updating the static database.",
                         markup=False,
                     )
+                nonmarket_count = len(type_ids - market_ids)
+                type_ids &= market_ids
                 if options.include:
                     type_ids &= selected_ids
                 type_ids = type_ids - excluded_ids
                 messenger.print(
-                    f"{label}: excluded {unpublished_count} unpublished active types.",
+                    f"{label}: excluded {unpublished_count} unpublished {source} types; "
+                    f"excluded {nonmarket_count} nonmarket or unknown types.",
                     markup=False,
                 )
             messenger.print(
