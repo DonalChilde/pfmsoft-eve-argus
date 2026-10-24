@@ -1,4 +1,7 @@
-"""Function to calculate order summary statistics."""
+"""Function to calculate order summary statistics.
+
+Reference Implementation. Not in current use.
+"""
 
 from collections.abc import Sequence
 from dataclasses import dataclass, field
