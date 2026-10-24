@@ -5,7 +5,6 @@ import logging
 from typing import Annotated
 
 import typer
-from pfmsoft.eve_link import EsiLink, EsiSchema, FailedEsiResponse
 from rich.console import Console
 from rich.progress import (
     BarColumn,
@@ -17,9 +16,10 @@ from rich.progress import (
 )
 
 from pfmsoft.eve_argus.cli.fetch._helpers import report_market_history_failure
+from pfmsoft.eve_argus.cli.fetch._market_history_selection import (
+    active_type_ids as _active_type_ids,
+)
 from pfmsoft.eve_argus.cli.helpers import get_eve_argus_settings_from_context
-from pfmsoft.eve_argus.esi import fetch as EsiFetch
-from pfmsoft.eve_argus.esi import validate as EsiValidate
 from pfmsoft.eve_argus.eve_argus import EveArgusResources
 from pfmsoft.eve_argus.fetch_esi import market_history_bulk as bulk
 from pfmsoft.eve_argus.fetch_esi.market_history import MarketHistoryUpdateResult
@@ -70,28 +70,6 @@ def fetch_market_history_active(
             quiet=quiet,
         )
     )
-
-
-async def _active_type_ids(
-    esi_link: EsiLink, schema: EsiSchema, *, region_id: int
-) -> set[int]:
-    """Discover and validate a region's types using ESI's paginated request flow.
-
-    Raises:
-        ValueError: If ESI returns a failed response or invalid type data.
-    """
-    response = await EsiFetch.market_types(esi_link, schema, region_id=region_id)
-    if isinstance(response, FailedEsiResponse):
-        reasons = [
-            message.strip()
-            for message in response.failed_response.error_messages
-            if message.strip()
-        ]
-        raise ValueError(
-            "; ".join(reasons)
-            or "ESI request failed without an error reason from pfmsoft.api_request."
-        )
-    return set(EsiValidate.market_types(response).type_ids)
 
 
 async def _fetch_market_history_active(

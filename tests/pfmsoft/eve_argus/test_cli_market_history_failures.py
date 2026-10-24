@@ -101,7 +101,6 @@ def test_commands_report_type_names(
         )
     )
     monkeypatch.setattr(bulk, "update_market_history", updater)
-    monkeypatch.setattr(market_history, "update_market_history", updater)
     arguments = ["fetch", command_name, "--region-id", "10000002"]
     if command is market_history:
         arguments.extend(["--type-id", "28368"])

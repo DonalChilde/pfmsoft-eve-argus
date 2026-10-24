@@ -7,6 +7,7 @@ import pytest
 from typer.testing import CliRunner
 
 from pfmsoft.eve_argus.cli import app
+from pfmsoft.eve_argus.fetch_esi import market_history_bulk as bulk
 from pfmsoft.eve_argus.fetch_esi.update import UpdateResult, UpdateStatus
 from pfmsoft.eve_argus.market_history.models import MarketHistoryResponse
 from pfmsoft.eve_argus.settings import SETTINGS_KEY, EveArgusSettings
@@ -35,7 +36,7 @@ def environment(monkeypatch: pytest.MonkeyPatch) -> CommandEnvironment:
     monkeypatch.setattr(command.static_read, "types", Mock(return_value={}))
     monkeypatch.setattr(command.static_read, "map_regions", Mock(return_value={}))
     updater = AsyncMock()
-    monkeypatch.setattr(command, "update_market_history", updater)
+    monkeypatch.setattr(bulk, "update_market_history", updater)
     return CommandEnvironment(
         settings=Mock(spec=EveArgusSettings),
         resources=resources,

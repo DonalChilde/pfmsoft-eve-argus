@@ -15,69 +15,18 @@ from rich.progress import (
 from rich.text import Text
 
 from pfmsoft.eve_argus.cli.fetch._helpers import report_market_history_failure
+from pfmsoft.eve_argus.cli.fetch._market_history_selection import (
+    select_market_type_ids as _select_type_ids,
+)
 from pfmsoft.eve_argus.cli.helpers import get_eve_argus_settings_from_context
 from pfmsoft.eve_argus.eve_argus import EveArgusResources
 from pfmsoft.eve_argus.fetch_esi import market_history_bulk as bulk
 from pfmsoft.eve_argus.fetch_esi.market_history import MarketHistoryUpdateResult
 from pfmsoft.eve_argus.fetch_esi.update import UpdateStatus
-from pfmsoft.eve_argus.helpers.market_groups import filter_type_ids_by_market_path
 from pfmsoft.eve_argus.settings import EveArgusSettings
 from pfmsoft.eve_argus.static import read as static_read
-from pfmsoft.eve_argus.static.models import MarketGroupsDataset, TypesDataset
 
 app = typer.Typer(no_args_is_help=True)
-
-
-def _select_type_ids(
-    *,
-    market_groups: MarketGroupsDataset,
-    types: TypesDataset,
-    include: set[int],
-    exclude: set[int],
-) -> set[int]:
-    """Validate filters/static paths and select published, market-listed types.
-
-    Raises:
-        ValueError: If datasets are missing, filters are unknown, or published
-            type/group references are inconsistent.
-    """
-    if not market_groups or not types:
-        raise ValueError("Static market groups and published types must be populated.")
-    unknown = (include | exclude) - market_groups.keys()
-    if unknown:
-        raise ValueError(f"Unknown market group IDs: {sorted(unknown)}")
-
-    published_ids = {key for key, record in types.items() if record.published}
-    for type_id in published_ids:
-        record = types[type_id]
-        if record.type_id != type_id:
-            raise ValueError(f"Static type key {type_id} disagrees with record ID.")
-        if (
-            record.market_group_id is not None
-            and record.market_group_id not in market_groups
-        ):
-            raise ValueError(
-                f"Missing market group {record.market_group_id} for type {type_id}."
-            )
-    for group_id, group in market_groups.items():
-        if (
-            group.market_group_id != group_id
-            or not group.int_path
-            or group.int_path[-1] != group_id
-            or not set(group.int_path) <= market_groups.keys()
-        ):
-            raise ValueError(f"Invalid market path for group {group_id}.")
-        for type_id in group.types:
-            if type_id in published_ids and types[type_id].market_group_id != group_id:
-                raise ValueError(
-                    f"Market group {group_id} has an inconsistent reference to type {type_id}."
-                )
-    return (
-        filter_type_ids_by_market_path(
-            market_groups, include=include or None, exclude=exclude
-        )
-        & published_ids
-    )
 
 
 @app.command(name="market-history-bulk")
@@ -106,7 +55,7 @@ def fetch_market_history_bulk(
         typer.Option("--quiet", help="Suppress progress messages, but not errors."),
     ] = False,
 ) -> None:
-    """Fetch published market types in batches of 100; abort after 20 failures."""
+    """Fetch published market types using the shared batch and failure limits."""
     settings = get_eve_argus_settings_from_context(ctx)
     asyncio.run(
         _fetch_market_history_bulk(

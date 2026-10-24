@@ -36,9 +36,107 @@ and return a nonzero exit status.
 uv run eve-argus fetch market-history --region-id 10000002 --type-id 34
 ```
 
-Fetches history for one region and item type into the configured market-history
-database. Both IDs are required. Unexpired stored responses skip fetching; Argus
-expiry overrides ESI expiry, and missing expiry triggers a refresh.
+Fetches history into the configured market-history database. Supply at least one
+`--region-id`, `--hubs`, or both, and exactly one type-selection mode:
+
+| Mode | Candidate types | Market-group filters |
+| --- | --- | --- |
+| Repeated `--type-id` | Explicit IDs, including unpublished, nonmarket, and unknown types | Not allowed |
+| `--active` | Active types discovered independently for each region | Allowed |
+| `--market-types` | Published types listed in static market groups | Allowed |
+| `--industry-types` | Reserved for industry-related types; not implemented yet | Accepted by stub |
+
+Explicit regions run in command-line order, followed by hub regions for Jita,
+Amarr, Dodixie, Hek, and Rens, with duplicates removed. Types are deduplicated
+and scheduled in ascending numeric order within each region; completion order
+can differ. Explicit types apply to every selected region.
+
+```bash
+# Explicit types across multiple regions
+uv run eve-argus fetch market-history \
+  --region-id 10000002 --region-id 10000043 --type-id 34 --type-id 35
+
+# Active regional types, restricted by market-group subtrees
+uv run eve-argus fetch market-history \
+  --hubs --active --include 4 --exclude 187
+
+# Published market-listed types, with configurable execution limits
+uv run eve-argus fetch market-history \
+  --hubs --market-types --include 4 --include 9 --exclude 187 \
+  --batch-size 25 --failure-limit 10 --progress plain
+
+# Industry selection stub: reports an error without opening resources
+uv run eve-argus fetch market-history \
+  --hubs --industry-types --include 4 --exclude 187
+```
+
+The industry stub validates argument combinations and positive execution limits,
+then reports `Industry type selection is not implemented yet.` and exits nonzero,
+even with `--quiet`. It does not acquire resources, query static datasets, or make
+network requests. Future implementation will collect industry-related type IDs,
+apply filters, and use the same regional execution and failure budgets.
+
+### Selection and filters
+
+Regions are validated against the static map-regions dataset before network
+requests. The original explicit single-pair invocation still permits regions
+missing from static data; failures label them `Unknown region`.
+
+`--include` and `--exclude` may be repeated with `--active`, `--market-types`,
+and the industry stub, but not `--type-id`. Includes form a union of market-group
+subtrees, including each group's directly assigned types. Excludes apply afterward,
+regardless of option order, and always win. Filters only remove candidates; they
+never introduce inactive or otherwise unselected types. Unknown groups, missing
+required static datasets, and inconsistent market paths fail before network
+requests. An empty selection is a successful regional no-op.
+
+Market selection requires populated static market groups and types and excludes
+unpublished and nonmarket types. Active selection uses ESI's paginated regional
+market-types endpoint, not every type with historical trades. Known unpublished
+active types are excluded and counted. Active IDs missing from static types
+produce a warning, even with `--quiet`. Without includes, those unknown IDs remain
+eligible; they cannot match an include and are not removed by exclusions without
+known membership. Known types without a market group behave the same way for
+filter matching. Unfiltered active selection does not require market-group data.
+
+### Execution, limits, and output
+
+Regions run sequentially using a shared ESI client and resource lifecycle. Each
+region finishes or aborts, and pending-task cleanup completes, before the next
+region begins discovery or history updates.
+
+| Option | Default | Behavior |
+| --- | --- | --- |
+| `--batch-size` | `MARKET_HISTORY_BATCH_SIZE` (currently 100) | Positive integer; maximum concurrent updates in nonoverlapping batches |
+| `--failure-limit` | `MARKET_HISTORY_FAILURE_LIMIT` (currently 50) | Positive integer; independent failure budget for each region |
+| `--progress auto\|live\|plain` | `auto` | Live progress on interactive terminals by default; plain batch messages otherwise |
+| `--quiet` | Off | Hide routine output and progress, but retain warnings, failures, and abort notices |
+
+Defaults resolve from the shared runner's constants. Every implemented selection
+mode uses a separate failure budget per region, including explicit IDs and market
+types. Failed updates, including logged updater exceptions, consume that budget;
+cached skips and cancellation do not. At the limit, pending tasks are cancelled
+and awaited, and later batches for that region do not start. In-flight updates can
+finish during cancellation, so the failure count can exceed the limit. Already
+committed writes remain stored; requests already sent cannot be retracted.
+
+Discovery failures and regional aborts do not stop later regions. Any discovery
+or history-update failure causes a nonzero exit status after all regions finish.
+User interruption stops the whole command after cleanup.
+
+Live progress shows completed/total pairs, elapsed time, updated/skipped/failed
+counts, and the latest type ID. The transient display clears on completion, abort,
+or interruption. Plain output reports completion at the selected batch-size
+interval. Regional and overall summaries reconcile updated, skipped, failed,
+cancelled, and not-started pairs; overall totals separately count discovery-failed
+regions, whose unknown pair counts are not included. Cancelled/unstarted pairs
+are never shown as successfully completed. Explicit single-pair runs also retain
+freshness and expiry details.
+
+### Storage and failure details
+
+Unexpired stored responses skip fetching; Argus expiry overrides ESI expiry, and
+missing expiry triggers a refresh. Existing ESI caching and rate limiting apply.
 
 Successful updates store response metadata and daily history transactionally.
 Overlapping dates are replaced and older dates remain stored. Empty responses
@@ -64,112 +162,21 @@ initialization of an existing large database may take longer while the index is
 built. Updates use indexed single-row latest-response lookups and exact duplicate
 existence checks rather than loading all metadata for each pair.
 
-### Bulk market history
+### Previous history commands
 
-```bash
-uv run eve-argus fetch market-history-bulk \
-  --region-id 10000002 --region-id 10000043 \
-  --include 4 --include 9 --exclude 187
-```
+The old commands remain available unchanged until the unified command is reviewed
+and their removal is explicitly confirmed. No compatibility shims are added.
 
-At least one `--region-id` is required. Regions are validated against the static
-map-regions dataset; terminal output includes their names and IDs. The configured
-static database must contain map regions, market groups, and published types.
-Unknown regions or market-group filters fail before any history requests.
+| Previous command | Unified replacement |
+| --- | --- |
+| `market-history-active` | `market-history --active` |
+| `market-history-bulk` | `market-history --market-types --progress plain` |
+| `market-history-bulk-progress` | `market-history --market-types --progress live` |
 
-Only published types listed in the market-groups dataset are considered.
-Repeated `--include` values form a union: a type matches if any included group
-appears in its market path, including its directly assigned group. Without
-includes, all market-group type IDs are collected. All `--exclude` values are
-applied afterward, regardless of option order, and exclusions always win.
-Unpublished and nonmarket types are never fetched. Duplicate options do not
-duplicate requests. An empty selection is a successful no-op.
-
-Every selected region/type pair uses the same expiry-aware updater as the
-single-pair command. Updates run concurrently in nonoverlapping batches, bounded
-by `MARKET_HISTORY_BATCH_SIZE = 100`. Existing ESI client caching and rate limiting
-still apply. Omitting filters can result in a large number of requests.
-
-`MARKET_HISTORY_FAILURE_LIMIT = 20` counts failed updates across all regions and
-batches, including raised updater exceptions. At the limit, no further batches
-start; unfinished tasks are cancelled and awaited before resources close.
-Requests already sent cannot be retracted, and updates already committed remain
-stored. Updates finishing during cancellation are still counted, so the final
-failure count can exceed the limit. Cancellation itself is not an update failure.
-
-Output reports progress and final updated, skipped, failed, cancelled, and
-not-started totals. Any failed update produces a nonzero exit status; below the
-limit, other pairs continue. `--quiet` hides routine output, but failures and
-abort notices remain visible.
-
-### Bulk market history with live progress (comparison)
-
-```bash
-uv run eve-argus fetch market-history-bulk-progress \
-  --region-id 10000002 --region-id 10000043 \
-  --include 4 --include 9 --exclude 187
-```
-
-This side-by-side alternative accepts the same options and uses the same bulk
-runner, filters, batches of 100, and global failure limit of 20. The existing
-`market-history-bulk` command keeps its batch-completion messages.
-
-The progress variant displays a live spinner while requests are pending, completed
-and total pair counts, elapsed time, updated/skipped/failed counts, and the latest
-completed region name/ID and type ID. Completion counts include cached skips and
-failures, not just network fetches. Live animation requires an interactive terminal;
-redirected output retains the final summary and errors without animation.
-The transient display clears when execution ends, including on abort or interruption,
-so cancelled and unstarted pairs are not presented as successful completion.
-`--quiet` disables the spinner and routine output, but keeps errors and abort notices.
-
-### Active market history
-
-```bash
-uv run eve-argus fetch market-history-active \
-  --region-id 10000002 --region-id 10000043
-
-uv run eve-argus fetch market-history-active --hubs
-
-uv run eve-argus fetch market-history-active --region-id 10000064 --hubs
-```
-
-Provide at least one `--region-id`, `--hubs`, or both. The hubs flag adds the
-defined market hub regions for Jita, Amarr, Dodixie, Hek, and Rens, in that order.
-Explicit regions run first in command-line order, followed by hub regions, with
-duplicates removed across both selections. All region IDs are validated against
-the static map-regions dataset before any network requests. Static market groups
-are not used for selection; this command has no include/exclude filters.
-
-For each region, ESI's regional market-types endpoint supplies the active type
-IDs through the existing client's paginated request flow. "Active" means listed
-by that endpoint, not every type with historical trades. That endpoint can return
-unpublished type IDs, so active types marked unpublished in the static types
-dataset are excluded and counted. Active IDs missing from the static types
-dataset are **still fetched**, counted as unknown, and listed in a warning
-(shown even with `--quiet`) suggesting a static database update; their failure
-messages use `Unknown type`. Type IDs are
-deduplicated and scheduled in **ascending numeric order** in concurrent batches of
-`MARKET_HISTORY_BATCH_SIZE`; completion order can differ. Each pair uses the same
-expiry-aware history updater and database as the other history commands. An empty
-active-type list, or one with no published types after filtering, is a successful
-regional no-op.
-
-Each region has its own progress bar, counters, summary, and
-`MARKET_HISTORY_FAILURE_LIMIT` budget. Both limits use the shared bulk runner's
-current constants. A region's pending history tasks are cancelled and awaited
-when it reaches its limit, retaining committed updates. Failures finishing during
-cancellation can exceed the limit. Only after that region finishes or aborts does
-discovery for the next region begin.
-ESI client caching and rate limiting remain shared; update failure counts do not.
-
-Discovery failures and regional aborts are reported without stopping later
-regions. Any discovery or history-update failure produces a nonzero exit status
-after all regions have been processed. Progress reports updated, skipped, and
-failed counts; regional summaries also report cancelled and not-started pairs.
-The transient progress display clears on completion, abort, or interruption.
-`--quiet` hides routine output and progress, but not failures or abort notices.
-User interruption stops the entire command after pending history tasks clean up.
+Pass the same region and filter arguments where supported. The old active command
+still has no filters. Unlike the unified command, the old bulk commands use a
+global failure budget across all regions; they retain their existing constant-based
+limits and do not accept the new execution-control options.
 
 ## Market hub price summaries
 
