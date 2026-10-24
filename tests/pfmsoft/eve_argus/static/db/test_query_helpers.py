@@ -74,6 +74,130 @@ def _make_connection() -> sqlite3.Connection:
     return connection
 
 
+def test_get_blueprints_returns_empty_dataset() -> None:
+    """An empty database returns an empty blueprint dataset."""
+    connection = _make_connection()
+
+    assert query_helpers.get_blueprints(connection) == {}
+
+
+def test_get_blueprints_preserves_missing_and_empty_activities() -> None:
+    """Missing activities stay None; present activities have empty child tuples."""
+    connection = _make_connection()
+    connection.executemany(
+        """INSERT INTO types (type_id, group_id, name, portion_size, published)
+        VALUES (?, 1, 'Blueprint', 1, 1)""",
+        [(100,), (200,)],
+    )
+    connection.executemany(
+        "INSERT INTO blueprints VALUES (?, ?)", [(200, None), (100, 0)]
+    )
+    connection.execute(
+        "INSERT INTO blueprint_activities VALUES (?, ?, ?)",
+        (100, "research_time", 0),
+    )
+
+    blueprints = query_helpers.get_blueprints(connection)
+
+    assert list(blueprints) == [100, 200]
+    assert blueprints == {
+        100: ASM.BlueprintRecord(
+            blueprint_type_id=100,
+            max_production_limit=0,
+            activities=ASM.BlueprintActivities(
+                research_time=ASM.Blueprint_Activity(time=0)
+            ),
+        ),
+        200: ASM.BlueprintRecord(
+            blueprint_type_id=200,
+            activities=ASM.BlueprintActivities(),
+        ),
+    }
+
+
+def test_get_blueprints_reconstructs_all_activities_and_children() -> None:
+    """Child records are sorted and isolated by blueprint and activity."""
+    connection = _make_connection()
+    connection.executemany(
+        """INSERT INTO types (type_id, group_id, name, portion_size, published)
+        VALUES (?, 1, 'Type', 1, 1)""",
+        [(type_id,) for type_id in (*range(1, 9), 100, 200)],
+    )
+    expected: ASM.BlueprintDataset = {}
+    activity_names = (
+        "copying",
+        "invention",
+        "manufacturing",
+        "reaction",
+        "research_material",
+        "research_time",
+    )
+    for blueprint_id in (200, 100):
+        connection.execute("INSERT INTO blueprints VALUES (?, ?)", (blueprint_id, 10))
+        activities = ASM.BlueprintActivities()
+        for index, name in enumerate(activity_names):
+            quantity = blueprint_id + index
+            connection.execute(
+                "INSERT INTO blueprint_activities VALUES (?, ?, ?)",
+                (blueprint_id, name, index),
+            )
+            connection.executemany(
+                "INSERT INTO blueprint_activity_materials VALUES (?, ?, ?, ?)",
+                [(blueprint_id, name, type_id, quantity) for type_id in (2, 1)],
+            )
+            connection.executemany(
+                "INSERT INTO blueprint_activity_skills VALUES (?, ?, ?, ?)",
+                [(blueprint_id, name, type_id, index) for type_id in (4, 3)],
+            )
+            connection.executemany(
+                "INSERT INTO blueprint_activity_products VALUES (?, ?, ?, ?, ?)",
+                [
+                    (blueprint_id, name, 8, quantity, 1.0),
+                    (blueprint_id, name, 7, quantity, 0.0),
+                    (blueprint_id, name, 6, quantity, 0.4),
+                    (blueprint_id, name, 5, quantity, None),
+                ],
+            )
+            setattr(
+                activities,
+                name,
+                ASM.Blueprint_Activity(
+                    time=index,
+                    materials=tuple(
+                        ASM.Blueprint_Material(type_id=type_id, quantity=quantity)
+                        for type_id in (1, 2)
+                    ),
+                    skills=tuple(
+                        ASM.Blueprint_Skill(type_id=type_id, level=index)
+                        for type_id in (3, 4)
+                    ),
+                    products=tuple(
+                        ASM.Blueprint_Product(
+                            type_id=type_id,
+                            quantity=quantity,
+                            probability=probability,
+                        )
+                        for type_id, probability in (
+                            (5, None),
+                            (6, 0.4),
+                            (7, 0.0),
+                            (8, 1.0),
+                        )
+                    ),
+                ),
+            )
+        expected[blueprint_id] = ASM.BlueprintRecord(
+            blueprint_type_id=blueprint_id,
+            max_production_limit=10,
+            activities=activities,
+        )
+
+    blueprints = query_helpers.get_blueprints(connection)
+
+    assert list(blueprints) == [100, 200]
+    assert blueprints == expected
+
+
 def test_write_industrial_activities_writes_string_fields() -> None:
     """Industrial activity records are written to the static database."""
     connection = _make_connection()

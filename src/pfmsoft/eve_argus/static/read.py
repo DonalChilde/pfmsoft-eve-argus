@@ -7,6 +7,11 @@ from pfmsoft.eve_argus.static import models as ASM
 from pfmsoft.eve_argus.static import query_helpers as QH
 
 
+def blueprints(connection: Connection) -> ASM.BlueprintDataset:
+    """Retrieve blueprints from the Argus static db."""
+    return QH.get_blueprints(connection)
+
+
 def categories(
     connection: Connection, *, only_published: bool = True
 ) -> ASM.CategoriesDataset:

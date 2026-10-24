@@ -3,9 +3,12 @@
 # All *_responses readers return newest received_at first; IDs break timestamp ties.
 # The definition for this database lives at src/pfmsoft/eve_argus/dynamic/db/table_definitions.sql
 import logging
+from decimal import Decimal
 from sqlite3 import Connection
+from typing import Any
 
-from pfmsoft.eve_argus.dynamic import models
+from pfmsoft.eve_argus.dynamic import models, order_summary
+from pfmsoft.eve_argus.dynamic.order_summary import FILTER_FACTOR_DEFAULT
 from pfmsoft.eve_argus.helpers.currency import (
     from_cents,
     from_four_places,
@@ -309,34 +312,16 @@ def market_orders(
 
     grouped_orders: dict[int, dict[str, list[models.MarketOrderRecord]]] = {}
     for row in connection.execute(
-        """
-        SELECT type_id, response_metadata_id, region_id, duration, is_buy_order,
-               issued, location_id, min_volume, order_id, price, range_,
-               system_id, volume_remain, volume_total
+        f"""
+        SELECT {_MARKET_ORDER_COLUMNS}
         FROM market_orders
         WHERE response_metadata_id = ?
         ORDER BY type_id, order_id
         """,
         (response_metadata_id,),
     ):
-        type_id = row[0]
-        bucket = grouped_orders.setdefault(type_id, {"buy": [], "sell": []})
-        order = models.MarketOrderRecord(
-            response_metadata_id=row[1],
-            region_id=row[2],
-            duration=row[3],
-            is_buy_order=bool(row[4]),
-            issued=row[5],
-            location_id=row[6],
-            min_volume=row[7],
-            order_id=row[8],
-            price=from_cents(row[9]),
-            range=row[10],
-            system_id=row[11],
-            type_id=type_id,
-            volume_remain=row[12],
-            volume_total=row[13],
-        )
+        order = _market_order_record(row)
+        bucket = grouped_orders.setdefault(order.type_id, {"buy": [], "sell": []})
         bucket["buy" if order.is_buy_order else "sell"].append(order)
 
     records = {
@@ -354,6 +339,144 @@ def market_orders(
         argus_expires_at=metadata[3],
         region_id=metadata[4],
         records=records,
+    )
+
+
+@log_timing(logger=logger, level=_timing_log_level)
+def market_orders_filtered(
+    connection: Connection,
+    response_metadata_id: int,
+    *,
+    type_id: int | None = None,
+    system_id: int | None = None,
+    location_id: int | None = None,
+    is_buy_order: bool | None = None,
+) -> tuple[models.MarketOrderRecord, ...]:
+    """Get the filtered market orders dataset for a response metadata ID.
+
+    This function retrieves market orders filtered by the specified criteria.
+    If a filter parameter is None, it will not be applied.
+
+    Note that response_metadata_id is always required and implies a region_id, as each
+    response metadata ID corresponds to a request for market orders in that region.
+
+    Args:
+        connection: The database connection to use.
+        response_metadata_id: The response metadata ID to filter by.
+        type_id: Optional type ID to filter by.
+        system_id: Optional system ID to filter by.
+        location_id: Optional location ID to filter by.
+        is_buy_order: Optional flag to filter by buy/sell orders. None means no filtering.
+
+    Returns:
+        A tuple of filtered market order records, ordered by type_id and order_id.
+        An unknown response metadata ID produces an empty tuple.
+    """
+    filters: dict[str, int | None] = {
+        "type_id": type_id,
+        "system_id": system_id,
+        "location_id": location_id,
+        "is_buy_order": None if is_buy_order is None else int(is_buy_order),
+    }
+    conditions = ["response_metadata_id = ?"]
+    parameters: list[int] = [response_metadata_id]
+    for column, value in filters.items():
+        if value is not None:
+            conditions.append(f"{column} = ?")
+            parameters.append(value)
+
+    return tuple(
+        _market_order_record(row)
+        for row in connection.execute(
+            f"""
+            SELECT {_MARKET_ORDER_COLUMNS}
+            FROM market_orders
+            WHERE {" AND ".join(conditions)}
+            ORDER BY type_id, order_id
+            """,
+            parameters,
+        )
+    )
+
+
+@log_timing(logger=logger, level=_timing_log_level)
+def calculate_market_order_summary(
+    connection: Connection,
+    response_metadata_id: int,
+    *,
+    type_id: int,
+    system_id: int | None = None,
+    location_id: int | None = None,
+    is_buy_summary: bool = True,
+    filter_factor: Decimal = FILTER_FACTOR_DEFAULT,
+) -> models.OrderSummaryRecord | None:
+    """Calculate one side of a type's order summary from a filtered query.
+
+    Only the orders within the requested scope are read from the database, which
+    avoids loading a whole region when a single summary is needed.
+
+    Args:
+        connection: The database connection to use.
+        response_metadata_id: The market orders response to summarize.
+        type_id: The item type to summarize.
+        system_id: Limit the calculation to one solar system.
+        location_id: Limit the calculation to one station or structure.
+        is_buy_summary: True to summarize buy orders, False for sell orders.
+        filter_factor: Exclude buy prices below best / factor and sell prices above
+            best * factor. Must be greater than 1.
+
+    Returns:
+        The summary, or None if no orders with remaining volume match the query.
+
+    Raises:
+        ValueError: If both scopes are supplied or the factor is invalid.
+    """
+    order_summary.validate_summary_options(
+        system_id=system_id, location_id=location_id, filter_factor=filter_factor
+    )
+    orders = market_orders_filtered(
+        connection,
+        response_metadata_id,
+        type_id=type_id,
+        system_id=system_id,
+        location_id=location_id,
+        is_buy_order=is_buy_summary,
+    )
+    if not orders:
+        return None
+    return order_summary.calculate_order_summary(
+        orders,
+        region_id=orders[0].region_id,
+        type_id=type_id,
+        system_id=system_id,
+        location_id=location_id,
+        is_buy_summary=is_buy_summary,
+        filter_factor=filter_factor,
+    )
+
+
+_MARKET_ORDER_COLUMNS = """response_metadata_id, region_id, duration, is_buy_order,
+               issued, location_id, min_volume, order_id, price, range_,
+               system_id, type_id, volume_remain, volume_total"""
+
+
+def _market_order_record(row: tuple[Any, ...]) -> models.MarketOrderRecord:
+    """Convert a row selected with `_MARKET_ORDER_COLUMNS` into a record."""
+    return models.MarketOrderRecord(
+        response_metadata_id=row[0],
+        region_id=row[1],
+        duration=row[2],
+        is_buy_order=bool(row[3]),
+        issued=row[4],
+        location_id=row[5],
+        min_volume=row[6],
+        order_id=row[7],
+        price=from_cents(row[8]),
+        range=row[9],
+        system_id=row[10],
+        type_id=row[11],
+        volume_remain=row[12],
+        volume_total=row[13],
     )
 
 

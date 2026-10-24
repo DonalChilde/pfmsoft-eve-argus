@@ -117,6 +117,7 @@ def history_summary(
     if count is None:
         # Get count of total records available for the given region and type
         # FIXME not sure this is doing what I want.
+        # Consider getting the oldest available record date, and creating dates from start to that date if needed.
         query = """
             SELECT COUNT(*)
             FROM market_history

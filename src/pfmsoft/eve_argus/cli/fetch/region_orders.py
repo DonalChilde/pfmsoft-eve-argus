@@ -9,7 +9,7 @@ from rich.console import Console
 from pfmsoft.eve_argus.cli.fetch._helpers import report_update_result
 from pfmsoft.eve_argus.cli.helpers import get_eve_argus_settings_from_context
 from pfmsoft.eve_argus.dynamic import read, write
-from pfmsoft.eve_argus.dynamic.order_summary import calculate_summaries
+from pfmsoft.eve_argus.dynamic.order_summary import calculate_dataset_summaries
 from pfmsoft.eve_argus.eve_argus import EveArgusResources
 from pfmsoft.eve_argus.fetch_esi import update_market_orders
 from pfmsoft.eve_argus.fetch_esi.update import UpdateStatus
@@ -73,7 +73,7 @@ async def _fetch_region_orders(
                 for group in orders.records.values()
             )
             messenger.print(f"\tRead {order_count} orders from the database.")
-            summaries = calculate_summaries(orders)
+            summaries = calculate_dataset_summaries(orders)
             messenger.print(
                 f"\tCalculated order summaries for {len(summaries.records)} types."
             )

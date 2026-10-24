@@ -42,9 +42,9 @@ Fetches history into the configured market-history database. Supply at least one
 | Mode | Candidate types | Market-group filters |
 | --- | --- | --- |
 | Repeated `--type-id` | Explicit IDs, including unpublished, nonmarket, and unknown types | Not allowed |
-| `--active` | Active types discovered independently for each region | Allowed |
+| `--active` | Published, market-listed active types discovered independently for each region | Allowed |
 | `--market-types` | Published types listed in static market groups | Allowed |
-| `--industry-types` | Reserved for industry-related types; not implemented yet | Accepted by stub |
+| `--industry-types` | Published, market-listed blueprint IDs plus materials and products across all blueprint activities | Allowed |
 
 Explicit regions run in command-line order, followed by hub regions for Jita,
 Amarr, Dodixie, Hek, and Rens, with duplicates removed. Types are deduplicated
@@ -65,16 +65,18 @@ uv run eve-argus fetch market-history \
   --hubs --market-types --include 4 --include 9 --exclude 187 \
   --batch-size 25 --failure-limit 10 --progress plain
 
-# Industry selection stub: reports an error without opening resources
+# Industry-related types from the static blueprints dataset
 uv run eve-argus fetch market-history \
   --hubs --industry-types --include 4 --exclude 187
 ```
 
-The industry stub validates argument combinations and positive execution limits,
-then reports `Industry type selection is not implemented yet.` and exits nonzero,
-even with `--quiet`. It does not acquire resources, query static datasets, or make
-network requests. Future implementation will collect industry-related type IDs,
-apply filters, and use the same regional execution and failure budgets.
+Industry selection requires a populated static blueprints dataset. It collects
+each blueprint's own type ID, materials, and products from copying, invention,
+manufacturing, reactions, material research, and time research. Skill-only IDs
+are not included. IDs are deduplicated across blueprints and activities before
+filtering, and the resulting selection is fetched for every selected region using
+the same regional execution limits as the other modes. Missing blueprint data is
+an explicit error before any history requests.
 
 ### Selection and filters
 
@@ -83,21 +85,32 @@ requests. The original explicit single-pair invocation still permits regions
 missing from static data; failures label them `Unknown region`.
 
 `--include` and `--exclude` may be repeated with `--active`, `--market-types`,
-and the industry stub, but not `--type-id`. Includes form a union of market-group
+and `--industry-types`, but not `--type-id`. Includes form a union of market-group
 subtrees, including each group's directly assigned types. Excludes apply afterward,
 regardless of option order, and always win. Filters only remove candidates; they
 never introduce inactive or otherwise unselected types. Unknown groups, missing
 required static datasets, and inconsistent market paths fail before network
 requests. An empty selection is a successful regional no-op.
 
-Market selection requires populated static market groups and types and excludes
-unpublished and nonmarket types. Active selection uses ESI's paginated regional
-market-types endpoint, not every type with historical trades. Known unpublished
-active types are excluded and counted. Active IDs missing from static types
-produce a warning, even with `--quiet`. Without includes, those unknown IDs remain
-eligible; they cannot match an include and are not removed by exclusions without
-known membership. Known types without a market group behave the same way for
-filter matching. Unfiltered active selection does not require market-group data.
+All generated selections (`--active`, `--market-types`, and `--industry-types`)
+require published types with known market membership. Types with no
+`market_group_id` and IDs missing from the static types dataset are excluded,
+even without include/exclude filters. Unknown active/industry IDs produce a
+warning, even with `--quiet`; routine output counts excluded unpublished types
+and nonmarket/unknown types separately. Explicit `--type-id` requests remain
+unrestricted.
+
+Market selection requires populated static market groups and types. Active
+selection uses ESI's paginated regional market-types endpoint, not every type
+with historical trades. Industry selection follows the same publication,
+market-membership, and filter rules as active selection. Unfiltered active and
+industry selections use the types dataset to establish market membership and
+do not require loading market groups.
+
+For example, `--industry-types --exclude 2` excludes the Blueprints & Reactions
+market-group subtree. Nonmarket blueprints (including many Tech II blueprints)
+are also excluded because they have no market-group assignment, rather than
+being treated as members of group 2.
 
 ### Execution, limits, and output
 

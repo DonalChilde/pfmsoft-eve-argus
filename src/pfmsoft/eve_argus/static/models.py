@@ -4,9 +4,65 @@ In the record dataclass definition, the record key should come first, then the f
 in alphabetical order.
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from pydantic import RootModel
+
+
+@dataclass(slots=True, kw_only=True)
+class Blueprint_Material:
+    type_id: int
+    quantity: int
+
+
+@dataclass(slots=True, kw_only=True)
+class Blueprint_Skill:
+    type_id: int
+    level: int
+
+
+@dataclass(slots=True, kw_only=True)
+class Blueprint_Product:
+    type_id: int
+    quantity: int
+    probability: float | None = None
+
+
+@dataclass(slots=True, kw_only=True)
+class Blueprint_Activity:
+    materials: tuple[Blueprint_Material, ...] | None = field(
+        default_factory=tuple[Blueprint_Material, ...]
+    )
+    skills: tuple[Blueprint_Skill, ...] | None = field(
+        default_factory=tuple[Blueprint_Skill, ...]
+    )
+    products: tuple[Blueprint_Product, ...] | None = field(
+        default_factory=tuple[Blueprint_Product, ...]
+    )
+    time: int
+
+
+@dataclass(slots=True, kw_only=True)
+class BlueprintActivities:
+    copying: Blueprint_Activity | None = None
+    invention: Blueprint_Activity | None = None
+    manufacturing: Blueprint_Activity | None = None
+    reaction: Blueprint_Activity | None = None
+    research_material: Blueprint_Activity | None = None
+    research_time: Blueprint_Activity | None = None
+
+
+@dataclass(slots=True, kw_only=True, frozen=True)
+class BlueprintRecord:
+    """Record for a specific blueprint."""
+
+    blueprint_type_id: int
+    activities: BlueprintActivities
+    max_production_limit: int | None = None
+
+
+BlueprintDataset = dict[int, BlueprintRecord]
+BlueprintDatasetRoot = RootModel[BlueprintDataset]
 
 
 @dataclass(slots=True, kw_only=True)

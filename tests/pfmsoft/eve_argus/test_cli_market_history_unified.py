@@ -19,6 +19,7 @@ from pfmsoft.eve_argus.fetch_esi import market_history_bulk as bulk
 from pfmsoft.eve_argus.fetch_esi.update import UpdateResult, UpdateStatus
 from pfmsoft.eve_argus.models.market_hubs import MARKET_HUBS
 from pfmsoft.eve_argus.settings import SETTINGS_KEY, EveArgusSettings
+from pfmsoft.eve_argus.static import models as ASM
 from pfmsoft.eve_argus.static.models import MarketGroupsRecord, TypesRecord
 
 
@@ -81,6 +82,26 @@ def environment(monkeypatch: pytest.MonkeyPatch) -> Environment:
         )
     }
     monkeypatch.setattr(command.static_read, "market_groups", Mock(return_value=groups))
+    blueprints = {
+        10: ASM.BlueprintRecord(
+            blueprint_type_id=10,
+            activities=ASM.BlueprintActivities(
+                manufacturing=ASM.Blueprint_Activity(
+                    time=60,
+                    materials=(
+                        ASM.Blueprint_Material(type_id=11, quantity=1),
+                        ASM.Blueprint_Material(type_id=13, quantity=1),
+                        ASM.Blueprint_Material(type_id=99, quantity=1),
+                    ),
+                    products=(ASM.Blueprint_Product(type_id=10, quantity=1),),
+                    skills=(ASM.Blueprint_Skill(type_id=12, level=1),),
+                )
+            ),
+        )
+    }
+    monkeypatch.setattr(
+        command.static_read, "blueprints", Mock(return_value=blueprints)
+    )
     updater = AsyncMock(
         return_value=UpdateResult(status=UpdateStatus.SKIPPED, previous_state=None)
     )
@@ -314,27 +335,156 @@ def test_argument_errors_precede_resources(
 
 
 @pytest.mark.parametrize("quiet", [False, True])
-def test_industry_stub(environment: Environment, quiet: bool) -> None:
-    """Industry accepts filters and controls but never masquerades as success."""
+def test_industry_selection(environment: Environment, quiet: bool) -> None:
+    """Industry fetches deduplicated blueprint/material/product IDs, excluding skills."""
     result = _invoke(
         environment,
-        "--hubs",
+        "--region-id",
+        "200",
+        "--region-id",
+        "100",
         "--industry-types",
-        "--include",
-        "2",
-        "--exclude",
-        "3",
         "--batch-size",
         "2",
         "--failure-limit",
         "3",
         *(["--quiet"] if quiet else []),
     )
-    assert result.exit_code == 1, result.output
-    assert "Industry type selection is not implemented yet" in result.output
-    environment.manager.__aenter__.assert_not_awaited()
+    assert result.exit_code == 0, result.output
+    assert [
+        (call.kwargs["region_id"], call.kwargs["type_id"])
+        for call in environment.updater.await_args_list
+    ] == [(region, 10) for region in (200, 100)]
+    assert "Warning:" in result.output
+    assert "99" in result.output
+    if quiet:
+        assert "selected" not in result.output
+    environment.manager.__aexit__.assert_awaited_once()
     environment.discovery.assert_not_awaited()
+
+
+def test_industry_requires_blueprints(
+    environment: Environment, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Missing blueprint data fails explicitly before history requests."""
+    monkeypatch.setattr(command.static_read, "blueprints", Mock(return_value={}))
+    result = _invoke(environment, "--region-id", "100", "--industry-types", "--quiet")
+    assert result.exit_code == 2, result.output
+    assert "blueprints" in result.output
     environment.updater.assert_not_awaited()
+
+
+def test_industry_combines_all_blueprints(
+    environment: Environment, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Combine multiple blueprints and include non-manufacturing products once."""
+    blueprints = command.static_read.blueprints(
+        environment.resources.argus_static_db_connection
+    )
+    blueprints[13] = ASM.BlueprintRecord(
+        blueprint_type_id=13,
+        activities=ASM.BlueprintActivities(
+            invention=ASM.Blueprint_Activity(
+                time=60,
+                materials=(ASM.Blueprint_Material(type_id=10, quantity=1),),
+                products=(ASM.Blueprint_Product(type_id=12, quantity=1),),
+            )
+        ),
+    )
+    reader = Mock(return_value=blueprints)
+    monkeypatch.setattr(command.static_read, "blueprints", reader)
+    result = _invoke(
+        environment, "--region-id", "100", "--region-id", "200", "--industry-types"
+    )
+    assert result.exit_code == 0, result.output
+    assert [
+        (call.kwargs["region_id"], call.kwargs["type_id"])
+        for call in environment.updater.await_args_list
+    ] == [(region, type_id) for region in (100, 200) for type_id in (10, 12)]
+    reader.assert_called_once_with(environment.resources.argus_static_db_connection)
+
+
+def test_industry_all_unpublished_is_noop(
+    environment: Environment, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A populated blueprint dataset can yield a successful empty selection."""
+    monkeypatch.setattr(
+        command.static_read,
+        "blueprints",
+        Mock(
+            return_value={
+                11: ASM.BlueprintRecord(
+                    blueprint_type_id=11, activities=ASM.BlueprintActivities()
+                )
+            }
+        ),
+    )
+    result = _invoke(environment, "--region-id", "100", "--industry-types")
+    assert result.exit_code == 0, result.output
+    assert "No market types selected" in result.output
+    environment.updater.assert_not_awaited()
+
+
+def test_industry_without_groups_or_known_types(
+    environment: Environment, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Without known type records no industry IDs have proven market membership."""
+    monkeypatch.setattr(command.static_read, "types", Mock(return_value={}))
+    groups = Mock(side_effect=AssertionError("Market groups must not be read"))
+    monkeypatch.setattr(command.static_read, "market_groups", groups)
+    result = _invoke(environment, "--region-id", "100", "--industry-types", "--quiet")
+    assert result.exit_code == 0, result.output
+    environment.updater.assert_not_awaited()
+    assert "Warning:" in result.output
+    groups.assert_not_called()
+
+
+def test_industry_excludes_nonmarket_blueprints(
+    environment: Environment, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Blueprints without market groups cannot bypass a group-2 exclusion."""
+    monkeypatch.setattr(
+        command.static_read,
+        "blueprints",
+        Mock(
+            return_value={
+                13: ASM.BlueprintRecord(
+                    blueprint_type_id=13,
+                    activities=ASM.BlueprintActivities(
+                        manufacturing=ASM.Blueprint_Activity(
+                            time=60,
+                            materials=(ASM.Blueprint_Material(type_id=10, quantity=1),),
+                            products=(ASM.Blueprint_Product(type_id=12, quantity=1),),
+                        )
+                    ),
+                )
+            }
+        ),
+    )
+    result = _invoke(
+        environment, "--region-id", "100", "--industry-types", "--exclude", "2"
+    )
+    assert result.exit_code == 0, result.output
+    assert [call.kwargs["type_id"] for call in environment.updater.await_args_list] == [
+        12
+    ]
+    assert "excluded 1 nonmarket" in " ".join(result.output.split())
+
+
+@pytest.mark.parametrize("mode", ["--active", "--industry-types"])
+def test_market_membership_uses_types_without_loading_groups(
+    environment: Environment, monkeypatch: pytest.MonkeyPatch, mode: str
+) -> None:
+    """Unfiltered generated selections use type records to prove market membership."""
+    groups = Mock(side_effect=AssertionError("Market groups must not be read"))
+    monkeypatch.setattr(command.static_read, "market_groups", groups)
+    result = _invoke(environment, "--region-id", "100", mode)
+    assert result.exit_code == 0, result.output
+    expected = [10, 12] if mode == "--active" else [10]
+    assert [
+        call.kwargs["type_id"] for call in environment.updater.await_args_list
+    ] == expected
+    groups.assert_not_called()
 
 
 @pytest.mark.parametrize(
@@ -345,12 +495,17 @@ def test_industry_stub(environment: Environment, quiet: bool) -> None:
         ("--market-types", ["--include", "2", "--include", "3"], {10, 12}),
         ("--market-types", ["--exclude", "2"], {12}),
         ("--market-types", ["--exclude", "2", "--include", "2"], set[int]()),
-        ("--active", list[str](), {10, 12, 13, 99}),
+        ("--active", list[str](), {10, 12}),
         ("--active", ["--include", "1"], {10, 12}),
         ("--active", ["--include", "2", "--include", "3"], {10, 12}),
-        ("--active", ["--exclude", "2"], {12, 13, 99}),
+        ("--active", ["--exclude", "2"], {12}),
         ("--active", ["--include", "1", "--exclude", "2"], {12}),
         ("--active", ["--include", "2", "--exclude", "2"], set[int]()),
+        ("--industry-types", list[str](), {10}),
+        ("--industry-types", ["--include", "1"], {10}),
+        ("--industry-types", ["--exclude", "2"], set[int]()),
+        ("--industry-types", ["--include", "2", "--include", "3"], {10}),
+        ("--industry-types", ["--include", "2", "--exclude", "2"], set[int]()),
     ],
 )
 def test_selection_filters(
@@ -382,7 +537,7 @@ def test_filters_cannot_expand_active_candidates(environment: Environment) -> No
     ]
 
 
-@pytest.mark.parametrize("mode", ["--active", "--market-types"])
+@pytest.mark.parametrize("mode", ["--active", "--market-types", "--industry-types"])
 @pytest.mark.parametrize("invalid", ["region", "filter", "dataset"])
 def test_static_validation_precedes_discovery(
     environment: Environment,
@@ -446,7 +601,9 @@ def test_hubs_append_in_order(environment: Environment) -> None:
     ) == list(dict.fromkeys([first, *(hub.region_id for hub in MARKET_HUBS)]))
 
 
-@pytest.mark.parametrize("mode", ["--active", "--market-types", "--type-id"])
+@pytest.mark.parametrize(
+    "mode", ["--active", "--market-types", "--industry-types", "--type-id"]
+)
 def test_independent_regional_failure_limits(
     environment: Environment, mode: str
 ) -> None:
@@ -543,15 +700,14 @@ def test_batch_size_bounds_concurrency(environment: Environment) -> None:
     result = _invoke(environment, "--region-id", "100", "--active", "--batch-size", "2")
     assert result.exit_code == 0, result.output
     assert maximum == 2
-    assert environment.updater.await_count == 4
-    assert "Completed 2/4" in result.output
-    assert "Completed 4/4" in result.output
+    assert environment.updater.await_count == 2
+    assert "Completed 2/2" in result.output
 
 
 def test_unfiltered_active_needs_no_market_groups(
     environment: Environment, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Discovery can fetch unknown IDs without loading static market groups."""
+    """Unknown active IDs warn but never fetch; market groups need not be loaded."""
     groups = Mock(side_effect=AssertionError("Market groups should not be read."))
     monkeypatch.setattr(command.static_read, "market_groups", groups)
     monkeypatch.setattr(command.static_read, "types", Mock(return_value={}))
@@ -559,7 +715,7 @@ def test_unfiltered_active_needs_no_market_groups(
     result = _invoke(environment, "--region-id", "100", "--active", "--quiet")
     assert result.exit_code == 0, result.output
     assert "Warning:" in result.output
-    assert environment.updater.await_count == 1
+    environment.updater.assert_not_awaited()
     groups.assert_not_called()
 
 
@@ -638,8 +794,7 @@ def test_default_limits_and_plain_intervals(
     assert (
         runner.await_args.kwargs["failure_limit"] == bulk.MARKET_HISTORY_FAILURE_LIMIT
     )
-    assert "Completed 2/4" in result.output
-    assert "Completed 4/4" in result.output
+    assert "Completed 2/2" in result.output
 
 
 @pytest.mark.parametrize(
@@ -764,7 +919,7 @@ def test_interruption_awaits_cleanup_and_stops_regions(
             )
 
     asyncio.run(interrupt())
-    assert events == ["cleaned"] * 4
+    assert events == ["cleaned"] * 2
     assert environment.discovery.await_count == 1
     environment.manager.__aexit__.assert_awaited_once()
     assert not progress.live.is_started
