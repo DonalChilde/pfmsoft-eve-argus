@@ -256,3 +256,87 @@ def test_calculate_summaries_rejects_invalid_orders(
 
     with pytest.raises(ValueError, match=message):
         order_summary.calculate_dataset_summaries(orders)
+
+
+def _summarize(
+    orders: tuple[models.MarketOrderRecord, ...], **options: object
+) -> models.OrderSummaryRecord | None:
+    kwargs: dict[str, object] = {
+        "region_id": 10000002,
+        "type_id": 34,
+        "system_id": None,
+        "location_id": None,
+        "is_buy_summary": True,
+    }
+    kwargs.update(options)
+    return order_summary.calculate_order_summary(orders, **kwargs)  # type: ignore[arg-type]
+
+
+def test_calculate_order_summary_from_prefiltered_orders() -> None:
+    """A pre-filtered, unsorted tuple produces the same record as a dataset."""
+    orders = (
+        _order(3, price="5", volume=30, is_buy_order=True),
+        _order(2, price="90", volume=20, is_buy_order=True),
+        _order(1, price="100", volume=10, is_buy_order=True),
+    )
+
+    summary = _summarize(orders, location_id=60003760, filter_factor=Decimal("10"))
+    expected = (
+        order_summary.calculate_dataset_summaries(
+            _dataset({34: models.BuySellOrders(buy_orders=orders, sell_orders=())}),
+            location_id=60003760,
+            filter_factor=Decimal("10"),
+        )
+        .records[34]
+        .buy_summary
+    )
+
+    assert summary is not None
+    assert summary == expected
+    assert (summary.location_id, summary.system_id) == (60003760, None)
+    assert (summary.five_price, summary.filtered_orders) == (Decimal("100.00"), 1)
+
+
+def test_calculate_order_summary_returns_none_without_items() -> None:
+    """Empty and zero-volume books have no summary."""
+    assert _summarize(()) is None
+    assert _summarize((_order(1, price="1", volume=0, is_buy_order=True),)) is None
+
+
+@pytest.mark.parametrize(
+    ("bad_order", "message"),
+    [
+        (_order(1, price="1", volume=1, is_buy_order=False), "does not match"),
+        (_order(1, price="1", volume=1, is_buy_order=True, type_id=35), "type_id"),
+        (
+            _order(1, price="1", volume=1, is_buy_order=True, system_id=1),
+            "system_id",
+        ),
+        (
+            _order(1, price="1", volume=1, is_buy_order=True, location_id=1),
+            "location_id",
+        ),
+    ],
+)
+def test_calculate_order_summary_rejects_orders_outside_scope(
+    bad_order: models.MarketOrderRecord, message: str
+) -> None:
+    """Pre-filtered orders must match the declared summary scope."""
+    scope = (
+        {"system_id": 30000142}
+        if message != "location_id"
+        else {"location_id": 60003760}
+    )
+    with pytest.raises(ValueError, match=message):
+        _summarize((bad_order,), **scope)
+
+
+def test_calculate_order_summary_rejects_wrong_region_and_options() -> None:
+    """Region and calculation options are validated."""
+    order = _order(1, price="1", volume=1, is_buy_order=True)
+    with pytest.raises(ValueError, match="region_id"):
+        _summarize((order,), region_id=1)
+    with pytest.raises(ValueError, match="both"):
+        _summarize((order,), system_id=30000142, location_id=60003760)
+    with pytest.raises(ValueError, match="greater than 1"):
+        _summarize((order,), filter_factor=Decimal("1"))

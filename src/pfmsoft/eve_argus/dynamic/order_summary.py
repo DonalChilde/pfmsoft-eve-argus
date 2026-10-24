@@ -32,35 +32,30 @@ def calculate_dataset_summaries(
         ValueError: If both scopes are supplied, the factor is invalid, or an order
             has the wrong type or side.
     """
-    if system_id is not None and location_id is not None:
-        raise ValueError(
-            "Cannot specify both system_id and location_id. Choose one or neither."
-        )
-    if filter_factor <= Decimal("1"):
-        raise ValueError("filter_factor must be greater than 1.0.")
+    validate_summary_options(
+        system_id=system_id, location_id=location_id, filter_factor=filter_factor
+    )
 
-    records: dict[int, models.BuySellSummary] = {}
-    for type_id, divided_orders in market_orders.records.items():
-        records[type_id] = models.BuySellSummary(
-            buy_summary=_calculate_side(
-                orders=divided_orders.buy_orders,
-                market_orders=market_orders,
-                type_id=type_id,
-                system_id=system_id,
-                location_id=location_id,
-                filter_factor=filter_factor,
-                is_buy_summary=True,
-            ),
-            sell_summary=_calculate_side(
-                orders=divided_orders.sell_orders,
-                market_orders=market_orders,
-                type_id=type_id,
-                system_id=system_id,
-                location_id=location_id,
-                filter_factor=filter_factor,
-                is_buy_summary=False,
-            ),
+    def summarize(
+        orders: Sequence[models.MarketOrderRecord], *, type_id: int, is_buy: bool
+    ) -> models.OrderSummaryRecord | None:
+        return calculate_order_summary(
+            _scope_orders(orders, system_id=system_id, location_id=location_id),
+            region_id=market_orders.region_id,
+            type_id=type_id,
+            system_id=system_id,
+            location_id=location_id,
+            is_buy_summary=is_buy,
+            filter_factor=filter_factor,
         )
+
+    records = {
+        type_id: models.BuySellSummary(
+            buy_summary=summarize(orders.buy_orders, type_id=type_id, is_buy=True),
+            sell_summary=summarize(orders.sell_orders, type_id=type_id, is_buy=False),
+        )
+        for type_id, orders in market_orders.records.items()
+    }
 
     return models.OrderSummaryDataset(
         response_metadata_id=market_orders.response_metadata_id,
@@ -74,34 +69,68 @@ def calculate_dataset_summaries(
     )
 
 
-def _calculate_side(
-    *,
+def validate_summary_options(
+    *, system_id: int | None, location_id: int | None, filter_factor: Decimal
+) -> None:
+    """Validate the scope and outlier filter options for a summary calculation.
+
+    Raises:
+        ValueError: If both scopes are supplied or the factor is not greater than 1.
+    """
+    if system_id is not None and location_id is not None:
+        raise ValueError(
+            "Cannot specify both system_id and location_id. Choose one or neither."
+        )
+    if filter_factor <= Decimal("1"):
+        raise ValueError("filter_factor must be greater than 1.0.")
+
+
+def calculate_order_summary(
     orders: Sequence[models.MarketOrderRecord],
-    market_orders: models.MarketOrdersDataset,
+    *,
+    region_id: int,
     type_id: int,
     system_id: int | None,
     location_id: int | None,
-    filter_factor: Decimal,
     is_buy_summary: bool,
+    filter_factor: Decimal = FILTER_FACTOR_DEFAULT,
 ) -> models.OrderSummaryRecord | None:
-    """Summarize one side of a book after applying scope and outlier filters."""
-    scoped_orders = [
-        order
-        for order in orders
-        if (system_id is None or order.system_id == system_id)
-        and (location_id is None or order.location_id == location_id)
-    ]
-    for order in scoped_orders:
-        if order.is_buy_order != is_buy_summary:
-            raise ValueError(
-                f"Order is_buy_order {order.is_buy_order} does not match summary type "
-                f"{is_buy_summary}"
-            )
-        if order.type_id != type_id:
-            raise ValueError("All orders must be of the same type_id.")
+    """Summarize one side of a book from orders already filtered to a scope.
+
+    The orders need not be sorted, but every order must match the declared region,
+    type, side, and scope, so that the record accurately describes its source.
+
+    Args:
+        orders: Pre-filtered orders for one type and side of the book.
+        region_id: The region the orders belong to.
+        type_id: The item type the orders belong to.
+        system_id: The solar system scope of the orders, if any.
+        location_id: The station or structure scope of the orders, if any.
+        is_buy_summary: True to summarize buy orders, False for sell orders.
+        filter_factor: Exclude buy prices below best / factor and sell prices above
+            best * factor. Must be greater than 1.
+
+    Returns:
+        The summary, or None if there are no orders with remaining volume.
+
+    Raises:
+        ValueError: If the options are invalid or an order is outside the scope.
+    """
+    validate_summary_options(
+        system_id=system_id, location_id=location_id, filter_factor=filter_factor
+    )
+    for order in orders:
+        _validate_order(
+            order,
+            region_id=region_id,
+            type_id=type_id,
+            system_id=system_id,
+            location_id=location_id,
+            is_buy_summary=is_buy_summary,
+        )
 
     sorted_orders = sorted(
-        scoped_orders, key=lambda order: order.price, reverse=is_buy_summary
+        orders, key=lambda order: order.price, reverse=is_buy_summary
     )
     if not sorted_orders:
         return None
@@ -146,7 +175,7 @@ def _calculate_side(
         / total_items
     )
     return models.OrderSummaryRecord(
-        region_id=market_orders.region_id,
+        region_id=region_id,
         type_id=type_id,
         system_id=system_id,
         location_id=location_id,
@@ -162,3 +191,52 @@ def _calculate_side(
         filtered_items=sum(order.volume_remain for order in excluded_orders),
         filtered_orders=len(excluded_orders),
     )
+
+
+def _scope_orders(
+    orders: Sequence[models.MarketOrderRecord],
+    *,
+    system_id: int | None,
+    location_id: int | None,
+) -> tuple[models.MarketOrderRecord, ...]:
+    """Select the orders within an optional system or location scope."""
+    return tuple(
+        order
+        for order in orders
+        if (system_id is None or order.system_id == system_id)
+        and (location_id is None or order.location_id == location_id)
+    )
+
+
+def _validate_order(
+    order: models.MarketOrderRecord,
+    *,
+    region_id: int,
+    type_id: int,
+    system_id: int | None,
+    location_id: int | None,
+    is_buy_summary: bool,
+) -> None:
+    """Raise ValueError if an order does not belong to the summary being built."""
+    if order.is_buy_order != is_buy_summary:
+        raise ValueError(
+            f"Order is_buy_order {order.is_buy_order} does not match summary type "
+            f"{is_buy_summary}"
+        )
+    if order.type_id != type_id:
+        raise ValueError("All orders must be of the same type_id.")
+    if order.region_id != region_id:
+        raise ValueError(
+            f"Order {order.order_id} region_id {order.region_id} does not match "
+            f"{region_id}."
+        )
+    if system_id is not None and order.system_id != system_id:
+        raise ValueError(
+            f"Order {order.order_id} system_id {order.system_id} does not match "
+            f"{system_id}."
+        )
+    if location_id is not None and order.location_id != location_id:
+        raise ValueError(
+            f"Order {order.order_id} location_id {order.location_id} does not match "
+            f"{location_id}."
+        )

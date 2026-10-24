@@ -6,7 +6,7 @@ from decimal import Decimal
 
 import pytest
 
-from pfmsoft.eve_argus.dynamic import read, util, write
+from pfmsoft.eve_argus.dynamic import order_summary, read, util, write
 from pfmsoft.eve_argus.dynamic.models import (
     BuySellOrders,
     BuySellSummary,
@@ -972,3 +972,160 @@ def test_get_corporation_blueprints_returns_dataset() -> None:
             )
         },
     )
+
+
+def _insert_filterable_orders(connection: sqlite3.Connection) -> None:
+    """Insert two order responses with mixed types, sides, and locations."""
+    connection.executemany(
+        "INSERT INTO response_metadata (received_at) VALUES (?)",
+        [("2026-09-01T00:00:00Z",), ("2026-09-02T00:00:00Z",)],
+    )
+    connection.executemany(
+        """
+        INSERT INTO get_markets_region_id_orders_response (
+            response_metadata_id, region_id, received_at
+        ) VALUES (?, 10000002, ?)
+        """,
+        [(1, "2026-09-01T00:00:00Z"), (2, "2026-09-02T00:00:00Z")],
+    )
+    # (response, order_id, type_id, is_buy, system_id, location_id, cents, volume)
+    rows = [
+        (1, 1, 34, 1, 30000142, 60003760, 10000, 10),
+        (1, 2, 34, 1, 30000142, 60003761, 9000, 20),
+        (1, 3, 34, 1, 30000143, 60003762, 500, 30),
+        (1, 4, 34, 0, 30000142, 60003760, 11000, 10),
+        (1, 5, 35, 1, 30000142, 60003760, 100, 1),
+        (2, 6, 34, 1, 30000142, 60003760, 99900, 1),
+    ]
+    connection.executemany(
+        """
+        INSERT INTO market_orders (
+            response_metadata_id, region_id, duration, is_buy_order, issued,
+            location_id, min_volume, order_id, price, range_, system_id,
+            type_id, volume_remain, volume_total
+        ) VALUES (?, 10000002, 90, ?, '2026-09-01T00:00:00Z', ?, 1, ?, ?,
+                  'station', ?, ?, ?, ?)
+        """,
+        [
+            (rmd, is_buy, loc, oid, cents, sys_id, tid, vol, vol)
+            for rmd, oid, tid, is_buy, sys_id, loc, cents, vol in rows
+        ],
+    )
+
+
+@pytest.mark.parametrize(
+    ("filters", "expected_ids"),
+    [
+        ({}, (1, 2, 3, 4, 5)),
+        ({"type_id": 34}, (1, 2, 3, 4)),
+        ({"type_id": 34, "is_buy_order": False}, (4,)),
+        ({"type_id": 34, "is_buy_order": True, "system_id": 30000142}, (1, 2)),
+        ({"location_id": 60003760}, (1, 4, 5)),
+        ({"system_id": 30000142, "location_id": 60003761}, (2,)),
+        ({"type_id": 99}, ()),
+    ],
+)
+def test_market_orders_filtered_applies_only_supplied_filters(
+    filters: dict[str, int | bool], expected_ids: tuple[int, ...]
+) -> None:
+    """Each non-None filter narrows the orders within one response."""
+    connection = _make_connection()
+    _insert_filterable_orders(connection)
+
+    result = read.market_orders_filtered(connection, 1, **filters)  # type: ignore[arg-type]
+
+    assert tuple(order.order_id for order in result) == expected_ids
+    assert all(isinstance(order, MarketOrderRecord) for order in result)
+    assert all(order.response_metadata_id == 1 for order in result)
+
+
+def test_market_orders_filtered_converts_record_fields() -> None:
+    """Filtered rows are converted the same way as dataset rows."""
+    connection = _make_connection()
+    _insert_filterable_orders(connection)
+
+    assert read.market_orders_filtered(connection, 1, type_id=35) == (
+        MarketOrderRecord(
+            response_metadata_id=1,
+            region_id=10000002,
+            duration=90,
+            is_buy_order=True,
+            issued="2026-09-01T00:00:00Z",
+            location_id=60003760,
+            min_volume=1,
+            order_id=5,
+            price=Decimal("1.00"),
+            range="station",
+            system_id=30000142,
+            type_id=35,
+            volume_remain=1,
+            volume_total=1,
+        ),
+    )
+
+
+def test_calculate_market_order_summary_matches_dataset_summary() -> None:
+    """A filtered query summary equals the matching dataset summary."""
+    connection = _make_connection()
+    _insert_filterable_orders(connection)
+
+    summary = read.calculate_market_order_summary(
+        connection,
+        1,
+        type_id=34,
+        system_id=30000142,
+        filter_factor=Decimal("10"),
+    )
+    expected = (
+        order_summary.calculate_dataset_summaries(
+            read.market_orders(connection, 1),
+            system_id=30000142,
+            filter_factor=Decimal("10"),
+        )
+        .records[34]
+        .buy_summary
+    )
+
+    assert summary is not None
+    assert summary == expected
+    assert (summary.region_id, summary.type_id, summary.system_id) == (
+        10000002,
+        34,
+        30000142,
+    )
+    assert (summary.total_orders, summary.five_price) == (2, Decimal("100.00"))
+
+
+def test_calculate_market_order_summary_handles_sell_side_and_no_orders() -> None:
+    """Sell summaries are supported and missing books return None."""
+    connection = _make_connection()
+    _insert_filterable_orders(connection)
+
+    sell = read.calculate_market_order_summary(
+        connection, 1, type_id=34, location_id=60003760, is_buy_summary=False
+    )
+    assert sell is not None
+    assert (sell.is_buy_summary, sell.location_id, sell.five_price) == (
+        False,
+        60003760,
+        Decimal("110.00"),
+    )
+    assert (
+        read.calculate_market_order_summary(
+            connection, 1, type_id=35, is_buy_summary=False
+        )
+        is None
+    )
+
+
+def test_calculate_market_order_summary_rejects_invalid_options() -> None:
+    """Invalid options fail before any query is run."""
+    connection = _make_connection()
+    with pytest.raises(ValueError, match="both"):
+        read.calculate_market_order_summary(
+            connection, 1, type_id=34, system_id=1, location_id=2
+        )
+    with pytest.raises(ValueError, match="greater than 1"):
+        read.calculate_market_order_summary(
+            connection, 1, type_id=34, filter_factor=Decimal("0.5")
+        )
