@@ -18,6 +18,60 @@ from pfmsoft.eve_argus.static import query_helpers as QH
 from pfmsoft.eve_argus.static import read, write
 
 
+def test_blueprints_round_trip(static_connection: Connection) -> None:
+    """The public writer and reader preserve nested blueprint records."""
+    write.types(
+        static_connection,
+        dataset=ESD.TypesDataset(
+            dataset={
+                type_id: ESD.TypesRecord(
+                    groupID=1,
+                    name=ESD.LocalizedString(en=f"Type {type_id}"),
+                    portionSize=1,
+                    published=True,
+                )
+                for type_id in (100, 101, 102, 103)
+            }
+        ),
+    )
+    write.blueprints(
+        static_connection,
+        dataset=ESD.BlueprintsDataset.model_validate(
+            {
+                "dataset": {
+                    100: {
+                        "blueprintTypeID": 100,
+                        "maxProductionLimit": 10,
+                        "activities": {
+                            "manufacturing": {
+                                "time": 60,
+                                "materials": [{"typeID": 102, "quantity": 5}],
+                                "skills": [{"typeID": 103, "level": 3}],
+                                "products": [{"typeID": 101, "quantity": 1}],
+                            }
+                        },
+                    }
+                }
+            }
+        ),
+    )
+
+    assert read.blueprints(static_connection) == {
+        100: ASM.BlueprintRecord(
+            blueprint_type_id=100,
+            max_production_limit=10,
+            activities=ASM.BlueprintActivities(
+                manufacturing=ASM.Blueprint_Activity(
+                    time=60,
+                    materials=(ASM.Blueprint_Material(type_id=102, quantity=5),),
+                    skills=(ASM.Blueprint_Skill(type_id=103, level=3),),
+                    products=(ASM.Blueprint_Product(type_id=101, quantity=1),),
+                )
+            ),
+        )
+    }
+
+
 @pytest.mark.parametrize("value", [True, False, None])
 def test_nullable_type_flags_round_trip(
     static_connection: Connection, value: bool | None
@@ -109,6 +163,7 @@ def test_nullable_solar_flags_round_trip(
 
 
 _READERS = (
+    "blueprints",
     "categories",
     "groups",
     "industry_activities",

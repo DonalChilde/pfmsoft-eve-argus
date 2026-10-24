@@ -799,8 +799,92 @@ def write_sde_metadata(
 
 @log_timing(logger=logger, level=_timing_log_level)
 def get_blueprints(connection: sqlite3.Connection) -> ASM.BlueprintDataset:
-    """Retrieve all blueprints from the database."""
-    ...
+    """Retrieve all blueprints with their activities and child records.
+
+    Missing activities are None; present activities have tuples of materials,
+    skills, and products, ordered by type ID. Blueprints are ordered by type ID.
+    """
+    rows = connection.execute(
+        """
+        SELECT blueprint_type_id, max_production_limit
+        FROM blueprints
+        ORDER BY blueprint_type_id
+        """
+    ).fetchall()
+
+    materials: dict[tuple[int, str], list[ASM.Blueprint_Material]] = {}
+    for blueprint_type_id, activity, type_id, quantity in connection.execute(
+        """
+        SELECT blueprint_type_id, activity, material_type_id, quantity
+        FROM blueprint_activity_materials
+        ORDER BY blueprint_type_id, activity, material_type_id
+        """
+    ):
+        materials.setdefault((blueprint_type_id, activity), []).append(
+            ASM.Blueprint_Material(type_id=type_id, quantity=quantity)
+        )
+
+    skills: dict[tuple[int, str], list[ASM.Blueprint_Skill]] = {}
+    for blueprint_type_id, activity, type_id, level in connection.execute(
+        """
+        SELECT blueprint_type_id, activity, skill_type_id, level
+        FROM blueprint_activity_skills
+        ORDER BY blueprint_type_id, activity, skill_type_id
+        """
+    ):
+        skills.setdefault((blueprint_type_id, activity), []).append(
+            ASM.Blueprint_Skill(type_id=type_id, level=level)
+        )
+
+    products: dict[tuple[int, str], list[ASM.Blueprint_Product]] = {}
+    for (
+        blueprint_type_id,
+        activity,
+        type_id,
+        quantity,
+        probability,
+    ) in connection.execute(
+        """
+        SELECT blueprint_type_id, activity, product_type_id, quantity, probability
+        FROM blueprint_activity_products
+        ORDER BY blueprint_type_id, activity, product_type_id
+        """
+    ):
+        products.setdefault((blueprint_type_id, activity), []).append(
+            ASM.Blueprint_Product(
+                type_id=type_id, quantity=quantity, probability=probability
+            )
+        )
+
+    result = {
+        blueprint_type_id: ASM.BlueprintRecord(
+            blueprint_type_id=blueprint_type_id,
+            max_production_limit=max_production_limit,
+            activities=ASM.BlueprintActivities(),
+        )
+        for blueprint_type_id, max_production_limit in rows
+    }
+    for blueprint_type_id, activity, time in connection.execute(
+        """
+        SELECT blueprint_type_id, activity, time
+        FROM blueprint_activities
+        ORDER BY blueprint_type_id, activity
+        """
+    ):
+        key = (blueprint_type_id, activity)
+        setattr(
+            result[blueprint_type_id].activities,
+            activity,
+            ASM.Blueprint_Activity(
+                time=time,
+                materials=tuple(materials.get(key, ())),
+                skills=tuple(skills.get(key, ())),
+                products=tuple(products.get(key, ())),
+            ),
+        )
+
+    logger.info("Retrieved %d blueprints", len(result))
+    return result
 
 
 @log_timing(logger=logger, level=_timing_log_level)
