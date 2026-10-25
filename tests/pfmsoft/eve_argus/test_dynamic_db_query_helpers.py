@@ -974,6 +974,19 @@ def test_get_corporation_blueprints_returns_dataset() -> None:
     )
 
 
+def test_market_order_count_scopes_counts_to_response() -> None:
+    """Count both order sides only within the requested snapshot."""
+    connection = _make_connection()
+    _insert_filterable_orders(connection)
+
+    assert read.market_order_count(connection, response_metadata_id=1) == 5
+    assert read.market_order_count(connection, response_metadata_id=2) == 1
+    connection.execute("DELETE FROM market_orders WHERE response_metadata_id = 2")
+    assert read.market_order_count(connection, response_metadata_id=2) == 0
+    with pytest.raises(ValueError, match="No market orders response"):
+        read.market_order_count(connection, response_metadata_id=999)
+
+
 def _insert_filterable_orders(connection: sqlite3.Connection) -> None:
     """Insert two order responses with mixed types, sides, and locations."""
     connection.executemany(

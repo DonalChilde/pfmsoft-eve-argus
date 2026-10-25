@@ -5,13 +5,12 @@ import asyncio
 import csv
 import sqlite3
 from collections.abc import Iterable
+from datetime import datetime
 from decimal import ROUND_DOWN, Decimal
 from pathlib import Path
 from typing import Any
 
-from pfmsoft.eve_argus.data_loaders.esd_datasets import EsdDatasetsLoader
-from pfmsoft.eve_argus.market.orders.db import query_helpers as market_queries
-
+from pfmsoft.eve_argus.dynamic import read as dynamic_read
 from pfmsoft.eve_argus.eve_argus import EveArgusResources
 from pfmsoft.eve_argus.models.market_hubs import MARKET_HUBS, MarketHub
 from pfmsoft.eve_argus.settings import get_settings
@@ -23,6 +22,8 @@ DEFAULT_CSV_FILENAME = PROOF_OUTPUT_DIR / "reprocessing_value_report.csv"
 DEFAULT_DEALS_REPORT_FILENAME = PROOF_OUTPUT_DIR / "reprocessing_deals_report.md"
 DEFAULT_DEALS_CSV_FILENAME = PROOF_OUTPUT_DIR / "reprocessing_deals.csv"
 YIELD_PERCENT = 55
+EXCLUDED_MARKET_GROUP_IDS = {1031, 1032, 1034}
+THIN_ORDER_COUNT_THRESHOLD = 2
 CSV_FIELDNAMES = (
     "input_type_id",
     "input_name",
@@ -32,6 +33,12 @@ CSV_FIELDNAMES = (
     "hub",
     "input_buy_price",
     "input_sell_price",
+    "input_buy_orders",
+    "input_buy_items",
+    "input_buy_status",
+    "input_sell_orders",
+    "input_sell_items",
+    "input_sell_status",
     "reprocessed_buy_value",
     "reprocessed_sell_value",
     "missing_data",
@@ -49,14 +56,19 @@ DEAL_CSV_FIELDNAMES = (
     "deal_direction",
     "input_price",
     "input_price_side",
+    "input_price_orders",
+    "input_price_items",
     "recovered_value",
     "recovered_value_side",
+    "recovered_value_status",
     "cost",
     "revenue",
     "gross_profit",
     "margin_percent",
     "market_status",
     "missing_data",
+    "thin_data",
+    "assumption_status",
 )
 
 
@@ -79,6 +91,16 @@ def markdown_cell(value: object) -> str:
     return str(value).replace("|", "\\|").replace("\n", " ")
 
 
+def format_price_detail(price_detail: dict[str, Any] | None) -> str:
+    """Format a 5% price with its order depth and thin-data marker."""
+    if price_detail is None:
+        return ""
+    price = format_decimal(price_detail["price"])
+    depth = f"{price_detail['orders']} orders / {price_detail['items']} items"
+    status = "thin; " if price_detail["status"] == "thin" else ""
+    return f"{status}{price} ({depth})"
+
+
 def recovered_quantity(quantity: int, yield_percent: int = YIELD_PERCENT) -> int:
     """Calculate the integer quantity recovered from one fixed component."""
     return int(
@@ -88,26 +110,44 @@ def recovered_quantity(quantity: int, yield_percent: int = YIELD_PERCENT) -> int
     )
 
 
-def load_market_groups(database_path: Path) -> dict[int, Any]:
-    """Load market groups from the Argus static database."""
-    with sqlite3.connect(database_path) as connection:
-        return read.market_groups(connection)
-
-
 def load_hub_prices(
     connection: sqlite3.Connection, hub: MarketHub
-) -> dict[int, dict[str, Decimal]]:
-    """Load persisted 5% prices for one configured hub system."""
-    prices: dict[int, dict[str, Decimal]] = {}
-    summaries = market_queries.get_order_summaries(
-        connection,
-        region_id=hub.region_id,
-        system_id=hub.system_id,
+) -> tuple[dict[int, dict[str, dict[str, Any]]], str]:
+    """Load the newest persisted 5% prices and depth metrics for one hub."""
+    response = next(
+        (
+            response
+            for response in dynamic_read.order_summary_responses(
+                connection, region_id=hub.region_id
+            )
+            if response.system_id == hub.system_id and response.location_id is None
+        ),
+        None,
     )
-    for summary in summaries:
-        side = "buy" if summary.is_buy_summary else "sell"
-        prices.setdefault(summary.type_id, {})[side] = summary.five_price
-    return prices
+    if response is None:
+        raise ValueError(f"No system-scoped order summary found for {hub.system_name}.")
+
+    summaries = dynamic_read.order_summaries(
+        connection, response.order_summary_response_id
+    )
+    prices: dict[int, dict[str, dict[str, Any]]] = {}
+    for type_id, sides in summaries.records.items():
+        for side_name, summary in (
+            ("buy", sides.buy_summary),
+            ("sell", sides.sell_summary),
+        ):
+            if summary is not None:
+                prices.setdefault(type_id, {})[side_name] = {
+                    "price": summary.five_price,
+                    "orders": summary.five_orders,
+                    "items": summary.five_items,
+                    "status": (
+                        "thin"
+                        if summary.five_orders <= THIN_ORDER_COUNT_THRESHOLD
+                        else "complete"
+                    ),
+                }
+    return prices, response.received_at
 
 
 def build_reference_rows(
@@ -115,20 +155,26 @@ def build_reference_rows(
     types: dict[int, Any],
     type_materials: dict[int, Any],
     market_groups: dict[int, Any],
-    hub_prices: dict[str, dict[int, dict[str, Decimal]]],
+    hub_prices: dict[str, dict[int, dict[str, dict[str, Any]]]],
+    randomized_type_materials: dict[int, Any],
     limit: int | None,
 ) -> list[dict[str, Any]]:
     """Build input and material rows for the reference tables."""
-    eligible_types = {
-        type_id: record
-        for type_id, record in types.items()
-        if record.marketGroupID is not None
-    }
+    eligible_types: dict[int, Any] = {}
+    for type_id, record in types.items():
+        group_id = record.market_group_id
+        market_group = market_groups.get(group_id) if group_id is not None else None
+        if (
+            record.published
+            and market_group is not None
+            and not EXCLUDED_MARKET_GROUP_IDS.intersection(market_group.int_path)
+        ):
+            eligible_types[type_id] = record
     rows: list[dict[str, Any]] = []
     input_count = 0
 
     for input_type_id, input_record in sorted(
-        eligible_types.items(), key=lambda item: item[1].name_localized()
+        eligible_types.items(), key=lambda item: item[1].name
     ):
         material_record = type_materials.get(input_type_id)
         materials = material_record.materials if material_record else None
@@ -137,7 +183,7 @@ def build_reference_rows(
         if limit is not None and input_count >= limit:
             break
 
-        input_market_group = market_groups.get(input_record.marketGroupID)
+        input_market_group = market_groups.get(input_record.market_group_id)
         market_path = (
             " > ".join(input_market_group.str_path) if input_market_group else ""
         )
@@ -145,42 +191,60 @@ def build_reference_rows(
             hub_name: prices.get(input_type_id, {})
             for hub_name, prices in hub_prices.items()
         }
-        rows.append({
-            "role": "Input",
-            "type_id": input_type_id,
-            "name": input_record.name_localized(),
-            "market_path": market_path,
-            "quantity": input_record.portionSize,
-            "prices": input_prices,
-            "status": "complete",
-        })
+        rows.append(
+            {
+                "role": "Input",
+                "type_id": input_type_id,
+                "name": input_record.name,
+                "market_path": market_path,
+                "quantity": input_record.portion_size,
+                "prices": input_prices,
+                "randomized": False,
+                "status": "complete",
+            }
+        )
 
         input_status = "complete"
         for material in materials:
-            material_record_type = eligible_types.get(material.materialTypeID)
+            material_type_id = material.material_type_id
+            material_record_type = types.get(material_type_id)
             material_name = (
-                material_record_type.name_localized()
+                material_record_type.name
                 if material_record_type
-                else f"Unknown type {material.materialTypeID}"
+                else f"Unknown type {material_type_id}"
             )
             material_prices = {
-                hub_name: prices.get(material.materialTypeID, {})
+                hub_name: prices.get(material_type_id, {})
                 for hub_name, prices in hub_prices.items()
             }
-            if material_record_type is None:
+            if (
+                material_record_type is None
+                or material_record_type.market_group_id is None
+                or material_record_type.market_group_id not in market_groups
+            ):
                 input_status = "incomplete"
-            rows.append({
-                "role": "material",
-                "type_id": material.materialTypeID,
-                "name": material_name,
-                "market_path": market_path,
-                "quantity": recovered_quantity(material.quantity),
-                "prices": material_prices,
-                "status": "complete" if material_record_type else "unclassified",
-                "input_type_id": input_type_id,
-            })
+            rows.append(
+                {
+                    "role": "material",
+                    "type_id": material_type_id,
+                    "name": material_name,
+                    "market_path": market_path,
+                    "quantity": recovered_quantity(material.quantity),
+                    "prices": material_prices,
+                    "randomized": False,
+                    "status": "complete"
+                    if material_record_type
+                    and material_record_type.market_group_id in market_groups
+                    else "unclassified",
+                    "input_type_id": input_type_id,
+                }
+            )
 
         rows[-len(materials) - 1]["status"] = input_status
+        randomized_record = randomized_type_materials.get(input_type_id)
+        rows[-len(materials) - 1]["randomized"] = bool(
+            randomized_record and randomized_record.materials
+        )
         input_count += 1
     return rows
 
@@ -194,11 +258,11 @@ def calculate_value(
     total = Decimal(0)
     missing: list[str] = []
     for row in material_rows:
-        price = row["prices"].get(hub_name, {}).get(side)
-        if row["status"] != "complete" or price is None:
+        price_record = row["prices"].get(hub_name, {}).get(side)
+        if row["status"] != "complete" or price_record is None:
             missing.append(row["name"])
             continue
-        total += price * row["quantity"]
+        total += price_record["price"] * row["quantity"]
     return (None if missing else total), missing
 
 
@@ -206,14 +270,20 @@ def render_report(
     *,
     rows: list[dict[str, Any]],
     hub_names: list[str],
+    snapshot_times: dict[str, str],
     yield_percent: int = YIELD_PERCENT,
 ) -> str:
     """Render the reference and value tables as Markdown."""
     lines = [
         "# Reprocessing Value Report",
         "",
+        f"Generated: {datetime.now().astimezone().isoformat(timespec='seconds')}",
         f"Assumed yield: {yield_percent}% | Order depth: 5%",
-        "Status: PROVISIONAL - portion-size semantics require in-game verification",
+        f"Hubs: {', '.join(hub_names)}",
+        "Market snapshots: "
+        + "; ".join(f"{hub}: {snapshot_times[hub]}" for hub in hub_names),
+        "Status: Gross comparison; excludes transaction and transport costs. "
+        "Randomized materials are flagged separately.",
         "",
     ]
     input_rows = sorted(
@@ -231,48 +301,61 @@ def render_report(
         if market_path != current_market_path:
             lines.extend([f"## Market path: {market_path}", ""])
             current_market_path = market_path
-        lines.extend([
-            f"### {input_row['name']}",
-            "",
-            f"Input type ID: {input_row['type_id']} | Portion size: {input_row['quantity']}",
-            "",
-            "#### Reference prices by hub",
-            "",
-            "| Role | Item | Quantity per portion | "
-            + " | ".join(f"{hub_name} Buy | {hub_name} Sell" for hub_name in hub_names)
-            + " | Market status |",
-            "| --- | --- | ---: | "
-            + " | ".join("---: | ---:" for _ in hub_names)
-            + " | --- |",
-        ])
+        lines.extend(
+            [
+                f"### {input_row['name']}",
+                "",
+                f"Input type ID: {input_row['type_id']} | Portion size: {input_row['quantity']}",
+                "",
+                "#### Reference prices by hub",
+                "",
+                "| Role | Item | Quantity per portion | "
+                + " | ".join(
+                    f"{hub_name} Buy | {hub_name} Sell" for hub_name in hub_names
+                )
+                + " | Market status |",
+                "| --- | --- | ---: | "
+                + " | ".join("---: | ---:" for _ in hub_names)
+                + " | --- |",
+            ]
+        )
         for row in item_rows:
             prices = []
             for hub_name in hub_names:
                 hub_price = row["prices"].get(hub_name, {})
-                prices.extend([
-                    format_decimal(hub_price.get("buy")),
-                    format_decimal(hub_price.get("sell")),
-                ])
+                prices.extend(
+                    [
+                        format_price_detail(hub_price.get("buy")),
+                        format_price_detail(hub_price.get("sell")),
+                    ]
+                )
+            status = row["status"]
+            if row.get("randomized"):
+                status += "; randomized materials"
             lines.append(
                 "| "
-                + " | ".join([
-                    markdown_cell(row["role"]),
-                    markdown_cell(row["name"]),
-                    format_quantity(row["quantity"]),
-                    *prices,
-                    markdown_cell(row["status"]),
-                ])
+                + " | ".join(
+                    [
+                        markdown_cell(row["role"]),
+                        markdown_cell(row["name"]),
+                        format_quantity(row["quantity"]),
+                        *prices,
+                        markdown_cell(status),
+                    ]
+                )
                 + " |"
             )
 
-        lines.extend([
-            "",
-            "#### Reprocessed value by hub",
-            "",
-            "| Hub | Input buy price | Input sell price | Reprocessed buy value | "
-            "Reprocessed sell value | Missing data |",
-            "| --- | ---: | ---: | ---: | ---: | --- |",
-        ])
+        lines.extend(
+            [
+                "",
+                "#### Reprocessed value by hub",
+                "",
+                "| Hub | Input buy price | Input sell price | Reprocessed buy value | "
+                "Reprocessed sell value | Missing data |",
+                "| --- | ---: | ---: | ---: | ---: | --- |",
+            ]
+        )
         material_rows = item_rows[1:]
         for hub_name in hub_names:
             input_prices = input_row["prices"].get(hub_name, {})
@@ -280,8 +363,9 @@ def render_report(
             sell_value, sell_missing = calculate_value(material_rows, hub_name, "sell")
             missing = sorted(set(buy_missing + sell_missing))
             lines.append(
-                f"| {hub_name} | {format_decimal(input_prices.get('buy'))} | "
-                f"{format_decimal(input_prices.get('sell'))} | "
+                f"| {hub_name} | "
+                f"{format_price_detail(input_prices.get('buy'))} | "
+                f"{format_price_detail(input_prices.get('sell'))} | "
                 f"{format_decimal(buy_value)} | {format_decimal(sell_value)} | "
                 f"{markdown_cell(', '.join(missing) if missing else 'none')} |"
             )
@@ -307,20 +391,38 @@ def build_csv_rows(
             buy_value, buy_missing = calculate_value(material_rows, hub_name, "buy")
             sell_value, sell_missing = calculate_value(material_rows, hub_name, "sell")
             missing = sorted(set(buy_missing + sell_missing))
-            csv_rows.append({
-                "input_type_id": input_row["type_id"],
-                "input_name": input_row["name"],
-                "market_path": input_row["market_path"],
-                "portion_size": input_row["quantity"],
-                "yield_percent": yield_percent,
-                "hub": hub_name,
-                "input_buy_price": input_prices.get("buy", ""),
-                "input_sell_price": input_prices.get("sell", ""),
-                "reprocessed_buy_value": buy_value or "",
-                "reprocessed_sell_value": sell_value or "",
-                "missing_data": "; ".join(missing),
-                "input_status": input_row["status"],
-            })
+            csv_rows.append(
+                {
+                    "input_type_id": input_row["type_id"],
+                    "input_name": input_row["name"],
+                    "market_path": input_row["market_path"],
+                    "portion_size": input_row["quantity"],
+                    "yield_percent": yield_percent,
+                    "hub": hub_name,
+                    "input_buy_price": input_prices.get("buy", {}).get("price", ""),
+                    "input_sell_price": input_prices.get("sell", {}).get("price", ""),
+                    "input_buy_orders": input_prices.get("buy", {}).get("orders", ""),
+                    "input_buy_items": input_prices.get("buy", {}).get("items", ""),
+                    "input_buy_status": input_prices.get("buy", {}).get(
+                        "status", "missing"
+                    ),
+                    "input_sell_orders": input_prices.get("sell", {}).get("orders", ""),
+                    "input_sell_items": input_prices.get("sell", {}).get("items", ""),
+                    "input_sell_status": input_prices.get("sell", {}).get(
+                        "status", "missing"
+                    ),
+                    "reprocessed_buy_value": buy_value if buy_value is not None else "",
+                    "reprocessed_sell_value": sell_value
+                    if sell_value is not None
+                    else "",
+                    "missing_data": "; ".join(missing),
+                    "input_status": (
+                        f"{input_row['status']}; randomized materials"
+                        if input_row["randomized"]
+                        else input_row["status"]
+                    ),
+                }
+            )
     return csv_rows
 
 
@@ -363,17 +465,43 @@ def build_deal_rows(
                     if direction == "buy_input_sell_materials":
                         input_price_side = "buy"
                         recovered_value_side = "sell"
-                        input_price = input_prices.get("buy")
+                        input_price_detail = input_prices.get("buy")
                         recovered_value, missing = value_cache[(output_hub, "sell")]
                     else:
                         input_price_side = "sell"
                         recovered_value_side = "buy"
-                        input_price = input_prices.get("sell")
+                        input_price_detail = input_prices.get("sell")
                         recovered_value, missing = value_cache[(output_hub, "buy")]
 
+                    input_price = (
+                        input_price_detail["price"]
+                        if input_price_detail is not None
+                        else None
+                    )
                     missing_data = list(missing)
                     if input_price is None:
                         missing_data.insert(0, f"input {input_price_side} price")
+                    recovered_thin_data = [
+                        f"{row['name']} {recovered_value_side} "
+                        f"({price_detail['orders']} orders)"
+                        for row in material_rows
+                        if (
+                            price_detail := row["prices"]
+                            .get(output_hub, {})
+                            .get(recovered_value_side)
+                        )
+                        and price_detail["status"] == "thin"
+                    ]
+                    thin_data = recovered_thin_data
+                    if (
+                        input_price_detail is not None
+                        and input_price_detail["status"] == "thin"
+                    ):
+                        thin_data.insert(
+                            0,
+                            f"input {input_price_side} "
+                            f"({input_price_detail['orders']} orders)",
+                        )
                     cost = (
                         input_price
                         if direction == "buy_input_sell_materials"
@@ -394,37 +522,63 @@ def build_deal_rows(
                         if gross_profit is not None and cost
                         else None
                     )
-                    deal_rows.append({
-                        "input_type_id": input_row["type_id"],
-                        "input_name": input_row["name"],
-                        "market_path": input_row["market_path"],
-                        "portion_size": input_row["quantity"],
-                        "yield_percent": yield_percent,
-                        "source_hub": source_hub,
-                        "output_hub": output_hub,
-                        "deal_scope": "local"
-                        if source_hub == output_hub
-                        else "cross_hub",
-                        "deal_direction": direction,
-                        "input_price": input_price,
-                        "input_price_side": input_price_side,
-                        "recovered_value": recovered_value,
-                        "recovered_value_side": recovered_value_side,
-                        "cost": cost,
-                        "revenue": revenue,
-                        "gross_profit": gross_profit,
-                        "margin_percent": margin_percent,
-                        "market_status": "complete"
-                        if not missing_data
-                        else "incomplete",
-                        "missing_data": sorted(set(missing_data)),
-                    })
+                    deal_rows.append(
+                        {
+                            "input_type_id": input_row["type_id"],
+                            "input_name": input_row["name"],
+                            "market_path": input_row["market_path"],
+                            "portion_size": input_row["quantity"],
+                            "yield_percent": yield_percent,
+                            "source_hub": source_hub,
+                            "output_hub": output_hub,
+                            "deal_scope": "local"
+                            if source_hub == output_hub
+                            else "cross_hub",
+                            "deal_direction": direction,
+                            "input_price": input_price,
+                            "input_price_side": input_price_side,
+                            "input_price_orders": (
+                                input_price_detail["orders"]
+                                if input_price_detail is not None
+                                else ""
+                            ),
+                            "input_price_items": (
+                                input_price_detail["items"]
+                                if input_price_detail is not None
+                                else ""
+                            ),
+                            "recovered_value": recovered_value,
+                            "recovered_value_side": recovered_value_side,
+                            "recovered_value_status": (
+                                "thin" if recovered_thin_data else "complete"
+                            ),
+                            "cost": cost,
+                            "revenue": revenue,
+                            "gross_profit": gross_profit,
+                            "margin_percent": margin_percent,
+                            "market_status": "incomplete"
+                            if missing_data
+                            else "thin"
+                            if thin_data
+                            else "complete",
+                            "missing_data": sorted(set(missing_data)),
+                            "thin_data": sorted(set(thin_data)),
+                            "assumption_status": (
+                                "portion_size_verified; randomized_materials_unverified"
+                                if input_row["randomized"]
+                                else "portion_size_verified"
+                            ),
+                        }
+                    )
     return deal_rows
 
 
 def render_deals_report(
     deal_rows: list[dict[str, Any]],
     minimum_margin: Decimal = Decimal(0),
+    *,
+    hub_names: list[str],
+    snapshot_times: dict[str, str],
 ) -> str:
     """Render positive deals and concise exception notes as Markdown."""
     ranked_rows = [
@@ -436,11 +590,20 @@ def render_deals_report(
         and row["margin_percent"] >= minimum_margin
     ]
     ranked_rows.sort(key=lambda row: row["gross_profit"], reverse=True)
-    incomplete_rows = [row for row in deal_rows if row["market_status"] != "complete"]
+    exception_rows = [
+        row
+        for row in deal_rows
+        if row["market_status"] != "complete"
+        or row["assumption_status"] != "portion_size_verified"
+    ]
     lines = [
         "# Reprocessing Deals Report",
         "",
+        f"Generated: {datetime.now().astimezone().isoformat(timespec='seconds')}",
         f"Minimum gross margin: {minimum_margin}%",
+        f"Hubs: {', '.join(hub_names)}",
+        "Market snapshots: "
+        + "; ".join(f"{hub}: {snapshot_times[hub]}" for hub in hub_names),
         "Status: PROVISIONAL - excludes hauling, taxes, broker fees, and route costs",
         "",
         "## Ranked opportunities",
@@ -449,35 +612,44 @@ def render_deals_report(
         "| ---: | --- | --- | --- | --- | ---: | ---: | ---: | ---: | --- |",
     ]
     for rank, row in enumerate(ranked_rows, start=1):
+        data_quality = f"{row['market_status']}; {row['assumption_status']}"
         lines.append(
             f"| {rank} | {markdown_cell(row['input_name'])} | {row['source_hub']} | "
             f"{row['output_hub']} | {row['deal_direction']} | "
             f"{format_decimal(row['cost'])} | {format_decimal(row['revenue'])} | "
             f"{format_decimal(row['gross_profit'])} | "
-            f"{format_decimal(row['margin_percent'])}% | {row['market_status']} |"
+            f"{format_decimal(row['margin_percent'])}% | {data_quality} |"
         )
-    lines.extend([
-        "",
-        f"Ranked opportunities: {len(ranked_rows)} of {len(deal_rows)} deal rows.",
-        "",
-        "## Exception notes",
-        "",
-        "Routine opportunities do not receive duplicate detail sections.",
-        "The following sample shows incomplete rows that require explanation.",
-        "",
-        "| Input item | Source hub | Output hub | Deal direction | Missing data | Impact |",
-        "| --- | --- | --- | --- | --- | --- |",
-    ])
-    for row in incomplete_rows[:25]:
+    lines.extend(
+        [
+            "",
+            f"Ranked opportunities: {len(ranked_rows)} of {len(deal_rows)} deal rows.",
+            "",
+            "## Exception notes",
+            "",
+            "Routine opportunities do not receive duplicate detail sections.",
+            "Rows with missing or thin depth and unverified randomized-material "
+            "assumptions are retained here. Missing required prices or material "
+            "values prevent ranking; thin prices remain ranked but flagged.",
+            "",
+            "| Input item | Source hub | Output hub | Deal direction | Data quality | "
+            "Missing data | Thin depth | Assumptions |",
+            "| --- | --- | --- | --- | --- | --- | --- | --- |",
+        ]
+    )
+    for row in exception_rows[:25]:
         lines.append(
             f"| {markdown_cell(row['input_name'])} | {row['source_hub']} | "
             f"{row['output_hub']} | {row['deal_direction']} | "
-            f"{markdown_cell('; '.join(row['missing_data']))} | "
-            "Excluded from ranked opportunities |"
+            f"{row['market_status']} | "
+            f"{markdown_cell('; '.join(row['missing_data']) or 'none')} | "
+            f"{markdown_cell('; '.join(row['thin_data']) or 'none')} | "
+            f"{row['assumption_status']} |"
         )
-    if len(incomplete_rows) > 25:
+    if len(exception_rows) > 25:
         lines.append(
-            f"| ... | ... | ... | ... | {len(incomplete_rows) - 25} more rows | ... |"
+            f"| ... | ... | ... | ... | ... | "
+            f"{len(exception_rows) - 25} more rows | ... | ... |"
         )
     lines.append("")
     return "\n".join(lines)
@@ -489,6 +661,7 @@ def build_deals_csv_rows(deal_rows: list[dict[str, Any]]) -> list[dict[str, obje
         {
             **row,
             "missing_data": "; ".join(row["missing_data"]),
+            "thin_data": "; ".join(row["thin_data"]),
         }
         for row in deal_rows
     ]
@@ -513,28 +686,34 @@ async def generate_value_report(
 ) -> None:
     """Load source data and write the prototype value report."""
     settings = get_settings()
-    market_groups = load_market_groups(settings.argus_static_database)
     resource_manager = EveArgusResources(settings=settings)
 
     async with resource_manager as resources:
-        esd_loader = EsdDatasetsLoader(resources.sd_query_manager)
-        types_dataset = esd_loader.types(published=True)
-        type_materials_dataset = esd_loader.type_materials()
-        hub_prices = {
-            hub.system_name: load_hub_prices(resources.order_db_connection, hub)
-            for hub in MARKET_HUBS
-        }
+        static_connection = resources.argus_static_db_connection
+        types = read.types(static_connection, only_published=True)
+        type_materials = read.type_materials(static_connection)
+        randomized_type_materials = read.type_materials_randomized(static_connection)
+        market_groups = read.market_groups(static_connection)
+        with sqlite3.connect(settings.market_orders_database) as order_connection:
+            hub_data = {
+                hub.system_name: load_hub_prices(order_connection, hub)
+                for hub in MARKET_HUBS
+            }
+    hub_prices = {hub_name: data[0] for hub_name, data in hub_data.items()}
+    snapshot_times = {hub_name: data[1] for hub_name, data in hub_data.items()}
 
     rows = build_reference_rows(
-        types=types_dataset.dataset,
-        type_materials=type_materials_dataset.dataset,
+        types=types,
+        type_materials=type_materials,
         market_groups=market_groups,
         hub_prices=hub_prices,
+        randomized_type_materials=randomized_type_materials,
         limit=limit,
     )
     report = render_report(
         rows=rows,
         hub_names=[hub.system_name for hub in MARKET_HUBS],
+        snapshot_times=snapshot_times,
     )
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_text(report, encoding="utf-8")
@@ -550,6 +729,8 @@ async def generate_value_report(
     deals_report = render_deals_report(
         deal_rows=deal_rows,
         minimum_margin=minimum_margin,
+        hub_names=[hub.system_name for hub in MARKET_HUBS],
+        snapshot_times=snapshot_times,
     )
     deals_output_path.parent.mkdir(parents=True, exist_ok=True)
     deals_output_path.write_text(deals_report, encoding="utf-8")

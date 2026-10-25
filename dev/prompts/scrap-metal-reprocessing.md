@@ -1,4 +1,6 @@
-# Reprocessing deal finder
+# Scrapmetal Reprocessing deal finder
+
+NOTE: Scrapmetal reprocessing is separate from ore and ice refining.
 
 NOTE: The initial efforts will be to generate scripts in the dev/proof-scripts/reprocessing directory. once a final path has been determined, the code will be moved into eve-argus proper. dev/proof-scripts/proof-output/reprocessing can be used for output.
 
@@ -6,7 +8,7 @@ In Eve Online it is possible to reprocess ships and equipment and regain a porti
 
 There is only one skill that affects reprocessing non-ore/gas/ice items, and the maximum percentage of materials regained is 55%, rounded down.
 
-Eve-argus has access to enough information to make reports on the precrocessed value of items, and the market values of both the item, and its reprocessed materials.
+Eve-argus has access to enough information to make reports on the preprocessed value of items, and the market values of both the item, and its reprocessed materials.
 
 Note, portion size determines the number of items required to reprocess one unit, eg a frigates portion size is one, and a typical ammo portion size is 100. 100 units of that ammo would be required in order to reprocess it.
 
@@ -40,9 +42,7 @@ when the proven approach is migrated into eve-argus proper.
 
 ### Initial scope
 
-- Include input items whose types are published and have a `market_group_id`.
-- Include recovered materials only when their types are also published and have
-  a `market_group_id`.
+- Get types from market_groups, exclude 1031,1032,1034, only_published, with types in type_materials.
 - If an eligible item has one or more recovered materials that are not
   published or do not have a `market_group_id`, log the condition and retain
   the material quantity in the reference output.
@@ -60,16 +60,10 @@ These are the expected sources to verify before implementation and again during
 migration.
 
 - static data is loaded via src/pfmsoft/eve_argus/static/read.py
-  - use of query helpers is preferred for database access.
-  - in production, all sql queries should live in query_helpers
-  - during prototyping note sql queries not available in query_helpers, for later inclusion.
 - upstream pricing data comes from ESI regional market orders.
 - prototype pricing data is loaded via
-  `src/pfmsoft/eve_argus/market/orders/db/query_helpers.py`.
-  - persisted 5% pricing summaries are available in the database by hub system,
-    rather than only by region or station.
-  - if persisted summaries are unavailable, the fallback is to transform raw
-    regional orders and calculate the summaries using the existing transform.
+  `src/pfmsoft/eve_argus/market/orders/read.py.calculate_market_order_summary()`.
+- historic prices and sales volume can be accessed at [src/pfmsoft/eve_argus/market_history/read.py](../../src/pfmsoft/eve_argus/market_history/read.py). a ten day window is usually used.
 
 #### Static type data
 
@@ -229,10 +223,10 @@ reprocessed values.
 
 3. **Spreadsheet data export**
 
-  A CSV suitable for further analysis. The value-report export uses one row
-  per input item and hub, with input prices, reprocessed values, and missing
-  material data. The later deals export will add one row per input item,
-  source hub, output hub, and deal direction.
+A CSV suitable for further analysis. The value-report export uses one row
+per input item and hub, with input prices, reprocessed values, and missing
+material data. The later deals export will add one row per input item,
+source hub, output hub, and deal direction.
 
 ### Report mockups
 
@@ -366,13 +360,13 @@ ambiguous.
 2. **In progress:** Create the prototype calculations and five-hub market
    comparison scripts in the same directory.
 3. **Complete for the value report:** Generate the Markdown and normalized CSV
-  value-report artifacts under `dev/proof-scripts/proof-output/reprocessing/`.
+   value-report artifacts under `dev/proof-scripts/proof-output/reprocessing/`.
 4. Review a small known sample and refine the report shape, filters, and
    assumptions in this document.
 5. **Complete for the prototype:** Implement the ranked deals report and its
-  deal-direction CSV export. The report ranks positive gross opportunities,
-  evaluates both deal directions across local and cross-hub pairs, and keeps
-  incomplete rows in the CSV with missing-data flags.
+   deal-direction CSV export. The report ranks positive gross opportunities,
+   evaluates both deal directions across local and cross-hub pairs, and keeps
+   incomplete rows in the CSV with missing-data flags.
 6. Refine market-depth quality flags and review the full-run outliers.
 7. Decide whether the prototype is ready for migration into eve-argus proper.
 

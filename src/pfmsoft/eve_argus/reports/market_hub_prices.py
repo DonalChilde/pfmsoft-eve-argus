@@ -1,4 +1,4 @@
-"""Collect locally enriched, system-scoped market prices without recalculation."""
+"""Collect locally enriched, system-scoped prices from calculated summaries."""
 
 from dataclasses import asdict, dataclass
 from decimal import Decimal
@@ -7,10 +7,14 @@ from typing import Literal
 from whenever import Instant
 
 from pfmsoft.eve_argus.dynamic.models import (
+    MarketOrdersResponse,
     OrderSummaryDataset,
     OrderSummaryRecord,
-    OrderSummaryResponse,
     ResponseMetadata,
+)
+from pfmsoft.eve_argus.dynamic.order_summary import (
+    FILTER_FACTOR_DEFAULT,
+    validate_summary_options,
 )
 from pfmsoft.eve_argus.models.market_hubs import MarketHub
 from pfmsoft.eve_argus.static.models import MarketGroupsDataset, TypesDataset
@@ -18,7 +22,7 @@ from pfmsoft.eve_argus.static.models import MarketGroupsDataset, TypesDataset
 
 @dataclass(slots=True, kw_only=True, frozen=True)
 class PriceSummaryMetrics:
-    """Stored depth, valid-order totals/average, and excluded-outlier counts."""
+    """Calculated depth, valid-order totals/average, and excluded-outlier counts."""
 
     five_price: Decimal
     five_orders: int
@@ -50,13 +54,13 @@ class MarketHubPriceRow:
 class MarketHubPricesReport(ResponseMetadata):
     """One hub snapshot; generation time is shared across an export invocation."""
 
-    schema_version: Literal[1]
+    schema_version: Literal[2]
     scope: Literal["system"]
     region_id: int
     region_name: str
     system_id: int
     system_name: str
-    order_summary_response_id: int
+    filter_factor: Decimal
     generated_at: str
     is_stale: bool | None
     records: tuple[MarketHubPriceRow, ...]
@@ -69,7 +73,7 @@ def _collect_metrics(
     is_buy: bool,
     hub: MarketHub,
 ) -> PriceSummaryMetrics | None:
-    """Validate side identity and copy stored metrics without redundant scope fields."""
+    """Validate side identity and copy metrics without redundant scope fields."""
     if summary is None:
         return None
     if (
@@ -97,20 +101,25 @@ def _collect_metrics(
 def collect_market_hub_prices(
     *,
     summaries: OrderSummaryDataset,
-    response: OrderSummaryResponse,
+    response: MarketOrdersResponse,
     hub: MarketHub,
     types: TypesDataset,
     market_groups: MarketGroupsDataset,
     generated_at: Instant,
+    filter_factor: Decimal = FILTER_FACTOR_DEFAULT,
 ) -> MarketHubPricesReport:
     """Validate and enrich supplied data, omitting types with neither summary side.
 
     Argus expiry overrides source expiry; no expiry means unknown freshness.
-    Prices and counts retain their stored meanings and are never recalculated.
+    Prices and counts come from the supplied whole-dataset summary calculation.
+    The filter factor records the setting used by that calculation.
 
     Raises:
         ValueError: If scope, provenance, side identity, or static references disagree.
     """
+    validate_summary_options(
+        system_id=hub.system_id, location_id=None, filter_factor=filter_factor
+    )
     if (
         summaries.region_id != hub.region_id
         or summaries.system_id != hub.system_id
@@ -118,7 +127,7 @@ def collect_market_hub_prices(
     ):
         raise ValueError(f"Summary dataset is not the {hub.system_name} system scope.")
     for key, value in asdict(response).items():
-        if key != "order_summary_response_id" and getattr(summaries, key) != value:
+        if getattr(summaries, key) != value:
             raise ValueError(f"Summary response and dataset disagree on {key}.")
     Instant.parse_iso(summaries.received_at)
     for expiry in (summaries.expires_at, summaries.argus_expires_at):
@@ -171,13 +180,13 @@ def collect_market_hub_prices(
         )
     expiry = summaries.argus_expires_at or summaries.expires_at
     return MarketHubPricesReport(
-        schema_version=1,
+        schema_version=2,
         scope="system",
         region_id=hub.region_id,
         region_name=hub.region_name,
         system_id=hub.system_id,
         system_name=hub.system_name,
-        order_summary_response_id=response.order_summary_response_id,
+        filter_factor=filter_factor,
         response_metadata_id=summaries.response_metadata_id,
         received_at=summaries.received_at,
         expires_at=summaries.expires_at,

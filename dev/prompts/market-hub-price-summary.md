@@ -6,10 +6,10 @@ Implementation requested on 2026-10-18:
 
 - Command: `eve-argus reports hub-prices --to ./reports`.
 - All configured hubs; no hub-selection option or Markdown output.
-- Fail before writing and list every hub missing a stored system summary.
+- Fail before writing and list every hub missing a stored regional order snapshot.
 - **Omit types with neither buy nor sell summaries**, overriding the original
   preservation recommendation below.
-- UTF-8 without BOM, JSON schema version 1.
+- UTF-8 without BOM, JSON schema version 2.
 - Filenames: `price-summary-<file_safe_system_name>-<file_safe_received_at>`.
   The source receipt timestamp, including fractional seconds, uses the existing
   helper and is not replaced by generation time.
@@ -19,13 +19,40 @@ renderers, registered CLI, focused tests, and README schema documentation.
 The original planning material below is retained as rationale; the approved
 decisions above take precedence over its open proposals.
 
-Validation includes synthetic collector/renderer contracts and registered CLI
+### On-demand refactor (2026-10-25)
+
+- Select the newest regional order response with `market_orders_responses()`.
+- Load the whole region once with `market_orders()` and reuse that dataset for
+  any hubs sharing the region.
+- Call `calculate_dataset_summaries()` with each hub's `system_id`; do not issue
+  per-type queries or read/write the deprecated persisted summary tables.
+- No new database read-query functions are required.
+- Schema v2 removes the persisted `order_summary_response_id`, retains the raw
+  order snapshot's `response_metadata_id`, and adds the actual `filter_factor`.
+  The current factor is the existing calculation default, `100.00`.
+- Keep offline, read-only inputs, source-timestamp filenames, nullable sides,
+  stale-data warnings, and preflight-before-write behavior.
+- Fetch source orders with `fetch market-orders --hubs`. An empty latest region
+  or one without orders in a hub system produces an empty export, not fallback.
+
+Current validation covers real SQLite raw-order snapshots with no stored
+summaries, system-vs-station scope, depth/outlier calculations, metadata and both
+export formats, missing/empty snapshots, read-only inputs, and one dataset read
+per distinct region (including hubs sharing a region).
+
+Historical validation for the original stored-summary implementation included
+synthetic collector/renderer contracts and registered CLI
 tests using real local SQLite readers/writers, alongside the existing corporation
 report and summary-calculation regressions. The collector and CLI have 100%
 focused coverage; combined export coverage is 99%. A read-only smoke test against
 the configured databases generated ten temporary files and verified matching
 CSV/JSON type sets: Jita 19,000; Amarr 14,148; Dodixie 11,896; Hek 9,691;
 Rens 8,163. Temporary outputs were removed after verification.
+
+## Original planning material (historical)
+
+The stored-summary requirements below describe the original implementation.
+The approved on-demand refactor above supersedes them.
 
 Develop an evidence-based implementation plan for exporting the current stored
 market hub system pricing summaries as CSV and JSON. Read applicable repository
@@ -51,9 +78,11 @@ or creating a generic export framework.
   `MARKET_HUBS` supplies region/system IDs and names, plus primary-station identity.
   Current hubs are Jita, Amarr, Dodixie, Hek, and Rens. Use this source rather than
   duplicating the list or parsing the explanatory market-hubs document.
-- [Hub fetch command](../../src/pfmsoft/eve_argus/cli/fetch/hub_orders.py):
-  `fetch hub-orders` stores summaries calculated with `system_id=hub.system_id`.
-  It does not use the primary station as the summary scope.
+- [Market orders fetch command](../../src/pfmsoft/eve_argus/cli/fetch/region_orders.py):
+  `fetch market-orders --hubs` stores regional orders only. The legacy
+  `fetch hub-orders` command was removed; it previously saved summaries scoped
+  with `system_id=hub.system_id`, not the primary station. The current report
+  report now calculates summaries on demand from the stored regional orders.
 - [Dynamic readers](../../src/pfmsoft/eve_argus/dynamic/read.py):
   `order_summary_responses` lists saved scopes newest-first by source receipt time,
   then summary response ID; `order_summaries` loads a saved summary response.

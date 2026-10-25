@@ -1,4 +1,4 @@
-"""Export stored market hub system prices using only local read-only databases."""
+"""Calculate market hub system prices on demand from local read-only databases."""
 
 import logging
 import sqlite3
@@ -14,6 +14,10 @@ from pfmsoft.eve_argus.cli.helpers import (
     get_static_database_path,
 )
 from pfmsoft.eve_argus.dynamic import read as dynamic_read
+from pfmsoft.eve_argus.dynamic.order_summary import (
+    FILTER_FACTOR_DEFAULT,
+    calculate_dataset_summaries,
+)
 from pfmsoft.eve_argus.helpers.connection_helpers import db_connection_manager
 from pfmsoft.eve_argus.helpers.file_safe_string import file_safe_string
 from pfmsoft.eve_argus.models.market_hubs import MARKET_HUBS
@@ -45,7 +49,7 @@ def hub_prices(
         ),
     ] = False,
 ) -> None:
-    """Export latest stored system price summaries for all configured hubs, offline."""
+    """Calculate and export hub system prices from the latest stored orders, offline."""
     settings = get_eve_argus_settings_from_context(ctx)
     errors = Console(stderr=True)
     try:
@@ -83,31 +87,26 @@ def _generate_reports(
             get_static_database_path(settings), read_only=True
         ) as static,
     ):
+        responses_by_region = {
+            region_id: dynamic_read.market_orders_responses(
+                dynamic, region_id=region_id
+            )
+            for region_id in dict.fromkeys(hub.region_id for hub in MARKET_HUBS)
+        }
         selected = [
             (
                 hub,
-                next(
-                    (
-                        response
-                        for response in dynamic_read.order_summary_responses(
-                            dynamic, region_id=hub.region_id
-                        )
-                        if response.region_id == hub.region_id
-                        and response.system_id == hub.system_id
-                        and response.location_id is None
-                    ),
-                    None,
-                ),
+                responses[0]
+                if (responses := responses_by_region[hub.region_id])
+                else None,
             )
             for hub in MARKET_HUBS
         ]
         missing = [hub.system_name for hub, response in selected if response is None]
         if missing:
             raise ValueError(
-                f"No stored system price summary for: {', '.join(missing)}. "
-                "Summaries are saved by 'eve-argus fetch hub-orders' when new order "
-                "data arrives; a cached fetch may not recreate missing summaries. "
-                "Fetch again once fresh order data is available."
+                f"No stored regional market orders for: {', '.join(missing)}. "
+                "Run 'eve-argus fetch market-orders --hubs' to fetch source orders."
             )
         paths: set[Path] = set()
         for hub, response in selected:
@@ -130,37 +129,53 @@ def _generate_reports(
                     )
         types = static_read.types(static, only_published=False)
         market_groups = static_read.market_groups(static)
-        for hub, response in selected:
+        for region_id in responses_by_region:
+            region_hubs = [
+                (hub, response)
+                for hub, response in selected
+                if hub.region_id == region_id
+            ]
+            response = region_hubs[0][1]
             assert response is not None
-            messenger.print(
-                f"Reading {hub.system_name} snapshot received {response.received_at}...",
-                markup=False,
+            orders = dynamic_read.market_orders(
+                dynamic, response_metadata_id=response.response_metadata_id
             )
-            report = collect_market_hub_prices(
-                summaries=dynamic_read.order_summaries(
-                    dynamic,
-                    order_summary_response_id=response.order_summary_response_id,
-                ),
-                response=response,
-                hub=hub,
-                types=types,
-                market_groups=market_groups,
-                generated_at=generated_at,
-            )
-            if report.is_stale:
-                errors.print(
-                    f"Warning: the stored {hub.system_name} price snapshot has expired; "
-                    "it was not refreshed.",
+            for hub, response in region_hubs:
+                assert response is not None
+                messenger.print(
+                    f"Calculating {hub.system_name} prices from orders received "
+                    f"{response.received_at}...",
                     markup=False,
                 )
-            stem = (
-                f"price-summary-{file_safe_string(hub.system_name)}-"
-                f"{file_safe_string(response.received_at)}"
-            )
-            outputs[destination / f"{stem}.csv"] = render_market_hub_prices_csv(report)
-            outputs[destination / f"{stem}.json"] = render_market_hub_prices_json(
-                report
-            )
+                report = collect_market_hub_prices(
+                    summaries=calculate_dataset_summaries(
+                        orders,
+                        system_id=hub.system_id,
+                        filter_factor=FILTER_FACTOR_DEFAULT,
+                    ),
+                    response=response,
+                    hub=hub,
+                    types=types,
+                    market_groups=market_groups,
+                    generated_at=generated_at,
+                    filter_factor=FILTER_FACTOR_DEFAULT,
+                )
+                if report.is_stale:
+                    errors.print(
+                        f"Warning: the stored {hub.system_name} order snapshot has "
+                        "expired; it was not refreshed.",
+                        markup=False,
+                    )
+                stem = (
+                    f"price-summary-{file_safe_string(hub.system_name)}-"
+                    f"{file_safe_string(response.received_at)}"
+                )
+                outputs[destination / f"{stem}.csv"] = render_market_hub_prices_csv(
+                    report
+                )
+                outputs[destination / f"{stem}.json"] = render_market_hub_prices_json(
+                    report
+                )
     destination.mkdir(parents=True, exist_ok=True)
     for path, content in outputs.items():
         with path.open(
