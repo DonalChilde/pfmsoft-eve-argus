@@ -7,7 +7,9 @@ The static database access layer follows the same separation as market history:
 - [static.read](src/pfmsoft/eve_argus/static/read.py) executes read queries and
   returns typed datasets, for example `read.types(connection)`. Types, groups,
   and categories default to published records; use `only_published=False` to
-  include unpublished records.
+  include unpublished records. Type records include `category_id` from their
+  linked group, regardless of the group's publication status. Reading a type
+  whose group is missing raises `sqlite3.IntegrityError`.
 - [static.write](src/pfmsoft/eve_argus/static/write.py) writes validated ESD
   datasets, for example `write.types(connection, dataset=types)`. Writers with
   localized fields accept `language=LanguageEnum.EN` by default. Industry

@@ -119,7 +119,7 @@ def _fieldnames() -> list[str]:
     """Return type CSV columns, with linked names and description at the end."""
     result: list[str] = []
     for field in fields(TypesRecord):
-        if field.name == "description":
+        if field.name in {"description", "category_id"}:
             continue
         result.append(field.name)
         match field.name:
@@ -143,8 +143,7 @@ def _build_row(
 ) -> dict[str, object]:
     """Add names for a type's referenced group, category, and market metadata."""
     group = groups.get(record.group_id)
-    category_id = group.category_id if group is not None else None
-    category = categories.get(category_id) if category_id is not None else None
+    category = categories.get(record.category_id)
     market_group = (
         market_groups.get(record.market_group_id)
         if record.market_group_id is not None
@@ -158,7 +157,6 @@ def _build_row(
     return {
         **asdict(record),
         "group_name": group.name if group is not None and group.name else "",
-        "category_id": category_id if category_id is not None else "",
         "category_name": (
             category.name if category is not None and category.name else ""
         ),

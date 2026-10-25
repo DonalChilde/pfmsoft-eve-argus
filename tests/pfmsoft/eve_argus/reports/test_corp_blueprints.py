@@ -92,6 +92,7 @@ def inputs(monkeypatch: pytest.MonkeyPatch) -> Inputs:
         description=None,
         faction_id=None,
         graphic_id=None,
+        category_id=9,
         group_id=1,
         icon_id=None,
         is_dynamic_type=None,

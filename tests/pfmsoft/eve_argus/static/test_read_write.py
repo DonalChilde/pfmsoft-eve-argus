@@ -1,7 +1,7 @@
 """Test static read/write entry points and representative SQLite round trips."""
 
 from collections.abc import Callable
-from sqlite3 import Connection
+from sqlite3 import Connection, IntegrityError
 from typing import Any
 
 import pytest
@@ -15,6 +15,63 @@ from pfmsoft.eve_argus.esd import models as ESD
 from pfmsoft.eve_argus.models.types import LanguageEnum
 from pfmsoft.eve_argus.static import models as ASM
 from pfmsoft.eve_argus.static import read, util, write
+
+
+@pytest.mark.parametrize("only_published", [True, False])
+def test_types_category_from_group(
+    static_connection: Connection, *, only_published: bool
+) -> None:
+    """Join the correct category without filtering unpublished groups or categories."""
+    static_connection.executemany(
+        "INSERT INTO categories (category_id, name, published) VALUES (?, ?, ?)",
+        [(6, "Ships", 1), (7, "Modules", 0)],
+    )
+    static_connection.executemany(
+        """INSERT INTO groups
+        (group_id, anchorable, anchored, category_id, fittable_non_singleton,
+         name, published, use_base_price)
+        VALUES (?, 0, 0, ?, 0, 'Group', 0, 0)""",
+        [(10, 6), (20, 7)],
+    )
+    static_connection.executemany(
+        """INSERT INTO types (type_id, group_id, name, portion_size, published)
+        VALUES (?, ?, 'Type', 1, ?)""",
+        [(100, 10, 1), (200, 20, 1), (300, 10, 0)],
+    )
+
+    records = read.types(static_connection, only_published=only_published)
+
+    expected = {100: 6, 200: 7}
+    if not only_published:
+        expected[300] = 6
+    assert {key: record.category_id for key, record in records.items()} == expected
+    assert list(records) == sorted(expected)
+
+
+@pytest.mark.parametrize("only_published", [True, False])
+def test_types_missing_group_raises(
+    static_connection: Connection, *, only_published: bool
+) -> None:
+    """A missing group is an explicit integrity error rather than a dropped type."""
+    static_connection.execute(
+        """INSERT INTO types (type_id, group_id, name, portion_size, published)
+        VALUES (100, 999, 'Orphan', 1, 1)"""
+    )
+
+    with pytest.raises(IntegrityError, match="type_id=100.*group_id=999"):
+        read.types(static_connection, only_published=only_published)
+
+
+def test_types_filtered_orphan_does_not_raise(static_connection: Connection) -> None:
+    """An unpublished orphan only causes an error when included in the read."""
+    static_connection.execute(
+        """INSERT INTO types (type_id, group_id, name, portion_size, published)
+        VALUES (100, 999, 'Orphan', 1, 0)"""
+    )
+
+    assert read.types(static_connection) == {}
+    with pytest.raises(IntegrityError, match="type_id=100.*group_id=999"):
+        read.types(static_connection, only_published=False)
 
 
 def test_blueprints_round_trip(static_connection: Connection) -> None:
@@ -76,6 +133,15 @@ def test_nullable_type_flags_round_trip(
     static_connection: Connection, value: bool | None
 ) -> None:
     """Preserve nullable type flags as bool/None rather than SQLite integers."""
+    static_connection.execute(
+        "INSERT INTO categories (category_id, name, published) VALUES (6, 'Ships', 1)"
+    )
+    static_connection.execute(
+        """INSERT INTO groups
+        (group_id, anchorable, anchored, category_id, fittable_non_singleton,
+         name, published, use_base_price)
+        VALUES (1, 0, 0, 6, 0, 'Group', 1, 0)"""
+    )
     write.types(
         static_connection,
         dataset=ESD.TypesDataset.model_validate(
@@ -268,6 +334,15 @@ def test_publication_filter_round_trip(
             }
         )
     else:
+        static_connection.execute(
+            "INSERT INTO categories (category_id, name, published) VALUES (6, 'Ships', 1)"
+        )
+        static_connection.execute(
+            """INSERT INTO groups
+            (group_id, anchorable, anchored, category_id, fittable_non_singleton,
+             name, published, use_base_price)
+            VALUES (1, 0, 0, 6, 0, 'Group', 1, 0)"""
+        )
         dataset = ESD.TypesDataset.model_validate(
             {
                 "dataset": {

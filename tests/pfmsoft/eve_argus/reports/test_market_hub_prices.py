@@ -102,6 +102,15 @@ def populate_static(connection: sqlite3.Connection) -> None:
     """Use production tables/readers, including an unpublished and nonmarket type."""
     connection.executescript(load_table_definitions())
     connection.execute(
+        "INSERT INTO categories (category_id, name, published) VALUES (4, 'Materials', 1)"
+    )
+    connection.execute(
+        """INSERT INTO groups
+        (group_id, anchorable, anchored, category_id, fittable_non_singleton,
+         name, published, use_base_price)
+        VALUES (1, 0, 0, 4, 0, 'Minerals', 1, 0)"""
+    )
+    connection.execute(
         """INSERT INTO market_groups
         (market_group_id, description, has_types, name, int_path, str_path, types)
         VALUES (10, '', 1, 'Minerals', '[10]', '["Minerals"]', '[34,35,37]')"""

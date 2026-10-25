@@ -612,49 +612,90 @@ def meta_groups(
 def types(
     connection: sqlite3.Connection, *, only_published: bool = True
 ) -> ASM.TypesDataset:
-    """Retrieve all types from the database."""
-    where_clause = "WHERE published = 1" if only_published else ""
+    """Retrieve types with category IDs from their linked groups.
+
+    Publication filtering applies only to types, not groups or categories.
+
+    Raises:
+        sqlite3.IntegrityError: If a selected type references a missing group.
+    """
+    where_clause = "WHERE t.published = 1" if only_published else ""
     rows = connection.execute(
         f"""
         SELECT
-            type_id,
-            base_price,
-            capacity,
-            description,
-            faction_id,
-            graphic_id,
-            group_id,
-            icon_id,
-            is_dynamic_type,
-            is_repackable,
-            market_group_id,
-            mass,
-            meta_group_id,
-            meta_level,
-            name,
-            packaged_volume,
-            portion_size,
-            published,
-            race_id,
-            radius,
-            ship_tree_group_id,
-            sound_id,
-            tech_level,
-            variation_parent_type_id,
-            volume
-        FROM types
+            t.type_id,
+            t.base_price,
+            t.capacity,
+            t.description,
+            t.faction_id,
+            t.graphic_id,
+            g.category_id,
+            t.group_id,
+            t.icon_id,
+            t.is_dynamic_type,
+            t.is_repackable,
+            t.market_group_id,
+            t.mass,
+            t.meta_group_id,
+            t.meta_level,
+            t.name,
+            t.packaged_volume,
+            t.portion_size,
+            t.published,
+            t.race_id,
+            t.radius,
+            t.ship_tree_group_id,
+            t.sound_id,
+            t.tech_level,
+            t.variation_parent_type_id,
+            t.volume
+        FROM types AS t
+        LEFT JOIN groups AS g ON g.group_id = t.group_id
         {where_clause}
-        ORDER BY type_id
+        ORDER BY t.type_id
         """
     ).fetchall()
-    result = {
-        type_id: ASM.TypesRecord(
+    result: ASM.TypesDataset = {}
+    for (
+        type_id,
+        base_price,
+        capacity,
+        description,
+        faction_id,
+        graphic_id,
+        category_id,
+        group_id,
+        icon_id,
+        is_dynamic_type,
+        is_repackable,
+        market_group_id,
+        mass,
+        meta_group_id,
+        meta_level,
+        name,
+        packaged_volume,
+        portion_size,
+        published,
+        race_id,
+        radius,
+        ship_tree_group_id,
+        sound_id,
+        tech_level,
+        variation_parent_type_id,
+        volume,
+    ) in rows:
+        if category_id is None:
+            raise sqlite3.IntegrityError(
+                f"Type references a missing group: type_id={type_id}, group_id={group_id}"
+            )
+        result[type_id] = ASM.TypesRecord(
             type_id=type_id,
             base_price=base_price,
             capacity=capacity,
             description=description,
             faction_id=faction_id,
             graphic_id=graphic_id,
+            category_id=category_id,
             group_id=group_id,
             icon_id=icon_id,
             is_dynamic_type=int_to_bool(is_dynamic_type),
@@ -675,34 +716,6 @@ def types(
             variation_parent_type_id=variation_parent_type_id,
             volume=volume,
         )
-        for (
-            type_id,
-            base_price,
-            capacity,
-            description,
-            faction_id,
-            graphic_id,
-            group_id,
-            icon_id,
-            is_dynamic_type,
-            is_repackable,
-            market_group_id,
-            mass,
-            meta_group_id,
-            meta_level,
-            name,
-            packaged_volume,
-            portion_size,
-            published,
-            race_id,
-            radius,
-            ship_tree_group_id,
-            sound_id,
-            tech_level,
-            variation_parent_type_id,
-            volume,
-        ) in rows
-    }
     logger.info("Retrieved %d types", len(result))
     return result
 
