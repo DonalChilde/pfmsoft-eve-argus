@@ -166,7 +166,7 @@ def argus_static_db_path(
 
     from pfmsoft.eve_argus.helpers.connection_helpers import db_connection_manager
     from pfmsoft.eve_argus.static.create import create_db
-    from pfmsoft.eve_argus.static.query_helpers import load_table_definitions
+    from pfmsoft.eve_argus.static.util import load_table_definitions
 
     path = tmp_path_factory.mktemp("argus-static") / "static.sqlite"
     with (

@@ -10,11 +10,12 @@ from pathlib import Path
 from typing import Any
 
 from pfmsoft.eve_argus.data_loaders.esd_datasets import EsdDatasetsLoader
-from pfmsoft.eve_argus.eve_argus import EveArgusResources
 from pfmsoft.eve_argus.market.orders.db import query_helpers as market_queries
+
+from pfmsoft.eve_argus.eve_argus import EveArgusResources
 from pfmsoft.eve_argus.models.market_hubs import MARKET_HUBS, MarketHub
 from pfmsoft.eve_argus.settings import get_settings
-from pfmsoft.eve_argus.static import query_helpers as static_queries
+from pfmsoft.eve_argus.static import read
 
 PROOF_OUTPUT_DIR = Path(__file__).parent.parent / "proof-output" / "reprocessing"
 DEFAULT_REPORT_FILENAME = PROOF_OUTPUT_DIR / "reprocessing_value_report.md"
@@ -90,7 +91,7 @@ def recovered_quantity(quantity: int, yield_percent: int = YIELD_PERCENT) -> int
 def load_market_groups(database_path: Path) -> dict[int, Any]:
     """Load market groups from the Argus static database."""
     with sqlite3.connect(database_path) as connection:
-        return static_queries.get_market_groups(connection)
+        return read.market_groups(connection)
 
 
 def load_hub_prices(

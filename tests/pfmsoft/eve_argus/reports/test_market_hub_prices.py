@@ -28,8 +28,8 @@ from pfmsoft.eve_argus.reports.market_hub_prices_render import (
 from pfmsoft.eve_argus.settings import SETTINGS_KEY, EveArgusSettings
 from pfmsoft.eve_argus.static import read as static_read
 from pfmsoft.eve_argus.static.models import MarketGroupsDataset, TypesDataset
-from pfmsoft.eve_argus.static.query_helpers import load_table_definitions
 from pfmsoft.eve_argus.static.store import ManifestEntry, StaticManifest
+from pfmsoft.eve_argus.static.util import load_table_definitions
 
 RECEIVED = "2026-10-17T22:07:37.553890662Z"
 GENERATED = Instant.parse_iso("2026-10-18T12:00:00Z")

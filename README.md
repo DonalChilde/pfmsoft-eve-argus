@@ -1,5 +1,25 @@
 # Pfmsoft Eve Argus
 
+## Static database access
+
+The static database access layer follows the same separation as market history:
+
+- [static.read](src/pfmsoft/eve_argus/static/read.py) executes read queries and
+  returns typed datasets, for example `read.types(connection)`. Types, groups,
+  and categories default to published records; use `only_published=False` to
+  include unpublished records.
+- [static.write](src/pfmsoft/eve_argus/static/write.py) writes validated ESD
+  datasets, for example `write.types(connection, dataset=types)`. Writers with
+  localized fields accept `language=LanguageEnum.EN` by default. Industry
+  activities use the existing `write.industrial_activities` entry point.
+- [static.util](src/pfmsoft/eve_argus/static/util.py) provides
+  `load_table_definitions()` for schema initialization.
+
+The former `static.query_helpers` module has been removed. Use the read/write
+entry points without `get_`/`write_` prefixes and pass writer datasets by keyword.
+Generic metadata operations remain unsupported; use `read.sde_metadata` and
+`write.sde_metadata` for SDE build metadata.
+
 ## Export market groups
 
 ```bash

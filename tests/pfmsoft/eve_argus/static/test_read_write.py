@@ -3,7 +3,6 @@
 from collections.abc import Callable
 from sqlite3 import Connection
 from typing import Any
-from unittest.mock import Mock
 
 import pytest
 from pfmsoft.eve_sd.helpers.sde_metadata import (
@@ -13,9 +12,9 @@ from pfmsoft.eve_sd.helpers.sde_metadata import (
 )
 
 from pfmsoft.eve_argus.esd import models as ESD
+from pfmsoft.eve_argus.models.types import LanguageEnum
 from pfmsoft.eve_argus.static import models as ASM
-from pfmsoft.eve_argus.static import query_helpers as QH
-from pfmsoft.eve_argus.static import read, write
+from pfmsoft.eve_argus.static import read, util, write
 
 
 def test_blueprints_round_trip(static_connection: Connection) -> None:
@@ -177,72 +176,35 @@ _READERS = (
     "types",
     "sde_metadata",
 )
-_WRITERS = (
-    ("blueprints", "write_blueprints"),
-    ("industrial_activities", "write_industry_activities"),
-    ("map_constellations", "write_map_constellations"),
-    ("map_regions", "write_map_regions"),
-    ("map_solar_systems", "write_map_solar_systems"),
-    ("market_groups", "write_market_groups"),
-    ("meta_groups", "write_meta_groups"),
-    ("types", "write_types"),
-    ("type_materials", "write_type_materials"),
-    ("groups", "write_groups"),
-    ("categories", "write_categories"),
-    ("sde_metadata", "write_sde_metadata"),
-)
 
 
-@pytest.mark.parametrize("name", _READERS)
-def test_read_delegates(
-    name: str, static_connection: Connection, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """Forward the connection and default filter, returning the helper result."""
-    result = object()
-    helper = Mock(return_value=result)
-    monkeypatch.setattr(QH, f"get_{name}", helper)
+def test_load_table_definitions() -> None:
+    """The utility loads the packaged schema with foreign keys enabled."""
+    from contextlib import closing
+    from sqlite3 import connect
 
-    assert getattr(read, name)(static_connection) is result
+    with closing(connect(":memory:")) as connection:
+        connection.executescript(util.load_table_definitions())
+        assert connection.execute("PRAGMA foreign_keys").fetchone() == (1,)
+        assert read.types(connection) == {}
 
-    kwargs = (
-        {"only_published": True} if name in {"categories", "groups", "types"} else {}
+
+def test_write_localized_categories(static_connection: Connection) -> None:
+    """The public writer retains the helper's optional language selection."""
+    write.categories(
+        static_connection,
+        dataset=ESD.CategoriesDataset(
+            dataset={
+                1: ESD.CategoriesRecord(
+                    name=ESD.LocalizedString(en="Ships", de="Schiffe"),
+                    published=True,
+                )
+            }
+        ),
+        language=LanguageEnum.DE,
     )
-    helper.assert_called_once_with(static_connection, **kwargs)
 
-
-@pytest.mark.parametrize("name", ["categories", "groups", "types"])
-@pytest.mark.parametrize("only_published", [False, True])
-def test_read_forwards_publication_filter(
-    name: str,
-    static_connection: Connection,
-    monkeypatch: pytest.MonkeyPatch,
-    *,
-    only_published: bool,
-) -> None:
-    """Forward explicit publication filters unchanged."""
-    helper = Mock()
-    monkeypatch.setattr(QH, f"get_{name}", helper)
-
-    getattr(read, name)(static_connection, only_published=only_published)
-
-    helper.assert_called_once_with(static_connection, only_published=only_published)
-
-
-@pytest.mark.parametrize(("name", "helper_name"), _WRITERS)
-def test_write_delegates(
-    name: str,
-    helper_name: str,
-    static_connection: Connection,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """Forward the exact dataset to its writer once without returning helper results."""
-    dataset = object()
-    helper = Mock()
-    monkeypatch.setattr(QH, helper_name, helper)
-
-    assert getattr(write, name)(static_connection, dataset=dataset) is None
-
-    helper.assert_called_once_with(static_connection, dataset)
+    assert read.categories(static_connection)[1].name == "Schiffe"
 
 
 def test_metadata_placeholders_raise(static_connection: Connection) -> None:
