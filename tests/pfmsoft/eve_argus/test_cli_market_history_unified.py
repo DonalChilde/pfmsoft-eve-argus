@@ -140,7 +140,7 @@ def test_help_exposes_unified_options(environment: Environment) -> None:
         "--industry-types",
         "--include",
         "--exclude",
-        "--batch-size",
+        "--workers",
         "--failure-limit",
         "--progress",
         "--quiet",
@@ -148,6 +148,7 @@ def test_help_exposes_unified_options(environment: Environment) -> None:
         assert option in result.output
     assert "--all-market-types" not in result.output
     assert "--all-industry-types" not in result.output
+    assert "--batch-size" not in result.output
     environment.manager.__aenter__.assert_not_awaited()
 
 
@@ -290,7 +291,7 @@ def test_below_limit_failures_do_not_accumulate_across_regions(
         "--region-id",
         "200",
         "--market-types",
-        "--batch-size",
+        "--workers",
         "1",
         "--failure-limit",
         "2",
@@ -314,9 +315,10 @@ def test_below_limit_failures_do_not_accumulate_across_regions(
         ["--region-id", "100", "--type-id", "10", "--active"],
         ["--region-id", "100", "--type-id", "10", "--include", "2"],
         ["--region-id", "100", "--type-id", "10", "--exclude", "2"],
-        ["--region-id", "100", "--active", "--batch-size", "0"],
-        ["--region-id", "100", "--active", "--batch-size", "-1"],
-        ["--region-id", "100", "--active", "--batch-size", "invalid"],
+        ["--region-id", "100", "--active", "--workers", "0"],
+        ["--region-id", "100", "--active", "--workers", "-1"],
+        ["--region-id", "100", "--active", "--workers", "invalid"],
+        ["--region-id", "100", "--active", "--batch-size", "2"],
         ["--region-id", "100", "--active", "--failure-limit", "0"],
         ["--region-id", "100", "--active", "--failure-limit", "-1"],
         ["--region-id", "100", "--active", "--failure-limit", "invalid"],
@@ -344,7 +346,7 @@ def test_industry_selection(environment: Environment, quiet: bool) -> None:
         "--region-id",
         "100",
         "--industry-types",
-        "--batch-size",
+        "--workers",
         "2",
         "--failure-limit",
         "3",
@@ -619,7 +621,7 @@ def test_independent_regional_failure_limits(
         "--region-id",
         "100",
         *selection,
-        "--batch-size",
+        "--workers",
         "1",
         "--failure-limit",
         "1",
@@ -684,8 +686,8 @@ def test_active_regions_are_isolated_and_sequential(environment: Environment) ->
     assert "Market history total: updated=0, skipped=2" in result.output
 
 
-def test_batch_size_bounds_concurrency(environment: Environment) -> None:
-    """The configured batch size bounds actual in-flight updates."""
+def test_worker_count_bounds_concurrency(environment: Environment) -> None:
+    """The configured worker count bounds actual in-flight updates."""
     active = maximum = 0
 
     async def update(*args: object, **kwargs: int) -> UpdateResult[object]:
@@ -697,11 +699,12 @@ def test_batch_size_bounds_concurrency(environment: Environment) -> None:
         return UpdateResult(status=UpdateStatus.SKIPPED, previous_state=None)
 
     environment.updater.side_effect = update
-    result = _invoke(environment, "--region-id", "100", "--active", "--batch-size", "2")
+    result = _invoke(environment, "--region-id", "100", "--active", "--workers", "2")
     assert result.exit_code == 0, result.output
     assert maximum == 2
     assert environment.updater.await_count == 2
     assert "Completed 2/2" in result.output
+    assert "workers 2" in " ".join(result.output.split())
 
 
 def test_unfiltered_active_needs_no_market_groups(
@@ -763,7 +766,7 @@ def test_abort_cleanup_precedes_next_region(environment: Environment) -> None:
         "--region-id",
         "200",
         "--active",
-        "--batch-size",
+        "--workers",
         "2",
         "--failure-limit",
         "1",
@@ -781,7 +784,7 @@ def test_default_limits_and_plain_intervals(
     environment: Environment, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Omitted controls resolve shared constants, including plain reporting cadence."""
-    monkeypatch.setattr(bulk, "MARKET_HISTORY_BATCH_SIZE", 2)
+    monkeypatch.setattr(bulk, "MARKET_HISTORY_WORKER_COUNT", 2)
     monkeypatch.setattr(bulk, "MARKET_HISTORY_FAILURE_LIMIT", 1)
     runner = AsyncMock(wraps=bulk.update_market_histories)
     monkeypatch.setattr(bulk, "update_market_histories", runner)
@@ -790,7 +793,7 @@ def test_default_limits_and_plain_intervals(
     )
     assert result.exit_code == 0, result.output
     assert runner.await_args is not None
-    assert runner.await_args.kwargs["batch_size"] == bulk.MARKET_HISTORY_BATCH_SIZE
+    assert runner.await_args.kwargs["worker_count"] == bulk.MARKET_HISTORY_WORKER_COUNT
     assert (
         runner.await_args.kwargs["failure_limit"] == bulk.MARKET_HISTORY_FAILURE_LIMIT
     )
@@ -865,7 +868,7 @@ def test_abort_totals_leave_progress_incomplete(
         "--region-id",
         "100",
         "--market-types",
-        "--batch-size",
+        "--workers",
         "1",
         "--failure-limit",
         "1",
@@ -911,7 +914,7 @@ def test_interruption_awaits_cleanup_and_stops_regions(
                     selection=command.SelectionMode.ACTIVE,
                     include=set(),
                     exclude=set(),
-                    batch_size=4,
+                    worker_count=4,
                     failure_limit=2,
                     progress=command.ProgressStyle.LIVE,
                     quiet=False,

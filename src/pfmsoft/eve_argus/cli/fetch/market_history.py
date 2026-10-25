@@ -67,7 +67,7 @@ class HistoryFetchOptions:
     selection: SelectionMode
     include: set[int]
     exclude: set[int]
-    batch_size: int
+    worker_count: int
     failure_limit: int
     progress: ProgressStyle
     quiet: bool
@@ -123,12 +123,12 @@ def fetch_market_history(
             "--exclude", help="Exclude a market-group subtree; exclusions win."
         ),
     ] = None,
-    batch_size: Annotated[
+    worker_count: Annotated[
         int | None,
         typer.Option(
-            "--batch-size",
+            "--workers",
             min=1,
-            help=f"Concurrent updates per batch (default: MARKET_HISTORY_BATCH_SIZE = {bulk.MARKET_HISTORY_BATCH_SIZE}).",
+            help=f"Concurrent update workers (default: MARKET_HISTORY_WORKER_COUNT = {bulk.MARKET_HISTORY_WORKER_COUNT}).",
             show_default=False,
         ),
     ] = None,
@@ -188,7 +188,9 @@ def fetch_market_history(
         selection=selection,
         include=set(include or ()),
         exclude=set(exclude or ()),
-        batch_size=bulk.MARKET_HISTORY_BATCH_SIZE if batch_size is None else batch_size,
+        worker_count=(
+            bulk.MARKET_HISTORY_WORKER_COUNT if worker_count is None else worker_count
+        ),
         failure_limit=(
             bulk.MARKET_HISTORY_FAILURE_LIMIT
             if failure_limit is None
@@ -307,7 +309,7 @@ async def _fetch_market_history(
                 )
             messenger.print(
                 f"Region: {label}; selected {len(type_ids)} types; "
-                f"batch size {options.batch_size}; failure limit {options.failure_limit}.",
+                f"workers {options.worker_count}; failure limit {options.failure_limit}.",
                 markup=False,
             )
             summary = await _fetch_region_history(
@@ -424,7 +426,7 @@ async def _fetch_region_history(
                     messenger=messenger,
                     dataset_name=f"market history for region {region_id}, type {type_id}",
                 )
-            if not live and completed % options.batch_size == 0:
+            if not live and completed % options.worker_count == 0:
                 messenger.print(
                     f"Completed {completed}/{len(type_ids)} pairs for {region_label}.",
                     markup=False,
@@ -437,6 +439,6 @@ async def _fetch_region_history(
             region_ids={region_id},
             type_ids=type_ids,
             on_result=report,
-            batch_size=options.batch_size,
+            worker_count=options.worker_count,
             failure_limit=options.failure_limit,
         )

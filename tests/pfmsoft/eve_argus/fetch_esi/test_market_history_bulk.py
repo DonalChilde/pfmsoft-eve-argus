@@ -27,38 +27,70 @@ def _result(
 
 def test_constants() -> None:
     """Production limits are 100 tasks and 50 failures."""
-    assert bulk.MARKET_HISTORY_BATCH_SIZE == 100
+    assert bulk.MARKET_HISTORY_WORKER_COUNT == 100
     assert bulk.MARKET_HISTORY_FAILURE_LIMIT == 50
 
 
-def test_batches_overlap_but_never_exceed_limit(
+@pytest.mark.parametrize(
+    ("worker_count", "failure_limit", "message"),
+    [
+        (0, 50, "worker_count"),
+        (-1, 50, "worker_count"),
+        (2, 0, "failure_limit"),
+        (2, -1, "failure_limit"),
+    ],
+)
+def test_invalid_limits_prevent_updates(
     monkeypatch: pytest.MonkeyPatch,
+    *,
+    worker_count: int,
+    failure_limit: int,
+    message: str,
 ) -> None:
-    """A partial final batch runs, and batches do not overlap each other."""
+    """Invalid limits fail even for an empty selection without invoking updates."""
+    update = AsyncMock()
+    monkeypatch.setattr(bulk, "update_market_history", update)
+    with pytest.raises(ValueError, match=message):
+        asyncio.run(
+            bulk.update_market_histories(
+                Mock(spec=EsiLink),
+                Mock(spec=EsiSchema),
+                Mock(spec=sqlite3.Connection),
+                region_ids={10},
+                type_ids=set(),
+                worker_count=worker_count,
+                failure_limit=failure_limit,
+            )
+        )
+    update.assert_not_awaited()
+
+
+@pytest.mark.parametrize("worker_count", [1, 2, 100])
+def test_workers_refill_without_exceeding_limit(
+    monkeypatch: pytest.MonkeyPatch, *, worker_count: int
+) -> None:
+    """Workers process each pair once without waiting for a slow peer."""
 
     async def scenario() -> None:
         active = 0
         maximum = 0
-        started = 0
-        completed = 0
-        gates = [asyncio.Event() for _ in range(3)]
-        pairs: set[tuple[int, int]] = set()
+        slow = asyncio.Event()
+        pairs: list[tuple[int, int]] = []
 
         async def update(
             *args: object, region_id: int, type_id: int
         ) -> UpdateResult[MarketHistoryResponse]:
-            nonlocal active, maximum, started, completed
-            batch = started // 100
-            assert completed >= batch * 100
-            started += 1
+            nonlocal active, maximum
             active += 1
             maximum = max(maximum, active)
-            pairs.add((region_id, type_id))
-            if active == (5 if batch == 2 else 100):
-                gates[batch].set()
-            await gates[batch].wait()
+            pairs.append((region_id, type_id))
+            if type_id == 0 and worker_count > 1:
+                await slow.wait()
+            else:
+                await asyncio.sleep(0)
+            if type_id == 4:
+                slow.set()
             active -= 1
-            completed += 1
             return _result()
 
         monkeypatch.setattr(bulk, "update_market_history", update)
@@ -68,13 +100,14 @@ def test_batches_overlap_but_never_exceed_limit(
                 Mock(spec=EsiSchema),
                 Mock(spec=sqlite3.Connection),
                 region_ids={10},
-                type_ids=set(range(205)),
+                type_ids=set(range(5)),
+                worker_count=worker_count,
             ),
             timeout=5,
         )
-        assert maximum == 100
-        assert len(pairs) == 205
-        assert summary.updated == summary.total == 205
+        assert maximum == min(worker_count, 5)
+        assert pairs == [(10, type_id) for type_id in range(5)]
+        assert summary.updated == summary.total == 5
         assert summary.failed == summary.cancelled == summary.not_started == 0
         assert not summary.aborted
 
@@ -85,7 +118,7 @@ def test_batches_overlap_but_never_exceed_limit(
 def test_global_failure_threshold(
     monkeypatch: pytest.MonkeyPatch, *, failures: int
 ) -> None:
-    """Nineteen failures continue across regions/batches; twenty abort."""
+    """Nineteen failures continue across regions; twenty abort."""
     calls: list[tuple[int, int]] = []
 
     async def update(
@@ -108,7 +141,7 @@ def test_global_failure_threshold(
             region_ids={11, 10},
             type_ids=set(range(12)),
             on_result=lambda region_id, type_id, result: reported.append(result.status),
-            batch_size=5,
+            worker_count=5,
             failure_limit=20,
         )
     )
@@ -153,7 +186,7 @@ def test_abort_cancels_pending_and_preserves_commits(
                     return _result(UpdateStatus.FAILED)
                 await blocked.wait()
             finally:
-                if type_id in (3, 4):
+                if type_id >= 3:
                     cleaned.add(type_id)
             return _result()
 
@@ -164,15 +197,15 @@ def test_abort_cancels_pending_and_preserves_commits(
             connection,
             region_ids={10},
             type_ids=set(range(8)),
-            batch_size=5,
+            worker_count=5,
             failure_limit=2,
         )
         assert summary.aborted
         assert summary.updated == 1
         assert summary.failed == 2
-        assert summary.cancelled == 2
-        assert summary.not_started == 3
-        assert cleaned == {3, 4}
+        assert summary.cancelled == 4
+        assert summary.not_started == 1
+        assert cleaned == {3, 4, 5, 6}
         assert connection.execute("SELECT * FROM saved").fetchall() == [(0,)]
 
     with sqlite3.connect(":memory:") as connection:
@@ -218,6 +251,50 @@ def test_parent_cancellation_is_not_a_failure(monkeypatch: pytest.MonkeyPatch) -
         with pytest.raises(asyncio.CancelledError):
             await task
         assert cleaned == {1, 2, 3}
+
+    asyncio.run(asyncio.wait_for(scenario(), timeout=5))
+
+
+def test_parent_cancellation_prevents_refill_after_returned_outcome(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An updater swallowing cancellation must not start another pair."""
+
+    async def scenario() -> None:
+        ready = asyncio.Event()
+        calls: list[int] = []
+        reporter = Mock()
+
+        async def update(
+            *args: object, region_id: int, type_id: int
+        ) -> UpdateResult[MarketHistoryResponse]:
+            calls.append(type_id)
+            if type_id == 0:
+                ready.set()
+                try:
+                    await asyncio.Event().wait()
+                except asyncio.CancelledError:
+                    return _result()
+            return _result()
+
+        monkeypatch.setattr(bulk, "update_market_history", update)
+        task = asyncio.create_task(
+            bulk.update_market_histories(
+                Mock(spec=EsiLink),
+                Mock(spec=EsiSchema),
+                Mock(spec=sqlite3.Connection),
+                region_ids={10},
+                type_ids={0, 1, 2},
+                worker_count=1,
+                on_result=reporter,
+            )
+        )
+        await ready.wait()
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+        assert calls == [0]
+        reporter.assert_called_once()
 
     asyncio.run(asyncio.wait_for(scenario(), timeout=5))
 
