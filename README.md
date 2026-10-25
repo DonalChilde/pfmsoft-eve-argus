@@ -13,13 +13,14 @@ read-only; no network requests, credentials, or data refresh are required.
 
 The destination directory is created if needed and receives:
 
-- `market-groups.json`: the complete dataset keyed by market-group ID, with native
-  JSON arrays for `int_path`, `str_path`, and `types`.
-- `market-groups.csv`: one row per market group, with all record fields.
+- `market-groups-build-{N}.json`: the complete dataset keyed by market-group ID,
+  with native JSON arrays for `int_path`, `str_path`, and `types`.
+- `market-groups-build-{N}.csv`: one row per market group, with all record fields.
   `str_path` uses the default `/`-joined string path. The other container fields
   (`int_path`, `types`) contain JSON strings, including `[]` for empty containers,
   rather than Python representations.
 
+`{N}` is the build number from the selected database's SDE metadata.
 Both outputs are UTF-8. JSON is ordered by market-group ID; CSV rows are sorted
 by the rendered `str_path` string. CSV uses standard quoting
 and LF record terminators, preserves embedded newlines, writes booleans as
@@ -29,6 +30,24 @@ Use `--overwrite` to replace existing files and `--quiet` to suppress success
 messages without hiding errors. Missing sources and existing outputs fail before
 writing either file; filesystem failures during writing may leave partial output
 and return a nonzero exit status.
+
+## Export types
+
+```bash
+uv run eve-argus export types --to ./exports
+```
+
+Exports published types from the configured **Argus static database** to
+`types-build-{N}.csv`, where `{N}` is the build number from the selected
+database's SDE metadata. Use `--include-unpublished` to include unpublished
+types. The CSV is UTF-8, has one row per type sorted by type ID, and includes
+group and category IDs/names, market-group and meta-group names, and the
+slash-separated market-group path. `description` is the final column.
+
+The source is opened read-only; no network requests, credentials, or data
+refresh are required. The destination directory is created if needed. Use
+`--overwrite` to replace an existing export and `--quiet` to suppress success
+messages without hiding errors.
 
 ## Fetch market history
 

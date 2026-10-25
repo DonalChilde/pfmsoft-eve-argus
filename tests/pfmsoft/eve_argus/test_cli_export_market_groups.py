@@ -33,6 +33,13 @@ def settings(tmp_path: Path) -> EveArgusSettings:
             with connection:
                 connection.execute(
                     """
+                    INSERT INTO sde_metadata (build_number, release_date)
+                    VALUES (?, ?)
+                    """,
+                    (build, "2026-10-20"),
+                )
+                connection.execute(
+                    """
                     INSERT INTO market_groups
                         (market_group_id, description, has_types, icon_id, name,
                          parent_group_id, int_path, str_path, types)
@@ -92,10 +99,12 @@ def test_exports_complete_dataset_in_both_formats(
     )
     assert result.exit_code == 0, result.output
     assert {path.name for path in destination.iterdir()} == {
-        "market-groups.json",
-        "market-groups.csv",
+        "market-groups-build-2.json",
+        "market-groups-build-2.csv",
     }
-    dataset = json.loads((destination / "market-groups.json").read_text("utf-8"))
+    dataset = json.loads(
+        (destination / "market-groups-build-2.json").read_text("utf-8")
+    )
     assert list(dataset) == ["4", "9"]
     assert dataset["4"] == {
         "market_group_id": 4,
@@ -108,7 +117,7 @@ def test_exports_complete_dataset_in_both_formats(
         "str_path": ["Ships 2"],
         "types": [],
     }
-    with (destination / "market-groups.csv").open(
+    with (destination / "market-groups-build-2.csv").open(
         encoding="utf-8", newline=""
     ) as stream:
         reader = csv.DictReader(stream)
@@ -151,13 +160,15 @@ def test_csv_is_sorted_by_rendered_string_path(
         obj={SETTINGS_KEY: settings},
     )
     assert result.exit_code == 0, result.output
-    with (destination / "market-groups.csv").open(
+    with (destination / "market-groups-build-2.csv").open(
         encoding="utf-8", newline=""
     ) as stream:
         rows = list(csv.DictReader(stream))
     assert [row["market_group_id"] for row in rows] == ["9", "4"]
     assert [row["str_path"] for row in rows] == ["Alpha/Frigates", "Zulu"]
-    dataset = json.loads((destination / "market-groups.json").read_text("utf-8"))
+    dataset = json.loads(
+        (destination / "market-groups-build-2.json").read_text("utf-8")
+    )
     assert list(dataset) == ["4", "9"]
 
 
@@ -172,11 +183,37 @@ def test_explicit_build_and_quiet(settings: EveArgusSettings, tmp_path: Path) ->
     )
     assert result.exit_code == 0, result.output
     assert result.output == ""
-    dataset = json.loads((destination / "market-groups.json").read_text())
+    dataset = json.loads((destination / "market-groups-build-1.json").read_text())
     assert dataset["4"]["name"] == "Ships 1"
 
 
-@pytest.mark.parametrize("filename", ["market-groups.json", "market-groups.csv"])
+def test_filename_uses_sde_metadata_build_number(
+    settings: EveArgusSettings, tmp_path: Path
+) -> None:
+    """Name output files from SDE metadata, not the manifest entry."""
+    with closing(
+        sqlite3.connect(settings.static_database_store / "build-2.sqlite")
+    ) as connection:
+        with connection:
+            connection.execute(
+                "UPDATE sde_metadata SET build_number = 42 WHERE build_number = 2"
+            )
+    destination = tmp_path / "output"
+    result = CliRunner().invoke(
+        app,
+        ["export", "market-groups", "--to", str(destination)],
+        obj={SETTINGS_KEY: settings},
+    )
+    assert result.exit_code == 0, result.output
+    assert {path.name for path in destination.iterdir()} == {
+        "market-groups-build-42.json",
+        "market-groups-build-42.csv",
+    }
+
+
+@pytest.mark.parametrize(
+    "filename", ["market-groups-build-2.json", "market-groups-build-2.csv"]
+)
 def test_existing_output_requires_overwrite(
     settings: EveArgusSettings, tmp_path: Path, filename: str
 ) -> None:
@@ -214,8 +251,8 @@ def test_empty_dataset_retains_headers(
         obj={SETTINGS_KEY: settings},
     )
     assert result.exit_code == 0, result.output
-    assert json.loads((destination / "market-groups.json").read_text()) == {}
-    with (destination / "market-groups.csv").open(newline="") as stream:
+    assert json.loads((destination / "market-groups-build-2.json").read_text()) == {}
+    with (destination / "market-groups-build-2.csv").open(newline="") as stream:
         reader = csv.DictReader(stream)
         assert reader.fieldnames == [
             "market_group_id",
@@ -239,6 +276,7 @@ def test_empty_dataset_retains_headers(
         "manifest",
         "missing-manifest",
         "empty-manifest",
+        "missing-sde-metadata",
         "destination",
     ],
 )
@@ -272,6 +310,12 @@ def test_errors_are_visible_without_outputs(
             (settings.static_database_store / "manifest.json").write_text(
                 StaticManifest(entries={}).serialize()
             )
+        case "missing-sde-metadata":
+            with closing(
+                sqlite3.connect(settings.static_database_store / "build-2.sqlite")
+            ) as connection:
+                with connection:
+                    connection.execute("DELETE FROM sde_metadata")
         case "destination":
             destination.write_text("not a directory")
         case _:
@@ -354,7 +398,9 @@ def test_missing_manifest_is_not_created(
     assert list(settings.static_database_store.iterdir()) == []
 
 
-@pytest.mark.parametrize("filename", ["market-groups.json", "market-groups.csv"])
+@pytest.mark.parametrize(
+    "filename", ["market-groups-build-2.json", "market-groups-build-2.csv"]
+)
 def test_overwrite_rejects_output_directory(
     settings: EveArgusSettings, tmp_path: Path, filename: str
 ) -> None:

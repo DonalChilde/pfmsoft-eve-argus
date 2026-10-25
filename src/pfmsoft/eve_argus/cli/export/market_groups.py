@@ -12,6 +12,12 @@ from typing import Annotated
 import typer
 from rich.console import Console
 
+from pfmsoft.eve_argus.cli.export._helpers import (
+    check_destination,
+    check_output_paths,
+    export_file_name,
+    write_outputs,
+)
 from pfmsoft.eve_argus.cli.helpers import (
     get_eve_argus_settings_from_context,
     get_static_database_path,
@@ -61,19 +67,20 @@ def _export_market_groups(
     messenger: Console,
 ) -> None:
     """Read and render the whole dataset before writing either output file."""
-    if destination.exists() and not destination.is_dir():
-        raise ValueError(f"Export destination is not a directory: {destination}")
-    paths = [destination / f"market-groups.{suffix}" for suffix in ("json", "csv")]
-    for path in paths:
-        if path.exists() and (not overwrite or not path.is_file()):
-            raise ValueError(
-                f"Export path already exists: {path}. "
-                "Use --overwrite to replace existing files."
-            )
+    check_destination(destination)
     with db_connection_manager(
         get_static_database_path(settings), read_only=True
     ) as connection:
+        build_number = static_read.sde_metadata(connection).build_number
         dataset = static_read.market_groups(connection)
+    paths = [
+        destination
+        / export_file_name(
+            stem="market-groups", build_number=build_number, suffix=suffix
+        )
+        for suffix in ("json", "csv")
+    ]
+    check_output_paths(paths=paths, overwrite=overwrite)
     records = {key: asdict(dataset[key]) for key in sorted(dataset)}
     json_content = json.dumps(records, indent=2, ensure_ascii=False) + "\n"
     csv_stream = StringIO(newline="")
@@ -98,10 +105,8 @@ def _export_market_groups(
                 "str_path": dataset[market_group_id].str_path_str(),
             }
         )
-    destination.mkdir(parents=True, exist_ok=True)
-    for path, content in zip(paths, (json_content, csv_stream.getvalue()), strict=True):
-        with path.open(
-            "w" if overwrite else "x", encoding="utf-8", newline=""
-        ) as stream:
-            stream.write(content)
-        messenger.print(f"Wrote {path}", markup=False)
+    write_outputs(
+        contents=dict(zip(paths, (json_content, csv_stream.getvalue()), strict=True)),
+        overwrite=overwrite,
+        messenger=messenger,
+    )
