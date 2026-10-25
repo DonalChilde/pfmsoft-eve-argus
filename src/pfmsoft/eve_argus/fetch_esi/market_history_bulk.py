@@ -4,7 +4,7 @@ import asyncio
 import logging
 from collections.abc import Callable
 from dataclasses import dataclass
-from itertools import batched, product
+from itertools import product
 from sqlite3 import Connection
 
 from pfmsoft.eve_link import EsiLink, EsiSchema
@@ -17,7 +17,7 @@ from pfmsoft.eve_argus.fetch_esi.update import UpdateResult, UpdateStatus
 
 logger = logging.getLogger(__name__)
 
-MARKET_HISTORY_BATCH_SIZE = 100
+MARKET_HISTORY_WORKER_COUNT = 50
 MARKET_HISTORY_FAILURE_LIMIT = 50
 
 type ResultReporter = Callable[[int, int, MarketHistoryUpdateResult], None]
@@ -25,7 +25,7 @@ type ResultReporter = Callable[[int, int, MarketHistoryUpdateResult], None]
 
 @dataclass(slots=True, kw_only=True)
 class MarketHistoryBulkResult:
-    """Run totals, including scheduled cancellations and unscheduled pairs.
+    """Run totals, including interrupted pairs and pairs never started.
 
     Successful writes remain committed even when the run aborts. Failure totals
     may exceed the limit if an in-flight update finishes while being cancelled.
@@ -45,7 +45,7 @@ class MarketHistoryBulkResult:
 
     @property
     def not_started(self) -> int:
-        """Number of pairs never scheduled."""
+        """Number of pairs never started by a worker."""
         return self.total - self.completed - self.cancelled
 
 
@@ -57,10 +57,10 @@ async def update_market_histories(
     region_ids: set[int],
     type_ids: set[int],
     on_result: ResultReporter | None = None,
-    batch_size: int = MARKET_HISTORY_BATCH_SIZE,
+    worker_count: int = MARKET_HISTORY_WORKER_COUNT,
     failure_limit: int = MARKET_HISTORY_FAILURE_LIMIT,
 ) -> MarketHistoryBulkResult:
-    """Update unique region/type pairs in concurrent, nonoverlapping batches.
+    """Update unique region/type pairs using a bounded pool of async workers.
 
     Args:
         esi_link: Shared ESI client, including its caching and rate limiting.
@@ -69,7 +69,7 @@ async def update_market_histories(
         region_ids: Validated region IDs.
         type_ids: Selected market type IDs.
         on_result: Optional synchronous reporter called for each completed pair.
-        batch_size: Number of pairs to process concurrently.
+        worker_count: Maximum number of pairs to process concurrently.
         failure_limit: Maximum number of failed pairs before aborting.
 
     Returns:
@@ -77,9 +77,16 @@ async def update_market_histories(
         On abort, pending tasks are cancelled and awaited before returning.
         Unexpired responses are skipped even when they contain no history.
 
+    Raises:
+        ValueError: If worker_count or failure_limit is not positive.
+
     Ordinary updater exceptions are logged and counted as failed pairs. External
     cancellation propagates after child cleanup and is not an update failure.
     """
+    if worker_count <= 0:
+        raise ValueError("worker_count must be positive")
+    if failure_limit <= 0:
+        raise ValueError("failure_limit must be positive")
     summary = MarketHistoryBulkResult(total=len(region_ids) * len(type_ids))
     pairs = product(sorted(region_ids), sorted(type_ids))
     tasks: list[asyncio.Task[None]] = []
@@ -90,6 +97,9 @@ async def update_market_histories(
             result = await update_market_history(
                 esi_link, schema, connection, region_id=region_id, type_id=type_id
             )
+        except asyncio.CancelledError:
+            summary.cancelled += 1
+            raise
         except Exception as error:
             logger.exception(
                 "Market-history update raised for region %s, type %s",
@@ -119,13 +129,20 @@ async def update_market_histories(
         if on_result is not None:
             on_result(region_id, type_id, result)
 
-    for batch in batched(pairs, batch_size, strict=False):
-        async with asyncio.TaskGroup() as group:
-            tasks = [
-                group.create_task(update_pair(region_id, type_id))
-                for region_id, type_id in batch
-            ]
-        summary.cancelled += sum(task.cancelled() for task in tasks)
-        if summary.aborted:
-            break
+    async def worker() -> None:
+        """Claim another pair after each outcome until exhausted or aborted."""
+        while not summary.aborted:
+            pair = next(pairs, None)
+            if pair is None:
+                return
+            region_id, type_id = pair
+            await update_pair(region_id, type_id)
+            current = asyncio.current_task()
+            if current is not None and current.cancelling():
+                return
+
+    async with asyncio.TaskGroup() as group:
+        tasks = [
+            group.create_task(worker()) for _ in range(min(worker_count, summary.total))
+        ]
     return summary
