@@ -34,6 +34,12 @@ Commands for working with Eve static data, e.g. downloading and importing.
 
 Commands for working with the dynamic database, e.g. purge old data, list current datasets.
 
+### Export
+
+    src/pfmsoft/eve_argus/cli/export
+
+Commands for exporting data from eve-argus.
+
 ### Util
 
     /src/pfmsoft/eve_argus/cli/util
@@ -64,13 +70,19 @@ The static data database is a set of data imported from the EVE Online SDE. Only
 expected to be of use to eve-argus have been imported. The datasets are localized to one language
 to save space.
 
+More than one static databse can be stored and accessed in the app via store.py module. This is used most often as a fallback for when the Eve SDE format has changed such that new imports cause errors. Typically, the most recent version is always used.
+
 ### Dynamic data
 
 Provides storage and access to data downloaded from the EVE Esi. This data is ephemeral, and the entire database can be reset with minimal impact on the rest of the program. api datasets may be retained until specifically deleted. e.g each market order call is kept, even when only the most recent is used. Old data should be purged on a regular basis. Some derived datasets only use the latest data, and have only one current version.
 
-### Market History - Not complete.
+Price summary information can be calculated from the stored market orders.
+
+### Market History
 
 Provides storage and access to the market history for regions and type_ids. This dataset is split off into its own thing due to the cost of updating the data. each region_id/type_id is a network call, and there could be 10k plus calls per region per day for a full update.
+
+History summary information can be generated from the stored history records.
 
 ### Templates
 
@@ -88,13 +100,13 @@ Contains code related to downloading and validating data from the EVE Online Esi
 
     /src/pfmsoft/eve_argus/fetch_esi
 
-Behavior to manage downloading from the ESI only when the currnet data has expired.
+Behavior to manage downloading from the ESI only when the current data has expired.
 
 ### esd
 
     /src/pfmsoft/eve_argus/esd
 
-Contains cose related to validating and importing data from the EVE Online SDE.
+Contains code related to validating and importing data from the EVE Online SDE.
 
 ### Reports
 
