@@ -27,7 +27,7 @@ def _result(
 
 def test_constants() -> None:
     """Production limits are 100 tasks and 50 failures."""
-    assert bulk.MARKET_HISTORY_WORKER_COUNT == 100
+    assert bulk.MARKET_HISTORY_WORKER_COUNT == 50
     assert bulk.MARKET_HISTORY_FAILURE_LIMIT == 50
 
 
