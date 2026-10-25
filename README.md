@@ -13,13 +13,14 @@ read-only; no network requests, credentials, or data refresh are required.
 
 The destination directory is created if needed and receives:
 
-- `market-groups.json`: the complete dataset keyed by market-group ID, with native
-  JSON arrays for `int_path`, `str_path`, and `types`.
-- `market-groups.csv`: one row per market group, with all record fields.
+- `market-groups-build-{N}.json`: the complete dataset keyed by market-group ID,
+  with native JSON arrays for `int_path`, `str_path`, and `types`.
+- `market-groups-build-{N}.csv`: one row per market group, with all record fields.
   `str_path` uses the default `/`-joined string path. The other container fields
   (`int_path`, `types`) contain JSON strings, including `[]` for empty containers,
   rather than Python representations.
 
+`{N}` is the build number from the selected database's SDE metadata.
 Both outputs are UTF-8. JSON is ordered by market-group ID; CSV rows are sorted
 by the rendered `str_path` string. CSV uses standard quoting
 and LF record terminators, preserves embedded newlines, writes booleans as
@@ -30,6 +31,24 @@ messages without hiding errors. Missing sources and existing outputs fail before
 writing either file; filesystem failures during writing may leave partial output
 and return a nonzero exit status.
 
+## Export types
+
+```bash
+uv run eve-argus export types --to ./exports
+```
+
+Exports published types from the configured **Argus static database** to
+`types-build-{N}.csv`, where `{N}` is the build number from the selected
+database's SDE metadata. Use `--include-unpublished` to include unpublished
+types. The CSV is UTF-8, has one row per type sorted by type ID, and includes
+group and category IDs/names, market-group and meta-group names, and the
+slash-separated market-group path. `description` is the final column.
+
+The source is opened read-only; no network requests, credentials, or data
+refresh are required. The destination directory is created if needed. Use
+`--overwrite` to replace an existing export and `--quiet` to suppress success
+messages without hiding errors.
+
 ## Fetch market history
 
 ```bash
@@ -39,12 +58,12 @@ uv run eve-argus fetch market-history --region-id 10000002 --type-id 34
 Fetches history into the configured market-history database. Supply at least one
 `--region-id`, `--hubs`, or both, and exactly one type-selection mode:
 
-| Mode | Candidate types | Market-group filters |
-| --- | --- | --- |
-| Repeated `--type-id` | Explicit IDs, including unpublished, nonmarket, and unknown types | Not allowed |
-| `--active` | Published, market-listed active types discovered independently for each region | Allowed |
-| `--market-types` | Published types listed in static market groups | Allowed |
-| `--industry-types` | Published, market-listed blueprint IDs plus materials and products across all blueprint activities | Allowed |
+| Mode                 | Candidate types                                                                                    | Market-group filters |
+| -------------------- | -------------------------------------------------------------------------------------------------- | -------------------- |
+| Repeated `--type-id` | Explicit IDs, including unpublished, nonmarket, and unknown types                                  | Not allowed          |
+| `--active`           | Published, market-listed active types discovered independently for each region                     | Allowed              |
+| `--market-types`     | Published types listed in static market groups                                                     | Allowed              |
+| `--industry-types`   | Published, market-listed blueprint IDs plus materials and products across all blueprint activities | Allowed              |
 
 Explicit regions run in command-line order, followed by hub regions for Jita,
 Amarr, Dodixie, Hek, and Rens, with duplicates removed. Types are deduplicated
@@ -63,7 +82,7 @@ uv run eve-argus fetch market-history \
 # Published market-listed types, with configurable execution limits
 uv run eve-argus fetch market-history \
   --hubs --market-types --include 4 --include 9 --exclude 187 \
-  --batch-size 25 --failure-limit 10 --progress plain
+  --workers 25 --failure-limit 10 --progress plain
 
 # Industry-related types from the static blueprints dataset
 uv run eve-argus fetch market-history \
@@ -118,18 +137,18 @@ Regions run sequentially using a shared ESI client and resource lifecycle. Each
 region finishes or aborts, and pending-task cleanup completes, before the next
 region begins discovery or history updates.
 
-| Option | Default | Behavior |
-| --- | --- | --- |
-| `--batch-size` | `MARKET_HISTORY_BATCH_SIZE` (currently 100) | Positive integer; maximum concurrent updates in nonoverlapping batches |
-| `--failure-limit` | `MARKET_HISTORY_FAILURE_LIMIT` (currently 50) | Positive integer; independent failure budget for each region |
-| `--progress auto\|live\|plain` | `auto` | Live progress on interactive terminals by default; plain batch messages otherwise |
-| `--quiet` | Off | Hide routine output and progress, but retain warnings, failures, and abort notices |
+| Option                         | Default                                       | Behavior                                                                               |
+| ------------------------------ | --------------------------------------------- | -------------------------------------------------------------------------------------- |
+| `--workers`                    | `MARKET_HISTORY_WORKER_COUNT` (currently 100) | Positive integer; maximum concurrent updates using continuously refilled workers       |
+| `--failure-limit`              | `MARKET_HISTORY_FAILURE_LIMIT` (currently 50) | Positive integer; independent failure budget for each region                           |
+| `--progress auto\|live\|plain` | `auto`                                        | Live progress on interactive terminals by default; plain completion messages otherwise |
+| `--quiet`                      | Off                                           | Hide routine output and progress, but retain warnings, failures, and abort notices     |
 
 Defaults resolve from the shared runner's constants. Every implemented selection
 mode uses a separate failure budget per region, including explicit IDs and market
 types. Failed updates, including logged updater exceptions, consume that budget;
 cached skips and cancellation do not. At the limit, pending tasks are cancelled
-and awaited, and later batches for that region do not start. In-flight updates can
+and awaited, and no new pairs for that region start. In-flight updates can
 finish during cancellation, so the failure count can exceed the limit. Already
 committed writes remain stored; requests already sent cannot be retracted.
 
@@ -139,7 +158,7 @@ User interruption stops the whole command after cleanup.
 
 Live progress shows completed/total pairs, elapsed time, updated/skipped/failed
 counts, and the latest type ID. The transient display clears on completion, abort,
-or interruption. Plain output reports completion at the selected batch-size
+or interruption. Plain output reports completion at the selected worker-count
 interval. Regional and overall summaries reconcile updated, skipped, failed,
 cancelled, and not-started pairs; overall totals separately count discovery-failed
 regions, whose unknown pair counts are not included. Cancelled/unstarted pairs
@@ -180,16 +199,19 @@ existence checks rather than loading all metadata for each pair.
 The old commands have been removed. Use the unified command instead; there are no
 compatibility aliases or shims.
 
-| Previous command | Unified replacement |
-| --- | --- |
-| `market-history-active` | `market-history --active` |
-| `market-history-bulk` | `market-history --market-types --progress plain` |
-| `market-history-bulk-progress` | `market-history --market-types --progress live` |
+| Previous command               | Unified replacement                              |
+| ------------------------------ | ------------------------------------------------ |
+| `market-history-active`        | `market-history --active`                        |
+| `market-history-bulk`          | `market-history --market-types --progress plain` |
+| `market-history-bulk-progress` | `market-history --market-types --progress live`  |
 
 Pass the same region and filter arguments where supported. Active selection now
 also supports filters. The unified command uses independent regional failure
 budgets rather than the old bulk commands' global budget, and accepts
-`--batch-size` and `--failure-limit` overrides.
+`--workers` and `--failure-limit` overrides. The former `--batch-size` option
+has been replaced by `--workers` without a compatibility alias. Each worker
+starts its next pair as soon as its current update finishes, without waiting
+for other workers.
 
 ## Market hub price summaries
 
