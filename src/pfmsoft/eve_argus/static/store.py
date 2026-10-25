@@ -14,7 +14,7 @@ from pydantic import RootModel
 
 from pfmsoft.eve_argus.helpers.connection_helpers import init_database
 from pfmsoft.eve_argus.helpers.file_safe_string import file_safe_string
-from pfmsoft.eve_argus.static.query_helpers import load_table_definitions
+from pfmsoft.eve_argus.static.util import load_table_definitions
 
 
 @dataclass(slots=True, kw_only=True)

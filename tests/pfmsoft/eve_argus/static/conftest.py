@@ -6,7 +6,7 @@ from sqlite3 import Connection, connect
 
 import pytest
 
-from pfmsoft.eve_argus.static.query_helpers import load_table_definitions
+from pfmsoft.eve_argus.static.util import load_table_definitions
 
 
 @pytest.fixture

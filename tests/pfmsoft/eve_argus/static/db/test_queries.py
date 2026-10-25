@@ -1,4 +1,4 @@
-"""Tests for static database query helpers."""
+"""Tests for direct static database reads and writes."""
 
 import json
 import sqlite3
@@ -6,7 +6,7 @@ import sqlite3
 from pfmsoft.eve_argus.esd import models as ESD
 from pfmsoft.eve_argus.models.types import LanguageEnum
 from pfmsoft.eve_argus.static import models as ASM
-from pfmsoft.eve_argus.static import query_helpers
+from pfmsoft.eve_argus.static import read, util, write
 
 
 def _write_market_group_test_data(connection: sqlite3.Connection) -> None:
@@ -62,15 +62,13 @@ def _write_market_group_test_data(connection: sqlite3.Connection) -> None:
             ),
         }
     )
-    query_helpers.write_types(connection, types)
-    query_helpers.write_market_groups(
-        connection, market_groups, language=LanguageEnum.DE
-    )
+    write.types(connection, dataset=types)
+    write.market_groups(connection, dataset=market_groups, language=LanguageEnum.DE)
 
 
 def _make_connection() -> sqlite3.Connection:
     connection = sqlite3.connect(":memory:")
-    connection.executescript(query_helpers.load_table_definitions())
+    connection.executescript(util.load_table_definitions())
     return connection
 
 
@@ -78,7 +76,7 @@ def test_get_blueprints_returns_empty_dataset() -> None:
     """An empty database returns an empty blueprint dataset."""
     connection = _make_connection()
 
-    assert query_helpers.get_blueprints(connection) == {}
+    assert read.blueprints(connection) == {}
 
 
 def test_get_blueprints_preserves_missing_and_empty_activities() -> None:
@@ -97,7 +95,7 @@ def test_get_blueprints_preserves_missing_and_empty_activities() -> None:
         (100, "research_time", 0),
     )
 
-    blueprints = query_helpers.get_blueprints(connection)
+    blueprints = read.blueprints(connection)
 
     assert list(blueprints) == [100, 200]
     assert blueprints == {
@@ -192,7 +190,7 @@ def test_get_blueprints_reconstructs_all_activities_and_children() -> None:
             activities=activities,
         )
 
-    blueprints = query_helpers.get_blueprints(connection)
+    blueprints = read.blueprints(connection)
 
     assert list(blueprints) == [100, 200]
     assert blueprints == expected
@@ -210,9 +208,9 @@ def test_write_industrial_activities_writes_string_fields() -> None:
         }
     )
 
-    query_helpers.write_industry_activities(connection, dataset)
+    write.industrial_activities(connection, dataset=dataset)
 
-    assert query_helpers.get_industry_activities(connection) == {
+    assert read.industry_activities(connection) == {
         1: ASM.IndustryActivityRecord(
             activity_id=1,
             name="Manufacturing",
@@ -290,7 +288,7 @@ def test_get_market_groups_returns_argus_static_records() -> None:
     connection = _make_connection()
     _write_market_group_test_data(connection)
 
-    market_groups = query_helpers.get_market_groups(connection)
+    market_groups = read.market_groups(connection)
 
     assert market_groups[100].market_group_id == 100
     assert market_groups[100].description == "NOT_DEFINED"
@@ -330,7 +328,7 @@ def test_write_map_regions_writes_flattened_position_and_constellations() -> Non
         }
     )
 
-    query_helpers.write_map_regions(connection, dataset, language=LanguageEnum.DE)
+    write.map_regions(connection, dataset=dataset, language=LanguageEnum.DE)
 
     region = connection.execute(
         """
@@ -364,9 +362,9 @@ def test_write_map_regions_writes_flattened_position_and_constellations() -> Non
 def test_write_map_constellations_writes_flattened_position_and_solar_systems() -> None:
     """Map constellation records are written to parent and child tables."""
     connection = _make_connection()
-    query_helpers.write_map_regions(
+    write.map_regions(
         connection,
-        ESD.MapRegionsDataset(
+        dataset=ESD.MapRegionsDataset(
             dataset={
                 10000002: ESD.MapRegionsRecord(
                     constellationIDs=[],
@@ -393,7 +391,7 @@ def test_write_map_constellations_writes_flattened_position_and_solar_systems() 
         }
     )
 
-    query_helpers.write_map_constellations(connection, dataset)
+    write.map_constellations(connection, dataset=dataset)
 
     constellation = connection.execute(
         """
@@ -426,9 +424,9 @@ def test_write_map_constellations_writes_flattened_position_and_solar_systems() 
 def test_write_map_solar_systems_writes_flattened_positions_and_lists() -> None:
     """Map solar system records are written to parent and child tables."""
     connection = _make_connection()
-    query_helpers.write_categories(
+    write.categories(
         connection,
-        ESD.CategoriesDataset(
+        dataset=ESD.CategoriesDataset(
             dataset={
                 65: ESD.CategoriesRecord(
                     name=ESD.LocalizedString(en="Structure"), published=True
@@ -436,9 +434,9 @@ def test_write_map_solar_systems_writes_flattened_positions_and_lists() -> None:
             }
         ),
     )
-    query_helpers.write_groups(
+    write.groups(
         connection,
-        ESD.GroupsDataset(
+        dataset=ESD.GroupsDataset(
             dataset={
                 1404: ESD.GroupsRecord(
                     anchorable=False,
@@ -452,9 +450,9 @@ def test_write_map_solar_systems_writes_flattened_positions_and_lists() -> None:
             }
         ),
     )
-    query_helpers.write_map_regions(
+    write.map_regions(
         connection,
-        ESD.MapRegionsDataset(
+        dataset=ESD.MapRegionsDataset(
             dataset={
                 10000002: ESD.MapRegionsRecord(
                     constellationIDs=[],
@@ -468,9 +466,9 @@ def test_write_map_solar_systems_writes_flattened_positions_and_lists() -> None:
             }
         ),
     )
-    query_helpers.write_map_constellations(
+    write.map_constellations(
         connection,
-        ESD.MapConstellationsDataset(
+        dataset=ESD.MapConstellationsDataset(
             dataset={
                 20000020: ESD.MapConstellationsRecord(
                     factionID=None,
@@ -513,7 +511,7 @@ def test_write_map_solar_systems_writes_flattened_positions_and_lists() -> None:
         }
     )
 
-    query_helpers.write_map_solar_systems(connection, dataset, language=LanguageEnum.DE)
+    write.map_solar_systems(connection, dataset=dataset, language=LanguageEnum.DE)
 
     solar_system = connection.execute(
         """
@@ -618,7 +616,7 @@ def test_get_map_solar_systems_preserves_null_booleans() -> None:
         ),
     )
 
-    record = query_helpers.get_map_solar_systems(connection)[30000142]
+    record = read.map_solar_systems(connection)[30000142]
 
     assert record.border is None
     assert record.corridor is None

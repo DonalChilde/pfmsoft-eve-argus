@@ -4,11 +4,11 @@ import sqlite3
 from logging import basicConfig
 from pathlib import Path
 
+from pfmsoft.eve_argus.data_loaders.esd_datasets import EsdDatasetsLoader
 from pfmsoft.eve_sd import EveSdDbQueryManager
 
-from pfmsoft.eve_argus.data_loaders.esd_datasets import EsdDatasetsLoader
 from pfmsoft.eve_argus.models.types import LanguageEnum
-from pfmsoft.eve_argus.static import query_helpers
+from pfmsoft.eve_argus.static import read, util, write
 
 ESD_DATABASE_PATH = Path("dev/app-dir/static-db.sqlite")
 ARGUS_DATABASE_PATH = Path("dev/app-dir/argus-static-db.sqlite")
@@ -31,58 +31,60 @@ def import_static_data() -> None:
     with EveSdDbQueryManager(ESD_DATABASE_PATH) as query_manager:
         loader = EsdDatasetsLoader(query_manager)
         with sqlite3.connect(ARGUS_DATABASE_PATH) as connection:
-            connection.executescript(query_helpers.load_table_definitions())
-            query_helpers.write_types(connection, loader.types(), LanguageEnum.EN)
-            query_helpers.write_meta_groups(
-                connection, loader.meta_groups(), LanguageEnum.EN
+            connection.executescript(util.load_table_definitions())
+            write.types(connection, dataset=loader.types(), language=LanguageEnum.EN)
+            write.meta_groups(
+                connection, dataset=loader.meta_groups(), language=LanguageEnum.EN
             )
-            query_helpers.write_categories(
-                connection, loader.categories(), LanguageEnum.EN
+            write.categories(
+                connection, dataset=loader.categories(), language=LanguageEnum.EN
             )
-            query_helpers.write_groups(connection, loader.groups(), LanguageEnum.EN)
-            query_helpers.write_industry_activities(
-                connection, loader.industrial_activities()
+            write.groups(connection, dataset=loader.groups(), language=LanguageEnum.EN)
+            write.industrial_activities(
+                connection, dataset=loader.industrial_activities()
             )
-            query_helpers.write_map_regions(
-                connection, loader.map_regions(), LanguageEnum.EN
+            write.map_regions(
+                connection, dataset=loader.map_regions(), language=LanguageEnum.EN
             )
-            query_helpers.write_map_constellations(
-                connection, loader.map_constellations(), LanguageEnum.EN
+            write.map_constellations(
+                connection,
+                dataset=loader.map_constellations(),
+                language=LanguageEnum.EN,
             )
-            query_helpers.write_map_solar_systems(
-                connection, loader.map_solar_systems(), LanguageEnum.EN
+            write.map_solar_systems(
+                connection, dataset=loader.map_solar_systems(), language=LanguageEnum.EN
             )
-            query_helpers.write_type_materials(connection, loader.type_materials())
-            query_helpers.write_blueprints(connection, loader.blueprints())
-            query_helpers.write_market_groups(
-                connection, loader.market_groups(), LanguageEnum.EN
+            write.type_materials(connection, dataset=loader.type_materials())
+            write.blueprints(connection, dataset=loader.blueprints())
+            write.market_groups(
+                connection, dataset=loader.market_groups(), language=LanguageEnum.EN
             )
 
 
 def access_argus_static_data() -> None:
     """Access the Argus static database datasets."""
     with sqlite3.connect(ARGUS_DATABASE_PATH) as connection:
-        market_groups = query_helpers.get_market_groups(connection)
+        market_groups = read.market_groups(connection)
         assert market_groups, "Market groups should not be empty"
-        industry_activities = query_helpers.get_industry_activities(connection)
+        industry_activities = read.industry_activities(connection)
         assert industry_activities, "Industry activities should not be empty"
-        map_regions = query_helpers.get_map_regions(connection)
+        map_regions = read.map_regions(connection)
         assert map_regions, "Map regions should not be empty"
-        map_constellations = query_helpers.get_map_constellations(connection)
+        map_constellations = read.map_constellations(connection)
         assert map_constellations, "Map constellations should not be empty"
-        map_solar_systems = query_helpers.get_map_solar_systems(connection)
+        map_solar_systems = read.map_solar_systems(connection)
         assert map_solar_systems, "Map solar systems should not be empty"
-        groups = query_helpers.get_groups(connection)
+        groups = read.groups(connection)
         assert groups, "Groups should not be empty"
-        categories = query_helpers.get_categories(connection)
+        categories = read.categories(connection)
         assert categories, "Categories should not be empty"
-        type_materials = query_helpers.get_type_materials(connection)
+        type_materials = read.type_materials(connection)
         assert type_materials, "Type materials should not be empty"
-        randomized_materials = query_helpers.get_type_materials_randomized(connection)
+        randomized_materials = read.type_materials_randomized(connection)
         assert randomized_materials, "Randomized type materials should not be empty"
-        meta_groups = query_helpers.get_meta_groups(connection)
+        meta_groups = read.meta_groups(connection)
         assert meta_groups, "Meta groups should not be empty"
-        types = query_helpers.get_types(connection)
+        types = read.types(connection)
         assert types, "Types should not be empty"
 
 

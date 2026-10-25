@@ -59,7 +59,7 @@ when the proven approach is migrated into eve-argus proper.
 These are the expected sources to verify before implementation and again during
 migration.
 
-- static data is loaded via src/pfmsoft/eve_argus/static/db/query_helpers.py
+- static data is loaded via src/pfmsoft/eve_argus/static/read.py
   - use of query helpers is preferred for database access.
   - in production, all sql queries should live in query_helpers
   - during prototyping note sql queries not available in query_helpers, for later inclusion.

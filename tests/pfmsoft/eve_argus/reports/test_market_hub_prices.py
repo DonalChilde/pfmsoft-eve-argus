@@ -28,8 +28,8 @@ from pfmsoft.eve_argus.reports.market_hub_prices_render import (
 from pfmsoft.eve_argus.settings import SETTINGS_KEY, EveArgusSettings
 from pfmsoft.eve_argus.static import read as static_read
 from pfmsoft.eve_argus.static.models import MarketGroupsDataset, TypesDataset
-from pfmsoft.eve_argus.static.query_helpers import load_table_definitions
 from pfmsoft.eve_argus.static.store import ManifestEntry, StaticManifest
+from pfmsoft.eve_argus.static.util import load_table_definitions
 
 RECEIVED = "2026-10-17T22:07:37.553890662Z"
 GENERATED = Instant.parse_iso("2026-10-18T12:00:00Z")
@@ -101,6 +101,15 @@ def response(data: models.OrderSummaryDataset) -> models.OrderSummaryResponse:
 def populate_static(connection: sqlite3.Connection) -> None:
     """Use production tables/readers, including an unpublished and nonmarket type."""
     connection.executescript(load_table_definitions())
+    connection.execute(
+        "INSERT INTO categories (category_id, name, published) VALUES (4, 'Materials', 1)"
+    )
+    connection.execute(
+        """INSERT INTO groups
+        (group_id, anchorable, anchored, category_id, fittable_non_singleton,
+         name, published, use_base_price)
+        VALUES (1, 0, 0, 4, 0, 'Minerals', 1, 0)"""
+    )
     connection.execute(
         """INSERT INTO market_groups
         (market_group_id, description, has_types, name, int_path, str_path, types)
