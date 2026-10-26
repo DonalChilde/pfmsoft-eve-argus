@@ -23,6 +23,10 @@ Goals:
 - in another document
   - Find deals on reprocessed goods, where either the buy. sell, or both price of the items is less thatn the value of the reprocessed materials.
   - Find deals or improved deals that generate profit buy moveing those reprocessable goods between market hubs.
+- Make the output actionable per hub. See [Per-hub actionable reports](#per-hub-actionable-reports).
+
+Out of scope for this document: hub-to-hub transport arbitrage of items for
+resale without reprocessing. That is a separate report.
 
 Document types and tools available:
 
@@ -53,6 +57,69 @@ when the proven approach is migrated into eve-argus proper.
 - Retain all eligible rows in the output and rank positive opportunities.
 - Use a configurable minimum margin, initially `0%`.
 - Produce both Markdown and CSV reports.
+
+### Available datasets
+
+Four market datasets are available. Each has a distinct role; reports should use
+the one that answers the question rather than a single price for everything.
+
+| Dataset | Access | Granularity | Best used for |
+| ------- | ------ | ----------- | ------------- |
+| Market orders | `market_orders_responses()` / `market_orders()` in `src/pfmsoft/eve_argus/dynamic/read.py` | Every open buy/sell order in a region, with system and station location, price, remaining volume, and range; newest snapshot per region | Scenario A: order-book walking, fill-aware sizing, exact prices paid and received at a hub |
+| Order summaries | `calculate_dataset_summaries()` in `src/pfmsoft/eve_argus/dynamic/order_summary.py` (in-memory; scoped with `system_id`) | One buy and one sell summary per type: 5% depth-filtered price, item volume, and order count within the hub system | Quick screening, reference tables, thin-market flags |
+| Regional market history | `market_history()` / `market_history_by_region()` in `src/pfmsoft/eve_argus/market_history/read.py` | Daily records per region and type: average, highest, lowest, order count, volume | Checking whether an item or material actually trades, and at what price over time |
+| History summaries | `history_summary()` in `src/pfmsoft/eve_argus/market_history/read.py` (calculation in `market_history/history_summary.py`) | One record per region and type over a window, normally 10 days: volume-weighted average, highest, and lowest prices, average daily order count, average daily volume, and a count of missing days | Sanity-checking current prices against typical prices, sizing a buy by daily demand, and Scenario B price targets |
+
+Notes on use:
+
+- **Market orders** are regional, so scope to the hub system (and optionally
+  station) before use. A regional snapshot is a point in time; always report its
+  fetch time. Orders cover the whole region, so only the hub system's orders
+  are used for per-hub reports.
+- **Order summaries** are calculated on demand from the newest regional orders
+  and are never persisted. The 5% filter excludes buy prices below best/1.05
+  and sell prices above best\*1.05. They hide thin books: always carry the order
+  count and item volume alongside the price.
+- **Regional history** is per region, not per hub system. It reflects all
+  trading in the region (for a hub region the hub typically dominates, but it
+  is not hub-specific). It is the only dataset showing what actually sold.
+- **History summaries** give an averaged price and daily volume, usually over
+  10 days. A nonzero `missing` count means the item did not trade every day in
+  the window. Missing history means no trades occurred, not a zero price.
+
+Data freshness:
+
+- All data lags real time. Reports are a snapshot; the user is responsible for
+  refreshing data before acting. Reports do not fetch data themselves.
+- **Order data** is cheap to fetch and is expected to be current. Fetch it
+  immediately before generating per-hub reports.
+- **History data** is expensive: each hub can take up to ten minutes to fetch
+  all requests. It is allowed to be older than order data and is used only for
+  liquidity and price-sanity context, never as the price for a trade.
+- Every report states the snapshot time of the order data and the newest and
+  oldest history date used, plus the age of each at generation time.
+- Do not fail or hide rows because history is stale or absent. Show a
+  history-age note in the metadata and flag the liquidity fields as stale only
+  beyond a configurable age (initially 7 days).
+- Order data older than a configurable age (initially 1 hour) produces a
+  prominent warning in the report header. It still generates the report.
+
+How each dataset is used in the per-hub plan:
+
+- **Scenario A (immediate arbitrage):** price and size from raw market orders.
+  Use order summaries only to pre-screen candidates cheaply, then confirm on the
+  order book. Use the history summary to flag materials whose daily volume is
+  too small to absorb the quantity being sold, and to flag current prices far
+  from the 10-day average (possible spikes or manipulation).
+- **Scenario B (buy-order price targets):** compute break-even from the hub's
+  material buy prices (order summaries), cross-checked against history-summary
+  average prices. Cap the suggested purchase quantity by the input item's
+  average daily volume in the sourcing region, where history is available.
+- **Liquidity flag (both scenarios):** report average daily volume and days
+  missing from the history summary for the input item and for each material
+  that carries significant value.
+- **Data gaps:** missing orders, missing history, and thin depth are separate
+  conditions and must stay distinguishable in output; none becomes zero.
 
 ### Expected data sources
 
@@ -233,6 +300,103 @@ per input item and hub, with input prices, reprocessed values, and missing
 material data. The later deals export will add one row per input item,
 source hub, output hub, and deal direction.
 
+### Per-hub actionable reports
+
+The all-hub deal output (hundreds of thousands of rows) is not usable in game.
+The intended workflow is one agent stationed at each hub, so deal output must be
+split by hub, and each hub's report answers a single question: what can I do
+right now at this hub?
+
+#### Output layout
+
+- Write one set of deal files per hub, e.g. `deals_jita.md`, `deals_jita.csv`,
+  and likewise for Amarr, Dodixie, Hek, and Rens, under
+  `dev/proof-scripts/proof-output/reprocessing/`.
+- Every file carries the report metadata (snapshot time, yield, depth, hub).
+- The existing all-hub value report and full comparison CSV remain as reference
+  data; they are not the working output.
+
+#### Scenario A: immediate local arbitrage (primary, build first)
+
+Find reprocessable items that can be bought at the hub right now and reprocessed
+for a profit.
+
+- Input cost: the items are bought immediately, so use the hub's lowest **sell**
+  orders (the price actually paid), not a 5% depth average where depth cannot
+  fill the quantity.
+- Output value: materials are sold at the same hub. Report two valuations side
+  by side: sold immediately to **buy** orders (instant, conservative) and listed
+  as **sell** orders (slower, higher). Rank on the immediate-sale valuation.
+- Fill-aware sizing: walk the order book to compute the quantity that can be
+  bought while the marginal portion remains profitable. Report the max
+  profitable quantity (rounded down to whole portions), total cost, total
+  proceeds, and total profit, not only unit margins.
+- Rows must be actionable: item, market path, units to buy, price range to pay
+  (best and worst price paid), expected profit, margin, and a data-quality flag.
+- Hide thin or incomplete rows from the ranked markdown; keep them in the CSV
+  with flags. Define explicit thresholds (configurable): minimum profit in ISK,
+  minimum margin, minimum order count / quantity, and a maximum share of the
+  value coming from a single material with a thin market.
+- Apply configurable broker fee, sales tax, and reprocessing tax as optional
+  inputs (default 0 for the prototype, shown in metadata). Net profit is the
+  ranked value when any are non-zero.
+- Produce two ranked tables per hub, each sorted by margin:
+  1. Sell materials immediately into hub buy orders (order-book walk).
+  2. Post material sell orders at the hub 5% sell price, with full fill
+     assumed. This table has no material depth limit, so rely on history
+     liquidity flags. (A discount below the 5% sell price was tried and dropped:
+     mineral buy/sell spreads are narrow, so any meaningful discount falls below
+     the buy orders and the immediate table is always better.)
+- Both tables show gross proceeds, reprocessing tax, sales tax, and net proceeds
+  as ISK columns, even when the rates are 0. The sell-order table adds a listing
+  cost (broker fee) column.
+- Prototype: `dev/proof-scripts/reprocessing/generate_hub_deals.py`.
+
+#### Scenario B: buy-order price targets for sourcing elsewhere (second phase)
+
+Later, support placing buy orders in non-hub regions, hauling the items to a
+hub, and reprocessing there.
+
+- For each hub and eligible item, calculate the **maximum purchase price** per
+  unit at which reprocessing at that hub breaks even, and at a configurable
+  target margin (e.g. 10%, 20%). Base the output value on that hub's immediate
+  material buy-order prices.
+- Output a price-point table per hub: item, market path, portion size, break-even
+  unit price, target-margin unit price, and the hub's current sell price for
+  comparison. This is the price to enter on a buy order.
+- Include the hub's material demand depth so the price target is not set against
+  a thin market; flag items whose output depends on thin materials.
+- Transport costs are not modeled; the target-margin headroom covers them.
+  Optionally accept a per-unit or per-m3 haul cost later, and include item
+  volume (m3) in the output now so it can be applied.
+- The latest regional order data for non-hub regions is not needed to compute
+  price points; it is only needed to later verify that a target price is
+  attainable. Decide later whether to fetch it.
+
+Prototype decisions (`dev/proof-scripts/reprocessing/generate_price_points.py`,
+output `price_points.csv`):
+
+- One wide CSV row per eligible item, all items included: `type_id`, `name`,
+  `market_path`, `portion_size`, `volume_m3`, then per hub `<hub>_buy`,
+  `<hub>_sell`, `<hub>_hist`, then `best_buy_hub` and `best_buy_value`.
+- Values are the gross reprocessed material value per unit of the item (per
+  portion divided by `portion_size`): the break-even bid before fees, hauling,
+  and margin. Fees and target margins are applied in the spreadsheet.
+- `buy` and `sell` use the hub-system 5% material prices; `hist` uses the
+  regional 10-day volume-weighted average material price.
+- A hub value is empty when any material lacks that price; never zero.
+
+#### Implementation order
+
+1. Add a hub-split writer so existing deal data is emitted per hub.
+2. Implement Scenario A on the per-hub output with fill-aware sizing and
+   thresholds, replacing the gross-margin ranking for per-hub reports.
+3. Implement Scenario B price-point tables.
+4. Review against known in-game opportunities before migration.
+
+The existing cross-hub rows stay in the all-hub CSV only; per-hub reports do not
+mix in cross-hub sourcing.
+
 ### Report mockups
 
 The following examples are illustrative only. The names, quantities, prices,
@@ -373,13 +537,17 @@ ambiguous.
    evaluates both deal directions across local and cross-hub pairs, and keeps
    incomplete rows in the CSV with missing-data flags.
 6. Refine market-depth quality flags and review the full-run outliers.
-7. Decide whether the prototype is ready for migration into eve-argus proper.
+7. Implement the per-hub actionable reports (Scenario A, then Scenario B) as
+   described in [Per-hub actionable reports](#per-hub-actionable-reports).
+8. Decide whether the prototype is ready for migration into eve-argus proper.
 
 ### Deferred work
 
 - Moving code into `src/pfmsoft/eve_argus/`.
 - Adding production tests under `tests/`.
-- Modeling hauling, route, broker, station-tax, or travel costs.
+- Modeling hauling, route, or travel costs (broker, sales, and reprocessing tax
+  are optional inputs for per-hub reports).
+- Hub-to-hub transport arbitrage without reprocessing (separate report).
 - Modeling character skills or facility-specific yield modifiers.
 - Establishing the correct treatment of randomized materials.
 - Expanding the analysis into blueprint manufacturing economics.
