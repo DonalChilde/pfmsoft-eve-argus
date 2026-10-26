@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any
 
 from pfmsoft.eve_argus.dynamic import read as dynamic_read
+from pfmsoft.eve_argus.dynamic.order_summary import calculate_dataset_summaries
 from pfmsoft.eve_argus.eve_argus import EveArgusResources
 from pfmsoft.eve_argus.models.market_hubs import MARKET_HUBS, MarketHub
 from pfmsoft.eve_argus.settings import get_settings
@@ -113,23 +114,25 @@ def recovered_quantity(quantity: int, yield_percent: int = YIELD_PERCENT) -> int
 def load_hub_prices(
     connection: sqlite3.Connection, hub: MarketHub
 ) -> tuple[dict[int, dict[str, dict[str, Any]]], str]:
-    """Load the newest persisted 5% prices and depth metrics for one hub."""
-    response = next(
-        (
-            response
-            for response in dynamic_read.order_summary_responses(
-                connection, region_id=hub.region_id
-            )
-            if response.system_id == hub.system_id and response.location_id is None
-        ),
-        None,
-    )
-    if response is None:
-        raise ValueError(f"No system-scoped order summary found for {hub.system_name}.")
+    """Calculate system-scoped 5% prices from the latest regional order dataset.
 
-    summaries = dynamic_read.order_summaries(
-        connection, response.order_summary_response_id
+    Raises:
+        ValueError: If no regional order snapshot is available for the hub.
+    """
+    responses = dynamic_read.market_orders_responses(
+        connection, region_id=hub.region_id
     )
+    if not responses:
+        raise ValueError(
+            f"No stored regional market orders for {hub.system_name}. "
+            "Run 'eve-argus fetch market-orders --hubs' to fetch source orders."
+        )
+    response = responses[0]
+
+    orders = dynamic_read.market_orders(
+        connection, response_metadata_id=response.response_metadata_id
+    )
+    summaries = calculate_dataset_summaries(orders, system_id=hub.system_id)
     prices: dict[int, dict[str, dict[str, Any]]] = {}
     for type_id, sides in summaries.records.items():
         for side_name, summary in (
@@ -694,11 +697,10 @@ async def generate_value_report(
         type_materials = read.type_materials(static_connection)
         randomized_type_materials = read.type_materials_randomized(static_connection)
         market_groups = read.market_groups(static_connection)
-        with sqlite3.connect(settings.market_orders_database) as order_connection:
-            hub_data = {
-                hub.system_name: load_hub_prices(order_connection, hub)
-                for hub in MARKET_HUBS
-            }
+        hub_data = {
+            hub.system_name: load_hub_prices(resources.argus_dynamic_db_connection, hub)
+            for hub in MARKET_HUBS
+        }
     hub_prices = {hub_name: data[0] for hub_name, data in hub_data.items()}
     snapshot_times = {hub_name: data[1] for hub_name, data in hub_data.items()}
 

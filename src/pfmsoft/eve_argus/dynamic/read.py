@@ -104,6 +104,7 @@ def order_summaries(
     )
 
 
+@deprecated("dynamically generate order summaries.")
 @log_timing(logger=logger, level=_timing_log_level)
 def order_summary_responses(
     connection: Connection, region_id: int | None = None

@@ -61,8 +61,10 @@ migration.
 
 - static data is loaded via src/pfmsoft/eve_argus/static/read.py
 - upstream pricing data comes from ESI regional market orders.
-- prototype pricing data is loaded via
-  `src/pfmsoft/eve_argus/market/orders/read.py.calculate_market_order_summary()`.
+- Prototype pricing uses the newest regional order snapshot from
+  `src/pfmsoft/eve_argus/dynamic/read.py` and the whole-dataset
+  `calculate_dataset_summaries()` in
+  `src/pfmsoft/eve_argus/dynamic/order_summary.py`, scoped to each hub system.
 - historic prices and sales volume can be accessed at [src/pfmsoft/eve_argus/market_history/read.py](../../src/pfmsoft/eve_argus/market_history/read.py). a ten day window is usually used.
 
 #### Static type data
@@ -117,15 +119,18 @@ migration.
 #### Market orders and price summaries
 
 - **Upstream source:** ESI regional market orders.
-- **Prototype access path:** persisted market orders and pricing summaries are
-  available through
-  `src/pfmsoft/eve_argus/market/orders/db/query_helpers.py`.
+- **Prototype access path:** use `market_orders_responses()` and
+  `market_orders()` in `src/pfmsoft/eve_argus/dynamic/read.py` through
+  `resources.argus_dynamic_db_connection`, not the legacy market-orders database.
 - **Required fields:** type ID, buy/sell side, 5% price, 5% item volume, 5%
   order count, and snapshot metadata where available.
-- **Fallback calculation:** raw regional orders can be transformed and passed
-  through the existing 5% order-summary transformation.
+- **On-demand calculation:** load the newest whole regional order dataset once
+  per configured hub and pass it to `calculate_dataset_summaries()` with the
+  hub's `system_id`. No per-type queries or persisted summary reads are needed.
 - These values are loaded from the ESI, out of context for this operation.
-- Summary pricing is precaculated, and available in the database.
+- Summary prices and depth metrics are calculated in memory, not saved.
+- Empty latest snapshots or snapshots without orders in the hub system produce
+  empty pricing; they must not fall back to older snapshots.
 
 - **Migration check:** preserve the distinction between missing orders, thin
   orders, and a genuine zero-valued price; never convert missing data to zero.
