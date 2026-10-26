@@ -342,6 +342,73 @@ existing files. All hub snapshots, paths, static references and renderings are
 validated before writes; filesystem failures may still leave partial output
 and return a nonzero exit status. No Markdown report is generated.
 
+## Scrapmetal reprocessing reports
+
+```bash
+uv run eve-argus fetch market-orders --hubs
+uv run eve-argus fetch market-history --hubs --scrapmetal   # optional, slow
+uv run eve-argus reports scrapmetal --to ./reports
+uv run eve-argus reports scrapmetal --to ./reports --sales-tax 3.6 --broker-fee 1.5
+```
+
+Finds items with fixed reprocessing materials that can be bought from sell
+orders in each hub system (Jita, Amarr, Dodixie, Hek, Rens) and reprocessed at
+that hub for a profit. It also writes per-unit price points for sourcing items
+elsewhere. Eligible items are published, listed on the market, outside the Raw,
+Gas Cloud, and Reaction material market trees, and have fixed materials. Recovered
+quantities are `floor(quantity * yield / 100)` per portion. Inputs are opened
+read-only; nothing is fetched.
+
+Per hub, from the newest regional order snapshot:
+
+```text
+scrapmetal-deals-Jita-2026-10-17T22_07_37_553890662Z.md
+scrapmetal-deals-Jita-2026-10-17T22_07_37_553890662Z.csv
+scrapmetal-deals-Jita-2026-10-17T22_07_37_553890662Z.json
+```
+
+Items are bought one portion at a time, cheapest hub sell order first. The walk
+stops when the next portion would not be profitable after fees, would fall below
+`--min-margin`, or when supply or material buy depth runs out (`limit_reason`).
+Each item is evaluated under two material-sale scenarios:
+
+- `sell_to_buy_orders`: materials are sold immediately by walking hub buy orders.
+- `list_sell_orders`: materials are listed at the hub 5% sell price, assumed to
+  fill in full, with the `--broker-fee` listing cost applied.
+
+Reprocessing tax, sales tax, and listing cost are percentages of gross material
+value and are reported as separate ISK columns (default 0). The Markdown report
+has one table per scenario, ranked by margin and limited to 100 rows. A row is
+ranked when its status is `profitable`, its profit is at least `--min-profit`
+(default 100,000 ISK), and its margin is at least `--min-margin` (default 5%).
+Rows whose output slippage exceeds `--max-slippage` (default 10%), or whose
+material volume exceeds one day of regional history volume, are `thin`. Rows
+missing a material price are `incomplete`. CSV and JSON keep every row with its
+status and flags. The Markdown report ends with definitions of the `Limited by`
+values.
+
+One price-point list is written per run, stamped with the generation time:
+
+```text
+scrapmetal-price-points-2026-10-18T12_00_00Z.csv
+scrapmetal-price-points-2026-10-18T12_00_00Z.json
+```
+
+Each eligible item gets a gross per-unit material value at each hub
+(`<hub>_buy`, `<hub>_sell` at hub 5% prices, and `<hub>_hist` at the regional
+10-day history average), plus `best_buy_hub` / `best_buy_value`. This is the
+break-even bid before fees, hauling, and margin. A value is empty when any
+material lacks a price. Per-hub `orders_received_at` and `history_newest_date`
+columns identify the sources.
+
+Every hub needs a stored order snapshot; otherwise the command fails before
+writing. Market history is optional context (price sanity and liquidity flags)
+and never sets a trade price. If the history database is missing, or a hub has
+no history, or a hub's history ends more than 7 days before generation, the
+command warns and continues. Expired order snapshots are reported, not
+refreshed. `--quiet` hides progress, not warnings or errors. Use `--overwrite`
+to replace existing files.
+
 ## Corporation blueprints report
 
 ```bash

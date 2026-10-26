@@ -537,14 +537,21 @@ ambiguous.
    evaluates both deal directions across local and cross-hub pairs, and keeps
    incomplete rows in the CSV with missing-data flags.
 6. Refine market-depth quality flags and review the full-run outliers.
-7. Implement the per-hub actionable reports (Scenario A, then Scenario B) as
-   described in [Per-hub actionable reports](#per-hub-actionable-reports).
-8. Decide whether the prototype is ready for migration into eve-argus proper.
+7. **Complete:** Implement the per-hub actionable reports (Scenario A, then
+   Scenario B) as described in
+   [Per-hub actionable reports](#per-hub-actionable-reports).
+8. **Complete:** Migrated into eve-argus as `eve-argus reports scrapmetal`
+   (`reports/scrapmetal.py`, `reports/scrapmetal_render.py`,
+   `templates/scrapmetal/`, `cli/reports/scrapmetal.py`; tests in
+   `tests/pfmsoft/eve_argus/reports/test_scrapmetal.py`). Output matches the
+   proof scripts on the same data. Differences from the proofs: order staleness
+   uses snapshot expiry instead of a 60-minute rule; volumes prefer packaged
+   volume; files are named `scrapmetal-deals-<hub>-<received_at>.{md,csv,json}`
+   and `scrapmetal-price-points-<generated_at>.{csv,json}`. The proof scripts
+   are kept for experiments.
 
 ### Deferred work
 
-- Moving code into `src/pfmsoft/eve_argus/`.
-- Adding production tests under `tests/`.
 - Modeling hauling, route, or travel costs (broker, sales, and reprocessing tax
   are optional inputs for per-hub reports).
 - Hub-to-hub transport arbitrage without reprocessing (separate report).

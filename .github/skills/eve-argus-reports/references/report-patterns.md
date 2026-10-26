@@ -14,8 +14,9 @@ exposes the following commands.
 | `corporation-jobs` | One corporation's latest stored jobs response | JSON, CSV, Markdown |
 | `corporation-blueprints` | One corporation's latest stored blueprints response | JSON, Markdown, owned CSV, missing-BPO CSV |
 | `hub-prices` | All entries in `MARKET_HUBS`, using stored regional orders | CSV and JSON per hub |
+| `scrapmetal` | All entries in `MARKET_HUBS`, using stored regional orders and optional market history | Markdown, CSV, JSON per hub; price-point CSV and JSON per run |
 
-All three require `--to` and offer `--overwrite` and `--quiet`. Corporation
+All of them require `--to` and offer `--overwrite` and `--quiet`. Corporation
 commands accept a positive `--corporation-id`, falling back to configuration.
 Hub prices currently has no hub-selection option and deliberately no Markdown.
 Do not impose either decision on unrelated reports.

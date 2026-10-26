@@ -7,8 +7,10 @@ from pfmsoft.eve_argus.cli.reports.corporation_blueprints import (
 )
 from pfmsoft.eve_argus.cli.reports.corporation_jobs import app as corporation_jobs_app
 from pfmsoft.eve_argus.cli.reports.hub_prices import app as hub_prices_app
+from pfmsoft.eve_argus.cli.reports.scrapmetal import app as scrapmetal_app
 
 app = typer.Typer(no_args_is_help=True, help="Generate reports from stored data.")
 app.add_typer(corporation_jobs_app)
 app.add_typer(corporation_blueprints_app)
 app.add_typer(hub_prices_app)
+app.add_typer(scrapmetal_app)
