@@ -31,6 +31,7 @@ from pfmsoft.eve_argus.fetch_esi import market_history_bulk as bulk
 from pfmsoft.eve_argus.fetch_esi.market_history import MarketHistoryUpdateResult
 from pfmsoft.eve_argus.fetch_esi.update import UpdateStatus
 from pfmsoft.eve_argus.helpers.market_groups import filter_type_ids_by_market_path
+from pfmsoft.eve_argus.helpers.type_materials import types_in_type_materials
 from pfmsoft.eve_argus.models.market_hubs import MARKET_HUBS
 from pfmsoft.eve_argus.settings import EveArgusSettings
 from pfmsoft.eve_argus.static import read as static_read
@@ -56,6 +57,7 @@ class SelectionMode(StrEnum):
     ACTIVE = "active"
     MARKET = "market"
     INDUSTRY = "industry"
+    SCRAPMETAL = "scrapmetal"
 
 
 @dataclass(slots=True, kw_only=True, frozen=True)
@@ -111,6 +113,13 @@ def fetch_market_history(
             help="Select published market-listed blueprint, material, and product types.",
         ),
     ] = False,
+    scrapmetal: Annotated[
+        bool,
+        typer.Option(
+            "--scrapmetal",
+            help="Select published market-listed type-material parents and components.",
+        ),
+    ] = False,
     include: Annotated[
         list[int] | None,
         typer.Option(
@@ -154,7 +163,7 @@ def fetch_market_history(
 ) -> None:
     """Fetch history using exactly one type-selection mode, region by region.
 
-    Includes/excludes apply to active, market, and industry selections,
+    Includes/excludes apply to active, market, industry, and scrapmetal selections,
     not explicit type IDs. Each region has an independent failure budget.
     """
     region_ids = list(region_id or ())
@@ -169,13 +178,14 @@ def fetch_market_history(
             (SelectionMode.ACTIVE, active),
             (SelectionMode.MARKET, market_types),
             (SelectionMode.INDUSTRY, industry_types),
+            (SelectionMode.SCRAPMETAL, scrapmetal),
         )
         if enabled
     ]
     if len(selections) != 1:
         raise typer.BadParameter(
             "Choose exactly one of --type-id, --active, --market-types, "
-            "or --industry-types."
+            "--industry-types, or --scrapmetal."
         )
     selection = selections[0]
     if selection is SelectionMode.EXPLICIT and (include or exclude):
@@ -221,7 +231,7 @@ async def _fetch_market_history(
         selected_ids = options.type_ids
         excluded_ids: set[int] = set()
         if (
-            options.selection is SelectionMode.MARKET
+            options.selection in (SelectionMode.MARKET, SelectionMode.SCRAPMETAL)
             or options.include
             or options.exclude
         ):
@@ -254,6 +264,13 @@ async def _fetch_market_history(
                 raise typer.BadParameter("Static blueprints dataset must be populated.")
             for blueprint in blueprints.values():
                 industry_ids.update(types_in_blueprint(blueprint))
+        if options.selection is SelectionMode.SCRAPMETAL:
+            type_materials = static_read.type_materials(connection)
+            if not type_materials:
+                raise typer.BadParameter(
+                    "Static type materials dataset must be populated."
+                )
+            selected_ids &= types_in_type_materials(type_materials)
 
         for region_id in options.region_ids:
             region = regions.get(region_id)

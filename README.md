@@ -86,6 +86,7 @@ Fetches history into the configured market-history database. Supply at least one
 | `--active`           | Published, market-listed active types discovered independently for each region                     | Allowed              |
 | `--market-types`     | Published types listed in static market groups                                                     | Allowed              |
 | `--industry-types`   | Published, market-listed blueprint IDs plus materials and products across all blueprint activities | Allowed              |
+| `--scrapmetal`       | Published types listed in static market groups and appearing as fixed type-material parents or components | Allowed          |
 
 Explicit regions run in command-line order, followed by hub regions for Jita,
 Amarr, Dodixie, Hek, and Rens, with duplicates removed. Types are deduplicated
@@ -109,6 +110,10 @@ uv run eve-argus fetch market-history \
 # Industry-related types from the static blueprints dataset
 uv run eve-argus fetch market-history \
   --hubs --industry-types --include 4 --exclude 187
+
+# Reprocessing inputs and recovered materials from static type materials
+uv run eve-argus fetch market-history \
+  --hubs --scrapmetal --exclude 1031 --exclude 1032 --exclude 1034
 ```
 
 Industry selection requires a populated static blueprints dataset. It collects
@@ -119,6 +124,14 @@ filtering, and the resulting selection is fetched for every selected region usin
 the same regional execution limits as the other modes. Missing blueprint data is
 an explicit error before any history requests.
 
+Scrapmetal selection requires populated static types, market groups, and fixed
+type materials. It includes both primary type IDs (including parents with empty
+component lists) and component material IDs, then intersects them with published
+types listed in market groups. Randomized-material definitions are not included.
+The deduplicated selection is reused for every selected region. Market-group
+exclusions are optional, not implicit; missing type-material data is an explicit
+error, while an empty eligible intersection is a successful no-op.
+
 ### Selection and filters
 
 Regions are validated against the static map-regions dataset before network
@@ -126,14 +139,15 @@ requests. The original explicit single-pair invocation still permits regions
 missing from static data; failures label them `Unknown region`.
 
 `--include` and `--exclude` may be repeated with `--active`, `--market-types`,
-and `--industry-types`, but not `--type-id`. Includes form a union of market-group
+`--industry-types`, and `--scrapmetal`, but not `--type-id`. Includes form a union of market-group
 subtrees, including each group's directly assigned types. Excludes apply afterward,
 regardless of option order, and always win. Filters only remove candidates; they
 never introduce inactive or otherwise unselected types. Unknown groups, missing
 required static datasets, and inconsistent market paths fail before network
 requests. An empty selection is a successful regional no-op.
 
-All generated selections (`--active`, `--market-types`, and `--industry-types`)
+All generated selections (`--active`, `--market-types`, `--industry-types`, and
+`--scrapmetal`)
 require published types with known market membership. Types with no
 `market_group_id` and IDs missing from the static types dataset are excluded,
 even without include/exclude filters. Unknown active/industry IDs produce a
