@@ -2,6 +2,8 @@
 
 import asyncio
 import sqlite3
+from collections.abc import Iterator
+from contextlib import closing
 from types import ModuleType
 from unittest.mock import AsyncMock, Mock
 from uuid import UUID
@@ -29,15 +31,18 @@ from pfmsoft.eve_argus.fetch_esi.system_cost_indices import _current_state
 from pfmsoft.eve_argus.fetch_esi.update import UpdateStatus
 
 
-def _make_connection() -> sqlite3.Connection:
-    connection = sqlite3.connect(":memory:")
-    connection.executescript(util.load_table_definitions())
-    return connection
+@pytest.fixture
+def connection() -> Iterator[sqlite3.Connection]:
+    """Provide an in-memory database with the production schema, closed afterward."""
+    with closing(sqlite3.connect(":memory:")) as database:
+        database.executescript(util.load_table_definitions())
+        yield database
 
 
-def test_write_system_cost_indices_preserves_response_snapshots() -> None:
+def test_write_system_cost_indices_preserves_response_snapshots(
+    connection: sqlite3.Connection,
+) -> None:
     """Repeated system-cost writes retain the same system in each snapshot."""
-    connection = _make_connection()
     for received_at in ("2026-09-01T00:00:00Z", "2026-09-02T00:00:00Z"):
         (
             write.system_cost_indices(
@@ -67,9 +72,10 @@ def test_write_system_cost_indices_preserves_response_snapshots() -> None:
         )
 
 
-def test_system_cost_indices_current_state_selects_latest_snapshot() -> None:
+def test_system_cost_indices_current_state_selects_latest_snapshot(
+    connection: sqlite3.Connection,
+) -> None:
     """System-cost state reads the highest response metadata ID."""
-    connection = _make_connection()
     for received_at in ("2026-09-01T00:00:00Z", "2026-09-02T00:00:00Z"):
         write.system_cost_indices(
             connection,
@@ -89,10 +95,10 @@ def test_system_cost_indices_current_state_selects_latest_snapshot() -> None:
 
 
 def test_update_markets_prices_persists_response(
+    connection: sqlite3.Connection,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """A missing global prices response is fetched and stored."""
-    connection = _make_connection()
     esi_link = object()
     schema = object()
     raw_response = object()
@@ -122,10 +128,10 @@ def test_update_markets_prices_persists_response(
 
 
 def test_update_markets_prices_skips_current_response(
+    connection: sqlite3.Connection,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """An unexpired global prices response skips the ESI request."""
-    connection = _make_connection()
     write.markets_prices(
         connection,
         ERM.GetMarketsPrices(
@@ -146,10 +152,10 @@ def test_update_markets_prices_skips_current_response(
 
 
 def test_update_markets_prices_reports_validation_failure(
+    connection: sqlite3.Connection,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Invalid price payloads return a failure without writing a response."""
-    connection = _make_connection()
     monkeypatch.setattr(
         markets_prices.EsiFetch,
         "markets_prices",
@@ -172,10 +178,10 @@ def test_update_markets_prices_reports_validation_failure(
 
 
 def test_update_market_orders_persists_new_region_response(
+    connection: sqlite3.Connection,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """A fresh market-order response is stored for the requested region."""
-    connection = _make_connection()
     region_id = 10000002
     raw_response = object()
     orders = ERM.GetMarketsRegionIdOrders(
@@ -206,10 +212,10 @@ def test_update_market_orders_persists_new_region_response(
 
 
 def test_update_market_orders_rejects_duplicate_timestamp(
+    connection: sqlite3.Connection,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """An expired order response cannot be reinserted with the same timestamp."""
-    connection = _make_connection()
     existing = ERM.GetMarketsRegionIdOrders(
         received_at="2026-09-01T00:00:00Z",
         expires_at="2020-01-01T00:00:00Z",
@@ -238,10 +244,10 @@ def test_update_market_orders_rejects_duplicate_timestamp(
 
 
 def test_update_corporation_industry_jobs_passes_credentials_and_persists(
+    connection: sqlite3.Connection,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Industry-job fetching passes auth context and stores the response."""
-    connection = _make_connection()
     esi_link = object()
     schema = object()
     corporation_id = 987654
@@ -295,10 +301,10 @@ def test_update_corporation_industry_jobs_passes_credentials_and_persists(
 
 
 def test_update_corporation_blueprints_passes_credentials_and_persists(
+    connection: sqlite3.Connection,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Blueprint fetching passes auth context and stores the response."""
-    connection = _make_connection()
     esi_link = object()
     schema = object()
     corporation_id = 987654
@@ -400,6 +406,7 @@ def test_update_corporation_blueprints_passes_credentials_and_persists(
     ],
 )
 def test_update_uses_new_esi_fetch_and_validation(
+    connection: sqlite3.Connection,
     module: ModuleType,
     endpoint: str,
     operation_id: str,
@@ -407,7 +414,6 @@ def test_update_uses_new_esi_fetch_and_validation(
     update_parameters: dict[str, int | UUID],
 ) -> None:
     """Real fetches and validators should persist new models with only ESI mocked."""
-    connection = _make_connection()
     esi_link = Mock(spec=EsiLink)
     schema = Mock(spec=EsiSchema)
     response = Mock(spec=EsiResponse)

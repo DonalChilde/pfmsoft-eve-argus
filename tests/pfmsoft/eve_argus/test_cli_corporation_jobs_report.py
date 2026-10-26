@@ -3,6 +3,7 @@
 import json
 import sqlite3
 from collections.abc import Iterator
+from contextlib import closing
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
@@ -35,49 +36,48 @@ class CommandEnvironment:
 @pytest.fixture
 def environment(monkeypatch: pytest.MonkeyPatch) -> Iterator[CommandEnvironment]:
     """Isolate databases/settings and substitute enrichment without live ESI calls."""
-    connection = sqlite3.connect(":memory:")
-    connection.executescript(util.load_table_definitions())
-    settings = Mock(spec=EveArgusSettings)
-    settings.corporation_id = 98000001
-    settings.character_id = None
-    settings.credential_id = None
-    resources = Mock()
-    resources.argus_dynamic_db_connection = connection
-    resources.argus_static_db_connection = Mock()
-    manager = Mock()
-    manager.__aenter__ = AsyncMock(return_value=resources)
-    manager.__aexit__ = AsyncMock(return_value=False)
-    monkeypatch.setattr(command, "EveArgusResources", Mock(return_value=manager))
-    for name in ("types", "market_groups", "industry_activities"):
-        monkeypatch.setattr(command.static_read, name, Mock(return_value={}))
-    type_reader = command.static_read.types
-    assert isinstance(type_reader, Mock)
+    with closing(sqlite3.connect(":memory:")) as connection:
+        connection.executescript(util.load_table_definitions())
+        settings = Mock(spec=EveArgusSettings)
+        settings.corporation_id = 98000001
+        settings.character_id = None
+        settings.credential_id = None
+        resources = Mock()
+        resources.argus_dynamic_db_connection = connection
+        resources.argus_static_db_connection = Mock()
+        manager = Mock()
+        manager.__aenter__ = AsyncMock(return_value=resources)
+        manager.__aexit__ = AsyncMock(return_value=False)
+        monkeypatch.setattr(command, "EveArgusResources", Mock(return_value=manager))
+        for name in ("types", "market_groups", "industry_activities"):
+            monkeypatch.setattr(command.static_read, name, Mock(return_value={}))
+        type_reader = command.static_read.types
+        assert isinstance(type_reader, Mock)
 
-    async def collect_report(**kwargs: object) -> CorporationJobsReport:
-        jobs = kwargs["jobs"]
-        assert isinstance(jobs, CorporationIndustryJobsDataset)
-        return CorporationJobsReport(
-            corporation_id=jobs.corporation_id,
-            corporation_name="Test Corp",
-            response_metadata_id=jobs.response_metadata_id,
-            received_at=jobs.received_at,
-            expires_at=jobs.expires_at,
-            argus_expires_at=jobs.argus_expires_at,
-            generated_at="2026-10-18T00:00:00Z",
-            is_stale=True,
-            jobs=(),
-            warnings=("Location 1040000000001: UNKNOWN; private location.",),
+        async def collect_report(**kwargs: object) -> CorporationJobsReport:
+            jobs = kwargs["jobs"]
+            assert isinstance(jobs, CorporationIndustryJobsDataset)
+            return CorporationJobsReport(
+                corporation_id=jobs.corporation_id,
+                corporation_name="Test Corp",
+                response_metadata_id=jobs.response_metadata_id,
+                received_at=jobs.received_at,
+                expires_at=jobs.expires_at,
+                argus_expires_at=jobs.argus_expires_at,
+                generated_at="2026-10-18T00:00:00Z",
+                is_stale=True,
+                jobs=(),
+                warnings=("Location 1040000000001: UNKNOWN; private location.",),
+            )
+
+        collector = AsyncMock(side_effect=collect_report)
+        monkeypatch.setattr(command, "collect_corporation_jobs_report", collector)
+        yield CommandEnvironment(
+            connection=connection,
+            settings=settings,
+            collector=collector,
+            type_reader=type_reader,
         )
-
-    collector = AsyncMock(side_effect=collect_report)
-    monkeypatch.setattr(command, "collect_corporation_jobs_report", collector)
-    yield CommandEnvironment(
-        connection=connection,
-        settings=settings,
-        collector=collector,
-        type_reader=type_reader,
-    )
-    connection.close()
 
 
 def save_snapshot(

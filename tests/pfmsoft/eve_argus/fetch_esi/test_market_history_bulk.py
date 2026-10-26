@@ -2,6 +2,7 @@
 
 import asyncio
 import sqlite3
+from contextlib import closing
 from unittest.mock import AsyncMock, Mock
 
 import pytest
@@ -208,10 +209,9 @@ def test_abort_cancels_pending_and_preserves_commits(
         assert cleaned == {3, 4, 5, 6}
         assert connection.execute("SELECT * FROM saved").fetchall() == [(0,)]
 
-    with sqlite3.connect(":memory:") as connection:
+    with closing(sqlite3.connect(":memory:")) as connection:
         connection.execute("CREATE TABLE saved (id INTEGER)")
         asyncio.run(asyncio.wait_for(scenario(connection), timeout=5))
-    connection.close()
 
 
 def test_parent_cancellation_is_not_a_failure(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -448,7 +448,6 @@ def test_real_updater_persists_pairs_and_skips_current_data(
         assert refreshed.skipped == refreshed.failed == 0
         assert esi_link.make_request.await_count == 8
 
-    with sqlite3.connect(":memory:") as connection:
+    with closing(sqlite3.connect(":memory:")) as connection:
         connection.executescript(load_table_definitions())
         asyncio.run(asyncio.wait_for(scenario(connection), timeout=5))
-    connection.close()
