@@ -6,10 +6,10 @@ from dataclasses import asdict, dataclass, fields
 from io import StringIO
 
 from jinja2 import Environment, PackageLoader, StrictUndefined
-from mdformat import text as mdformat_text  # type: ignore
 from pydantic import TypeAdapter
 from whenever import Instant
 
+from pfmsoft.eve_argus.helpers.markdown import format_markdown
 from pfmsoft.eve_argus.helpers.markdown import markdown_cell as _markdown_cell
 from pfmsoft.eve_argus.reports.corp_industry_jobs import (
     CorporationJobReportRow,
@@ -201,4 +201,4 @@ def render_corporation_jobs_markdown(report: CorporationJobsReport) -> str:
     rendered = environment.get_template(
         "report.md.jinja2", globals={"cell": _markdown_cell, "remaining": _remaining}
     ).render(context=build_markdown_context(report))
-    return mdformat_text(rendered, extensions=["tables"])
+    return format_markdown(rendered)
