@@ -1,6 +1,8 @@
 """Tests for regional and hub selection in the market-orders command."""
 
+import json
 from dataclasses import dataclass
+from pathlib import Path
 from unittest.mock import AsyncMock, Mock, call
 
 import pytest
@@ -145,7 +147,9 @@ def test_fetch_requires_selection(environment: CommandEnvironment) -> None:
     )
 
     assert result.exit_code == 2
-    assert "Provide at least one --region-id or use --hubs." in result.output
+    assert "use --from, or use --hubs." in " ".join(
+        result.output.replace("│", " ").split()
+    )
     environment.factory.assert_not_called()
     environment.updater.assert_not_awaited()
 
@@ -209,3 +213,108 @@ def test_fetch_missing_response_reports_error_when_quiet(
     assert result.exit_code == 1
     assert "No market orders for region 42 response is available" in result.output
     environment.manager.__aexit__.assert_awaited_once()
+
+
+def _selection_file(tmp_path: Path, content: object) -> Path:
+    path = tmp_path / "selection.json"
+    path.write_text(json.dumps(content))
+    return path
+
+
+def test_from_file_regions_follow_explicit_and_precede_hubs(
+    environment: CommandEnvironment,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """File regions are validated and fetched between explicit and hub regions."""
+    hub_ids = [hub.region_id for hub in MARKET_HUBS]
+    regions = Mock(return_value=dict.fromkeys([42, 43, 44, *hub_ids]))
+    monkeypatch.setattr(command.static_read, "map_regions", regions)
+    path = _selection_file(tmp_path, {"region_ids": [44, 42, 43]})
+    result = CliRunner().invoke(
+        app,
+        ["fetch", "market-orders", "--region-id", "42", "--from", str(path), "--hubs"],
+        obj={SETTINGS_KEY: environment.settings},
+    )
+
+    assert result.exit_code == 0, result.output
+    assert [
+        item.kwargs["region_id"] for item in environment.updater.await_args_list
+    ] == list(dict.fromkeys([42, 44, 43, *hub_ids]))
+    regions.assert_called_once_with(environment.resources.argus_static_db_connection)
+
+
+def test_from_file_alone(
+    environment: CommandEnvironment,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """A selection file satisfies the region requirement; type_ids are ignored."""
+    monkeypatch.setattr(
+        command.static_read, "map_regions", Mock(return_value={42: None})
+    )
+    path = _selection_file(tmp_path, {"region_ids": [42], "type_ids": [1]})
+    result = CliRunner().invoke(
+        app,
+        ["fetch", "market-orders", "--from", str(path)],
+        obj={SETTINGS_KEY: environment.settings},
+    )
+
+    assert result.exit_code == 0, result.output
+    assert [
+        item.kwargs["region_id"] for item in environment.updater.await_args_list
+    ] == [42]
+
+
+def test_from_file_unknown_regions_fail_before_fetching(
+    environment: CommandEnvironment,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """File regions missing from the static database stop the command."""
+    monkeypatch.setattr(
+        command.static_read, "map_regions", Mock(return_value={42: None})
+    )
+    path = _selection_file(tmp_path, {"region_ids": [42, 7]})
+    result = CliRunner().invoke(
+        app,
+        ["fetch", "market-orders", "--from", str(path)],
+        obj={SETTINGS_KEY: environment.settings},
+    )
+
+    assert result.exit_code == 2, result.output
+    assert "Unknown region IDs" in result.output
+    assert "[7]" in result.output
+    environment.updater.assert_not_awaited()
+
+
+@pytest.mark.parametrize("content", ["{bad", {"region_ids": ["42"]}, {}])
+def test_from_file_malformed_fails_before_resources(
+    environment: CommandEnvironment, tmp_path: Path, content: object
+) -> None:
+    """Malformed selection files are usage errors raised before opening resources."""
+    path = tmp_path / "selection.json"
+    path.write_text(content if isinstance(content, str) else json.dumps(content))
+    result = CliRunner().invoke(
+        app,
+        ["fetch", "market-orders", "--from", str(path)],
+        obj={SETTINGS_KEY: environment.settings},
+    )
+
+    assert result.exit_code == 2, result.output
+    environment.factory.assert_not_called()
+    environment.updater.assert_not_awaited()
+
+
+def test_from_missing_file_fails(
+    environment: CommandEnvironment, tmp_path: Path
+) -> None:
+    """A missing selection file is a usage error."""
+    result = CliRunner().invoke(
+        app,
+        ["fetch", "market-orders", "--from", str(tmp_path / "missing.json")],
+        obj={SETTINGS_KEY: environment.settings},
+    )
+
+    assert result.exit_code == 2, result.output
+    environment.factory.assert_not_called()

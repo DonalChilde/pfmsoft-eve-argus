@@ -4,6 +4,7 @@ import asyncio
 import logging
 from dataclasses import dataclass
 from enum import StrEnum
+from pathlib import Path
 from typing import Annotated
 
 import typer
@@ -24,6 +25,10 @@ from pfmsoft.eve_argus.cli.fetch._helpers import (
 from pfmsoft.eve_argus.cli.fetch._market_history_selection import (
     active_type_ids,
     select_market_type_ids,
+)
+from pfmsoft.eve_argus.cli.fetch._selection_file import (
+    load_selection_file,
+    validate_market_type_ids,
 )
 from pfmsoft.eve_argus.cli.helpers import get_eve_argus_settings_from_context
 from pfmsoft.eve_argus.eve_argus import EveArgusResources
@@ -54,6 +59,7 @@ class SelectionMode(StrEnum):
     """Mutually exclusive sources of candidate types."""
 
     EXPLICIT = "explicit"
+    FILE = "file"
     ACTIVE = "active"
     MARKET = "market"
     INDUSTRY = "industry"
@@ -94,6 +100,17 @@ def fetch_market_history(
     type_id: Annotated[
         list[int] | None,
         typer.Option("--type-id", help="Explicit item type ID; repeat to combine."),
+    ] = None,
+    from_file: Annotated[
+        Path | None,
+        typer.Option(
+            "--from",
+            help=(
+                "JSON file with 'region_ids' and 'type_ids' lists; regions follow "
+                "--region-id, types are the selection."
+            ),
+            dir_okay=False,
+        ),
     ] = None,
     hubs: Annotated[
         bool, typer.Option("--hubs", help="Append all defined market hub regions.")
@@ -164,17 +181,30 @@ def fetch_market_history(
     """Fetch history using exactly one type-selection mode, region by region.
 
     Includes/excludes apply to active, market, industry, and scrapmetal selections,
-    not explicit type IDs. Each region has an independent failure budget.
+    not explicit or --from type IDs. Regions are processed as --region-id, then
+    --from, then hubs. --from types must be published and market-listed. Each
+    region has an independent failure budget.
     """
     region_ids = list(region_id or ())
+    file_type_ids: tuple[int, ...] = ()
+    if from_file is not None:
+        try:
+            selection_file = load_selection_file(from_file, require_type_ids=True)
+        except ValueError as error:
+            raise typer.BadParameter(str(error), param_hint="--from") from error
+        region_ids.extend(selection_file.region_ids)
+        file_type_ids = selection_file.type_ids or ()
     if hubs:
         region_ids.extend(hub.region_id for hub in MARKET_HUBS)
     if not region_ids:
-        raise typer.BadParameter("Provide at least one --region-id or use --hubs.")
+        raise typer.BadParameter(
+            "Provide at least one --region-id, use --from, or use --hubs."
+        )
     selections = [
         mode
         for mode, enabled in (
             (SelectionMode.EXPLICIT, bool(type_id)),
+            (SelectionMode.FILE, from_file is not None),
             (SelectionMode.ACTIVE, active),
             (SelectionMode.MARKET, market_types),
             (SelectionMode.INDUSTRY, industry_types),
@@ -184,17 +214,19 @@ def fetch_market_history(
     ]
     if len(selections) != 1:
         raise typer.BadParameter(
-            "Choose exactly one of --type-id, --active, --market-types, "
+            "Choose exactly one of --type-id, --from, --active, --market-types, "
             "--industry-types, or --scrapmetal."
         )
     selection = selections[0]
-    if selection is SelectionMode.EXPLICIT and (include or exclude):
+    if selection in (SelectionMode.EXPLICIT, SelectionMode.FILE) and (
+        include or exclude
+    ):
         raise typer.BadParameter(
-            "--include and --exclude cannot be used with --type-id."
+            "--include and --exclude cannot be used with --type-id or --from."
         )
     options = HistoryFetchOptions(
         region_ids=list(dict.fromkeys(region_ids)),
-        type_ids=set(type_id or ()),
+        type_ids=set(type_id or file_type_ids),
         selection=selection,
         include=set(include or ()),
         exclude=set(exclude or ()),
@@ -228,6 +260,11 @@ async def _fetch_market_history(
         if unknown_regions and not options.single_pair:
             raise typer.BadParameter(f"Unknown region IDs: {sorted(unknown_regions)}")
         types = static_read.types(connection, only_published=False)
+        if options.selection is SelectionMode.FILE:
+            try:
+                validate_market_type_ids(options.type_ids, types=types)
+            except ValueError as error:
+                raise typer.BadParameter(str(error), param_hint="--from") from error
         selected_ids = options.type_ids
         excluded_ids: set[int] = set()
         if (

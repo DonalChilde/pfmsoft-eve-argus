@@ -78,18 +78,20 @@ uv run eve-argus fetch market-history --region-id 10000002 --type-id 34
 ```
 
 Fetches history into the configured market-history database. Supply at least one
-`--region-id`, `--hubs`, or both, and exactly one type-selection mode:
+region with `--region-id`, `--from`, `--hubs`, or a combination, and exactly one
+type-selection mode:
 
 | Mode                 | Candidate types                                                                                    | Market-group filters |
 | -------------------- | -------------------------------------------------------------------------------------------------- | -------------------- |
 | Repeated `--type-id` | Explicit IDs, including unpublished, nonmarket, and unknown types                                  | Not allowed          |
+| `--from <file.json>` | The file's `type_ids`; each must be a published, market-listed static type                         | Not allowed          |
 | `--active`           | Published, market-listed active types discovered independently for each region                     | Allowed              |
 | `--market-types`     | Published types listed in static market groups                                                     | Allowed              |
 | `--industry-types`   | Published, market-listed blueprint IDs plus materials and products across all blueprint activities | Allowed              |
 | `--scrapmetal`       | Published types listed in static market groups and appearing as fixed type-material parents or components | Allowed          |
 
-Explicit regions run in command-line order, followed by hub regions for Jita,
-Amarr, Dodixie, Hek, and Rens, with duplicates removed. Types are deduplicated
+Explicit regions run in command-line order, followed by `--from` file regions,
+then hub regions for Jita, Amarr, Dodixie, Hek, and Rens, with duplicates removed. Types are deduplicated
 and scheduled in ascending numeric order within each region; completion order
 can differ. Explicit types apply to every selected region.
 
@@ -114,7 +116,28 @@ uv run eve-argus fetch market-history \
 # Reprocessing inputs and recovered materials from static type materials
 uv run eve-argus fetch market-history \
   --hubs --scrapmetal --exclude 1031 --exclude 1032 --exclude 1034
+
+# Regions and types from a selection file
+uv run eve-argus fetch market-history --from ./selection.json
 ```
+
+### Selection files
+
+`--from` (for both `fetch market-history` and `fetch market-orders`) reads a JSON
+file whose top level is an object:
+
+```json
+{"region_ids": [10000002, 10000043], "type_ids": [34, 35, 36]}
+```
+
+`region_ids` is a non-empty list of integers and is always required.
+`type_ids` is required (non-empty) by `market-history` and ignored by
+`market-orders`, so one file can serve both commands; other keys are ignored.
+Booleans and numeric strings are rejected, and duplicates are removed in file
+order. Every region must exist in the static map-regions dataset, and every
+history type must be published and listed in a market group. Malformed files and
+invalid IDs are usage errors (exit status 2) reported before any requests; ID
+errors list unknown, unpublished, and nonmarket IDs separately.
 
 Industry selection requires a populated static blueprints dataset. It collects
 each blueprint's own type ID, materials, and products from copying, invention,
@@ -139,7 +162,7 @@ requests. The original explicit single-pair invocation still permits regions
 missing from static data; failures label them `Unknown region`.
 
 `--include` and `--exclude` may be repeated with `--active`, `--market-types`,
-`--industry-types`, and `--scrapmetal`, but not `--type-id`. Includes form a union of market-group
+`--industry-types`, and `--scrapmetal`, but not `--type-id` or `--from`. Includes form a union of market-group
 subtrees, including each group's directly assigned types. Excludes apply afterward,
 regardless of option order, and always win. Filters only remove candidates; they
 never introduce inactive or otherwise unselected types. Unknown groups, missing
@@ -255,11 +278,13 @@ for other workers.
 uv run eve-argus fetch market-orders --region-id 10000002
 uv run eve-argus fetch market-orders --hubs
 uv run eve-argus fetch market-orders --region-id 10000002 --region-id 10000043 --hubs
+uv run eve-argus fetch market-orders --from ./selection.json
 ```
 
-Provide at least one `--region-id` or use `--hubs` to select all configured hub
-regions. Explicit regions are processed first, followed by hub regions, with
-duplicates removed in first-seen order. Each selected region's full order book
+Provide at least one `--region-id`, a `--from` [selection file](#selection-files),
+or `--hubs` to select all configured hub regions. Explicit regions are processed
+first, then file regions, then hub regions, with duplicates removed in first-seen
+order. File regions must exist in the static map-regions dataset. Each selected region's full order book
 is fetched, not just the orders within the hub system. Current cached responses
 are reused; a failed update stops the command with a nonzero exit status.
 Each region reports its stored order count (buy and sell orders combined) for
