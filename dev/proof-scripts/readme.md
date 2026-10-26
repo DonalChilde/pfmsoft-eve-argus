@@ -4,6 +4,99 @@ This directory contains scripts that prove the operation of various components o
 
 The python scripts are expected to be run with `uv run` from the project root directory, so that the dev env settings are used.
 
+## Market-order summary performance comparison
+
+Compare three ways of calculating both buy and sell summaries:
+
+1. Load a whole stored snapshot and call `order_summary.calculate_dataset_summaries`.
+2. Discover types through `read.market_order_types` and call
+   `read.calculate_market_order_summary` **once per type**, returning a
+   `(buy_summary, sell_summary)` tuple from a single order query.
+3. Call `read.market_orders_filtered` once for the requested scope, then pass the
+   returned tuple to `order_summary.calculate_order_summaries`.
+
+```bash
+# Start with a bounded smoke run against the latest Forge snapshot.
+uv run dev/proof-scripts/market_order_summary_performance.py \
+  --region-id 10000002 --limit-types 3 --repeats 1
+
+# Complete comparison: all types, three runs for each of the three methods.
+uv run dev/proof-scripts/market_order_summary_performance.py \
+  --region-id 10000002 > dev/tmp/order-summary-timing.json
+```
+
+The default database is `dev/app-dir/argus-dynamic-db.sqlite`, opened read-only.
+Use `--database PATH` to select another database, and `--response-metadata-id ID`
+instead of `--region-id` to pin a snapshot. Without either selector, the newest
+stored snapshot in any region is selected. No settings, ESI clients, schema
+initialization, saved summaries, or database/index writes are involved. `--help`
+does not open the database.
+
+The dynamic schema now creates `market_orders_response_type_order` on
+`(response_metadata_id, type_id, order_id)`. Normal application database
+initialization installs it idempotently on existing databases as well as new ones.
+The read-only proof does **not** initialize the schema: make sure the index is
+installed before comparing indexed performance. The report lists existing indexes
+and includes a query plan so this is verifiable.
+
+`--system-id` or `--location-id` restricts the workload to types with orders in
+that scope. All methods use the same `--filter-factor` (default 100), types,
+snapshot, and buy/sell sides. Exact summary equality is checked after every round,
+outside the timers; missing sides and zero-volume books must match too. Invalid
+inputs, empty workloads, missing snapshots, or differing results fail nonzero.
+
+The tuple calculator requires the source `MarketOrdersResponse` as its `response`
+keyword argument, plus the same scope passed to the filtered reader. This preserves
+snapshot timestamps even for an empty tuple, and rejects orders from another
+snapshot, region, or scope. It includes only types present in the filtered tuple;
+the original whole-dataset calculator still preserves all its input type keys,
+even when a scope leaves some with no summaries. The proof compares the same
+scoped type keys in all three paths.
+
+The JSON report on stdout contains all run timings, median stages, the on-demand
+total-time ratio (greater than 1 means slower), extra elapsed seconds, average
+seconds per on-demand call, workload counts, existing index names, and a
+representative on-demand query plan. Progress goes to stderr.
+
+- **Dataset setup:** load and convert the entire regional snapshot, then retain
+  the selected types. **Dataset calculation:** calculate both sides in memory.
+- **On-demand setup:** discover, sort, and optionally limit scoped type IDs.
+  **On-demand calculation:** query, convert, and summarize both sides per type.
+- **Filtered dataset setup:** read source metadata and all orders in the scope
+  once, retaining selected types. **Filtered dataset calculation:** group the flat
+  tuple by type and calculate both sides, without constructing price-sorted
+  `BuySellOrders` containers first.
+- **Total:** setup plus calculation. Connection opening, snapshot selection,
+  initial workload validation/discovery, equality checks, and JSON output are
+  excluded. Result dictionaries are retained in all paths. The dataset path
+  always loads the entire regional snapshot, even for a system/location scope.
+  On-demand progress is printed every 250 completed types; its small output
+  overhead is included in calculation time.
+
+`--limit-types N` calculates only the first N sorted scoped types in **both**
+methods, while the dataset path still pays the full snapshot load cost and the
+filtered-dataset path still loads every order in the scope.
+`sampled: true` explicitly identifies an incomplete comparison. This is useful
+for estimating runtime, but its ratio is **not** the full-workload penalty or a
+guaranteed break-even point; type/order distributions differ. Omit the limit for
+the actual all-types comparison.
+
+**Expect long runs on an unindexed database.** Each per-side query may scan the
+entire `market_orders` table, including other stored snapshots; a regional
+comparison can require tens of thousands of scans. The original implementation
+made two such scans per type; the paired implementation now makes one.
+The proof does not silently
+add indexes, copy/filter the database, or optimize away production queries.
+It uses one read transaction for a consistent snapshot; run when ingestion is
+idle, since this can delay writers depending on SQLite's journal mode.
+
+Execution order alternates between repetitions to reduce order bias. There is
+no explicit warmup or cache clearing: preliminary discovery/counts warm some
+pages, and SQLite/OS caches are shared across measurements. These are repeated
+elapsed-time measurements, not cold-disk or memory benchmarks. Per-function INFO
+timing logging is not configured, avoiding thousands of log writes. Run different
+benchmark commands sequentially on the same otherwise-idle machine.
+
 ## Market history performance comparison
 
 For a **fetch-only** measurement of 500 direct

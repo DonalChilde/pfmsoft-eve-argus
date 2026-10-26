@@ -1009,6 +1009,30 @@ def test_market_order_count_scopes_counts_to_response(
         read.market_order_count(connection, response_metadata_id=999)
 
 
+def test_market_order_types_returns_distinct_types_for_response_and_scope(
+    connection: sqlite3.Connection,
+) -> None:
+    """Type IDs are deduplicated and optionally restricted to one scope."""
+    _insert_filterable_orders(connection)
+
+    assert read.market_order_types(connection, 1) == {34, 35}
+    assert read.market_order_types(connection, 1, system_id=30000143) == {34}
+    assert read.market_order_types(connection, 1, location_id=60003761) == {34}
+    assert read.market_order_types(connection, 2) == {34}
+    assert read.market_order_types(connection, 1, location_id=999) == set()
+    assert read.market_order_types(connection, 999) == set()
+
+
+def test_market_order_types_rejects_multiple_scopes(
+    connection: sqlite3.Connection,
+) -> None:
+    """A type query accepts at most one market-order scope."""
+    with pytest.raises(
+        ValueError, match="Cannot specify both system_id and location_id"
+    ):
+        read.market_order_types(connection, 1, system_id=30000142, location_id=60003760)
+
+
 def _insert_filterable_orders(connection: sqlite3.Connection) -> None:
     """Insert two order responses with mixed types, sides, and locations."""
     connection.executemany(
@@ -1107,7 +1131,7 @@ def test_calculate_market_order_summary_matches_dataset_summary(
     """A filtered query summary equals the matching dataset summary."""
     _insert_filterable_orders(connection)
 
-    summary = read.calculate_market_order_summary(
+    summary, sell = read.calculate_market_order_summary(
         connection,
         1,
         type_id=34,
@@ -1132,6 +1156,8 @@ def test_calculate_market_order_summary_matches_dataset_summary(
         30000142,
     )
     assert (summary.total_orders, summary.five_price) == (2, Decimal("100.00"))
+    assert sell is not None
+    assert sell.is_buy_summary is False
 
 
 def test_calculate_market_order_summary_handles_sell_side_and_no_orders(
@@ -1140,21 +1166,80 @@ def test_calculate_market_order_summary_handles_sell_side_and_no_orders(
     """Sell summaries are supported and missing books return None."""
     _insert_filterable_orders(connection)
 
-    sell = read.calculate_market_order_summary(
-        connection, 1, type_id=34, location_id=60003760, is_buy_summary=False
+    buy, sell = read.calculate_market_order_summary(
+        connection, 1, type_id=34, location_id=60003760
     )
+    assert buy is not None
     assert sell is not None
     assert (sell.is_buy_summary, sell.location_id, sell.five_price) == (
         False,
         60003760,
         Decimal("110.00"),
     )
-    assert (
-        read.calculate_market_order_summary(
-            connection, 1, type_id=35, is_buy_summary=False
-        )
-        is None
+    assert read.calculate_market_order_summary(connection, 1, type_id=35)[1] is None
+    assert read.calculate_market_order_summary(connection, 1, type_id=999) == (
+        None,
+        None,
     )
+
+
+def test_paired_summary_reads_orders_once(connection: sqlite3.Connection) -> None:
+    """Both sides are calculated from a single indexed query."""
+    _insert_filterable_orders(connection)
+    queries: list[str] = []
+    connection.set_trace_callback(queries.append)
+    try:
+        read.calculate_market_order_summary(connection, 1, type_id=34)
+    finally:
+        connection.set_trace_callback(None)
+    assert len(queries) == 1
+    plan = connection.execute(
+        """EXPLAIN QUERY PLAN SELECT * FROM market_orders
+           WHERE response_metadata_id = 1 AND type_id = 34
+           ORDER BY type_id, order_id"""
+    ).fetchall()
+    assert any(
+        "USING INDEX market_orders_response_type_order" in row[3] for row in plan
+    )
+    assert not any(
+        "SCAN market_orders" in row[3] or "TEMP B-TREE" in row[3] for row in plan
+    )
+
+
+@pytest.mark.parametrize(
+    "scope", [{}, {"system_id": 30000142}, {"location_id": 60003760}]
+)
+def test_filtered_tuple_calculation_matches_dataset(
+    connection: sqlite3.Connection, scope: dict[str, int]
+) -> None:
+    """Filtered reads can feed the pure dataset calculator without per-type queries."""
+    _insert_filterable_orders(connection)
+    response = read.market_orders_responses(connection, region_id=10000002)[1]
+    orders = read.market_orders_filtered(connection, 1, **scope)
+    result = order_summary.calculate_order_summaries(orders, response=response, **scope)
+    expected = order_summary.calculate_dataset_summaries(
+        read.market_orders(connection, 1), **scope
+    )
+    assert result == expected
+
+
+def test_market_order_index_initialization_is_idempotent(
+    connection: sqlite3.Connection,
+) -> None:
+    """Schema initialization upgrades existing databases without changing records."""
+    _insert_filterable_orders(connection)
+    connection.execute("DROP INDEX market_orders_response_type_order")
+    connection.executescript(util.load_table_definitions())
+    connection.executescript(util.load_table_definitions())
+    assert read.market_order_count(connection, response_metadata_id=1) == 5
+    columns = connection.execute(
+        "PRAGMA index_info(market_orders_response_type_order)"
+    ).fetchall()
+    assert [row[2] for row in columns] == [
+        "response_metadata_id",
+        "type_id",
+        "order_id",
+    ]
 
 
 def test_calculate_market_order_summary_rejects_invalid_options(

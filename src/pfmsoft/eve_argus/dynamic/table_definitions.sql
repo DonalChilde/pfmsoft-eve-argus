@@ -44,6 +44,9 @@ CREATE TABLE IF NOT EXISTS market_orders (
     FOREIGN KEY(response_metadata_id) REFERENCES response_metadata(id)
 ) STRICT;
 
+CREATE INDEX IF NOT EXISTS market_orders_response_type_order
+    ON market_orders(response_metadata_id, type_id, order_id);
+
 CREATE TABLE IF NOT EXISTS order_summary_response(
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     response_metadata_id INTEGER NOT NULL,
