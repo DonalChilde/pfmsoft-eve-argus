@@ -17,7 +17,8 @@ from whenever import Instant
 
 from pfmsoft.eve_argus.cli import app
 from pfmsoft.eve_argus.cli.reports import hub_prices as command
-from pfmsoft.eve_argus.dynamic import models, read, util, write
+from pfmsoft.eve_argus.dynamic import models, read, util
+from pfmsoft.eve_argus.dynamic.order_summary import FILTER_FACTOR_DEFAULT
 from pfmsoft.eve_argus.helpers.file_safe_string import file_safe_string
 from pfmsoft.eve_argus.models.market_hubs import MARKET_HUBS, MarketHub
 from pfmsoft.eve_argus.reports.market_hub_prices import collect_market_hub_prices
@@ -84,17 +85,14 @@ def dataset(*, hub: MarketHub = MARKET_HUBS[0]) -> models.OrderSummaryDataset:
     )
 
 
-def response(data: models.OrderSummaryDataset) -> models.OrderSummaryResponse:
-    """Keep summary and source IDs deliberately different."""
-    return models.OrderSummaryResponse(
-        order_summary_response_id=91,
+def response(data: models.OrderSummaryDataset) -> models.MarketOrdersResponse:
+    """Identify the raw regional snapshot used for an on-demand calculation."""
+    return models.MarketOrdersResponse(
         response_metadata_id=data.response_metadata_id,
         received_at=data.received_at,
         expires_at=data.expires_at,
         argus_expires_at=data.argus_expires_at,
         region_id=data.region_id,
-        system_id=data.system_id,
-        location_id=data.location_id,
     )
 
 
@@ -151,7 +149,6 @@ def test_collection_and_formats(
     )
     assert [row.type_id for row in report.records] == [34, 35, 36]
     assert report.is_stale is True
-    assert report.order_summary_response_id == 91
     assert report.response_metadata_id == 17
     assert report.scope == "system"
     parsed = json.loads(render_market_hub_prices_json(report))
@@ -161,7 +158,10 @@ def test_collection_and_formats(
         == [row["type_id"] for row in parsed["records"]]
         == [34, 35, 36]
     )
-    assert parsed["schema_version"] == 1
+    assert parsed["schema_version"] == 2
+    assert parsed["filter_factor"] == str(FILTER_FACTOR_DEFAULT)
+    assert "order_summary_response_id" not in parsed
+    assert "order_summary_response_id" not in rows[0]
     assert rows[0]["type_name"] == NAME
     assert parsed["records"][0]["market_path_ids"] == [10]
     assert parsed["records"][0]["market_path_names"] == ["Minerals"]
@@ -338,11 +338,9 @@ def save(
     *,
     hub: MarketHub = MARKET_HUBS[0],
     received_at: str = RECEIVED,
-    system: bool = True,
-    station: bool = False,
     empty: bool = False,
 ) -> int:
-    """Save summary scopes with deliberately distinct source and summary IDs."""
+    """Save raw regional orders only, including other systems and station scopes."""
     with closing(sqlite3.connect(env.dynamic_path)) as connection:
         source_id = connection.execute(
             "SELECT id FROM response_metadata WHERE received_at = ?",
@@ -356,25 +354,58 @@ def save(
                 ).lastrowid,
             )
         metadata_id = source_id[0]
+        assert isinstance(metadata_id, int)
         connection.execute(
             """INSERT OR IGNORE INTO get_markets_region_id_orders_response
             (response_metadata_id, region_id, received_at) VALUES (?, ?, ?)""",
             (metadata_id, hub.region_id, received_at),
         )
-        data = replace(
-            dataset(hub=hub),
-            response_metadata_id=metadata_id,
-            received_at=received_at,
-            expires_at="2026-10-18T00:00:00Z",
-        )
-        if empty or not system or station:
-            data = replace(data, records={})
-        data = replace(
-            data,
-            system_id=hub.system_id if system and not station else None,
-            location_id=hub.station_id if station else None,
-        )
-        return write.order_summaries(connection, data)
+        if not empty:
+            # (type, buy side, cents, remaining items, system, station)
+            rows = [
+                (34, 1, 10000, 100, hub.system_id, hub.station_id),
+                (34, 1, 9000, 20, hub.system_id, hub.station_id + 1),
+                (34, 1, 1, 5, hub.system_id, hub.station_id),
+                (34, 0, 11000, 100, hub.system_id, hub.station_id),
+                (34, 0, 2000000, 5, hub.system_id, hub.station_id),
+                (35, 1, 10000, 10, hub.system_id, hub.station_id),
+                (36, 0, 11000, 10, hub.system_id, hub.station_id),
+                (999, 1, 10000, 10, hub.system_id + 1, hub.station_id + 2),
+            ]
+            connection.executemany(
+                """
+                INSERT INTO market_orders (
+                    response_metadata_id, region_id, duration, is_buy_order,
+                    issued, location_id, min_volume, order_id, price, range_,
+                    system_id, type_id, volume_remain, volume_total
+                ) VALUES (?, ?, 90, ?, ?, ?, 1, ?, ?, 'station', ?, ?, ?, ?)
+                """,
+                [
+                    (
+                        metadata_id,
+                        hub.region_id,
+                        buy,
+                        received_at,
+                        station_id,
+                        order_id,
+                        cents,
+                        system_id,
+                        type_id,
+                        items,
+                        items,
+                    )
+                    for order_id, (
+                        type_id,
+                        buy,
+                        cents,
+                        items,
+                        system_id,
+                        station_id,
+                    ) in enumerate(rows, start=1)
+                ],
+            )
+        connection.commit()
+        return metadata_id
 
 
 def invoke(env: Environment, destination: Path, *args: str) -> Result:
@@ -396,11 +427,9 @@ def test_cli_all_hubs_scope_selection_and_overwrite(
     environment: Environment,
     tmp_path: Path,
 ) -> None:
-    """Select matching scopes before newest, preserving per-hub source timestamps."""
+    """Calculate system scopes from regional orders, preserving source timestamps."""
     save_all(environment)
     save(environment, received_at="2026-10-16T00:00:00Z", empty=True)
-    save(environment, received_at="2026-10-19T00:00:00Z", system=False)
-    save(environment, received_at="2026-10-20T00:00:00Z", station=True)
     destination = tmp_path / "reports"
     result = invoke(environment, destination, "--quiet")
     assert result.exit_code == 0, result.output
@@ -415,6 +444,13 @@ def test_cli_all_hubs_scope_selection_and_overwrite(
         assert parsed["system_id"] == hub.system_id
         assert parsed["region_name"] == hub.region_name
         assert len(parsed["records"]) == 3
+        mineral = parsed["records"][0]
+        assert mineral["buy_summary"]["five_price"] == "100.00"
+        assert mineral["buy_summary"]["average"] == "98.33"
+        assert mineral["buy_summary"]["total_orders"] == 2
+        assert mineral["buy_summary"]["filtered_orders"] == 1
+        assert mineral["sell_summary"]["five_price"] == "110.00"
+        assert mineral["sell_summary"]["filtered_orders"] == 1
         assert (destination / f"{stem}.csv").read_bytes()[:3] != b"\xef\xbb\xbf"
         generations.add(parsed["generated_at"])
     assert len(generations) == 1
@@ -435,24 +471,94 @@ def test_cli_missing_hubs_no_output(environment: Environment, tmp_path: Path) ->
     result = invoke(environment, destination, "--quiet")
     assert result.exit_code == 1
     assert all(hub.system_name in result.output for hub in MARKET_HUBS[1:])
+    assert "fetch market-orders --hubs" in result.output
+    assert "fetch hub-orders" not in result.output
     assert not destination.exists()
 
 
-def test_cli_latest_empty_wins_and_scope_tie_breaker(
+def test_cli_latest_empty_wins(
     environment: Environment,
     tmp_path: Path,
 ) -> None:
-    """A newer empty system scope supersedes populated data despite later station IDs."""
+    """A newer empty regional snapshot supersedes populated orders."""
     save_all(environment)
     saved_id = save(environment, received_at=RECEIVED, empty=True)
-    save(environment, received_at=RECEIVED, station=True)
     destination = tmp_path / "reports"
     result = invoke(environment, destination)
     assert result.exit_code == 0, result.output
     path = destination / f"price-summary-Jita-{file_safe_string(RECEIVED)}.json"
     parsed = json.loads(path.read_text())
     assert parsed["records"] == []
-    assert parsed["order_summary_response_id"] == saved_id
+    assert parsed["response_metadata_id"] == saved_id
+
+
+def test_cli_loads_each_region_once_without_summary_queries(
+    environment: Environment,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Reuse one whole-region load across hubs instead of issuing per-type queries."""
+    save_all(environment)
+    extra_hub = replace(
+        MARKET_HUBS[0],
+        system_name="Another hub in The Forge",
+        system_id=MARKET_HUBS[0].system_id + 1,
+    )
+    with closing(sqlite3.connect(environment.static_path)) as connection:
+        connection.execute(
+            """INSERT INTO types
+               (type_id, group_id, name, portion_size, published)
+               VALUES (999, 1, 'Other system item', 1, 1)"""
+        )
+        connection.commit()
+    monkeypatch.setattr(command, "MARKET_HUBS", [*MARKET_HUBS, extra_hub])
+    load_orders = Mock(wraps=read.market_orders)
+    list_responses = Mock(wraps=read.market_orders_responses)
+    monkeypatch.setattr(read, "market_orders", load_orders)
+    monkeypatch.setattr(read, "market_orders_responses", list_responses)
+    for name in (
+        "order_summary_responses",
+        "order_summaries",
+        "calculate_market_order_summary",
+        "market_orders_filtered",
+    ):
+        monkeypatch.setattr(
+            read, name, Mock(side_effect=AssertionError(f"Unexpected {name} query"))
+        )
+
+    result = invoke(environment, tmp_path / "reports")
+
+    assert result.exit_code == 0, result.output
+    assert load_orders.call_count == len({hub.region_id for hub in MARKET_HUBS})
+    assert list_responses.call_count == load_orders.call_count
+    assert len(list((tmp_path / "reports").iterdir())) == 12
+    extra_path = next((tmp_path / "reports").glob("price-summary-Another*.json"))
+    extra_report = json.loads(extra_path.read_text())
+    assert extra_report["system_id"] == extra_hub.system_id
+    assert [row["type_id"] for row in extra_report["records"]] == [999]
+
+
+def test_cli_no_orders_in_hub_exports_empty_current_snapshot(
+    environment: Environment, tmp_path: Path
+) -> None:
+    """Do not fall back when the newest regional book has orders outside the hub only."""
+    save_all(environment)
+    source_id = save(environment, received_at=RECEIVED)
+    with closing(sqlite3.connect(environment.dynamic_path)) as connection:
+        connection.execute(
+            "UPDATE market_orders SET system_id = ? WHERE response_metadata_id = ?",
+            (MARKET_HUBS[0].system_id + 1, source_id),
+        )
+        connection.commit()
+
+    destination = tmp_path / "reports"
+    result = invoke(environment, destination)
+
+    assert result.exit_code == 0, result.output
+    path = destination / f"price-summary-Jita-{file_safe_string(RECEIVED)}.json"
+    parsed = json.loads(path.read_text())
+    assert parsed["response_metadata_id"] == source_id
+    assert parsed["records"] == []
 
 
 @pytest.mark.parametrize(
@@ -686,19 +792,12 @@ def test_last_hub_collection_failure_writes_nothing(
     hub = MARKET_HUBS[-1]
     saved_id = save(environment, hub=hub, received_at=RECEIVED)
     with closing(sqlite3.connect(environment.dynamic_path)) as connection:
-        data = read.order_summaries(connection, saved_id)
-        write.order_summaries(
-            connection,
-            replace(
-                data,
-                records={
-                    999: models.BuySellSummary(
-                        buy_summary=summary(type_id=999, hub=hub),
-                        sell_summary=None,
-                    )
-                },
-            ),
+        connection.execute(
+            """UPDATE market_orders SET type_id = 999
+               WHERE response_metadata_id = ? AND type_id = 35""",
+            (saved_id,),
         )
+        connection.commit()
     destination = tmp_path / "reports"
     result = invoke(environment, destination)
     assert result.exit_code == 1, result.output

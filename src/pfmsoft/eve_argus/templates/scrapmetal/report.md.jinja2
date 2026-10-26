@@ -1,0 +1,70 @@
+{% set options = report.options %}
+# Scrapmetal Reprocessing Deals: {{ cell(report.system_name) }}
+
+Buy items from sell orders in {{ cell(report.system_name) }}, reprocess, and sell the
+materials in {{ cell(report.system_name) }}.
+
+Generated at (UTC): `{{ report.generated_at }}`
+
+Order snapshot received at (UTC): `{{ report.received_at }}` ({{ snapshot_age }} before generation)
+
+{% if report.is_stale is none %}
+Freshness: unavailable (no source expiration).
+{% elif report.is_stale %}
+**STALE:** The stored order snapshot has expired. Refresh orders with `eve-argus fetch market-orders --hubs` before acting.
+{% else %}
+Freshness: current at report generation time.
+{% endif %}
+
+{% if report.history_newest_date is none %}
+History used: none available (context flags omitted).
+{% else %}
+History used: {{ report.history_oldest_date }} to {{ report.history_newest_date }} (context only; may lag orders).
+{% endif %}
+
+Assumed yield: {{ number(options.yield_percent) }}%
+
+Thresholds: min profit {{ isk(options.min_profit) }} ISK, min margin {{ number(options.min_margin) }}%, max output slippage {{ number(options.max_slippage) }}%
+
+Input prices walk the hub sell orders. Order min_volume, hauling, and skills are not modeled.
+
+{% for table in tables %}
+## {{ table.title }} (by margin)
+
+{% if table.is_listing %}
+Materials are listed at the hub 5% sell price, assumed to fill in full. Rates: reprocessing tax {{ number(options.reprocessing_tax) }}%, sales tax {{ number(options.sales_tax) }}%, listing cost (broker fee) {{ number(options.broker_fee) }}%.
+{% else %}
+Materials are sold immediately by walking hub buy orders. Rates: reprocessing tax {{ number(options.reprocessing_tax) }}%, sales tax {{ number(options.sales_tax) }}%.
+{% endif %}
+
+Rows: {{ table.profitable }} profitable, {{ table.thin }} thin (CSV/JSON only), {{ table.incomplete }} incomplete (CSV/JSON only).
+
+| Rank | Item | Market path | Buy units | Price range | Total cost | Gross proceeds | Reprocessing tax | Sales tax |{% if table.is_listing %} Listing cost |{% endif %} Net proceeds | Profit | Margin | Limited by | Flags |
+| ---: | ---- | ----------- | --------: | ----------: | ---------: | -------------: | ---------------: | --------: |{% if table.is_listing %} -----------: |{% endif %} -----------: | -----: | -----: | ---------- | ----- |
+{% for row in table.rows %}
+| {{ row.rank }} | {{ cell(row.type_name) }} | {{ cell(row.market_path_names | join(" > ")) }} | {{ "{:,}".format(row.units) }} | {{ isk(row.best_price) }} - {{ isk(row.worst_price) }} | {{ isk(row.total_cost) }} | {{ isk(row.gross_proceeds) }} | {{ isk(row.reprocessing_tax) }} | {{ isk(row.sales_tax) }} |{% if table.is_listing %} {{ isk(row.listing_cost) }} |{% endif %} {{ isk(row.net_proceeds) }} | {{ isk(row.profit) }} | {{ "%.1f" | format(row.margin_percent) }}% | {{ cell(row.limit_reason) }} | {{ cell(row.flags | join(", ")) }} |
+{% else %}
+| | No opportunities meet the thresholds | | | | | | | |{% if table.is_listing %} |{% endif %} | | | | |
+{% endfor %}
+{% if table.ranked_total > table.rows | length %}
+
+Showing {{ table.rows | length }} of {{ table.ranked_total }} ranked rows.
+{% endif %}
+
+{% endfor %}
+## `Limited by` definitions
+
+Items are bought one reprocessing portion at a time, cheapest sell order first.
+`Limited by` names the condition that stopped the next portion, so `Buy units` is the
+largest quantity that remained worthwhile.
+
+| Value | Meaning | What to do |
+| ----- | ------- | ---------- |
+| input supply exhausted | Every hub sell order for the item was bought; fewer than one more portion remains on the market. | The whole listed supply is profitable. Watch for restocks. |
+| marginal portion not profitable | The next portion would cost more than its materials return after fees, or its margin would fall below the minimum margin ({{ number(options.min_margin) }}%). Usually the next input sell order is too expensive or, in the immediate table, material buy orders have been walked down to lower prices. | Stop at `Buy units`; buying more loses money or falls below the threshold. |
+| `<material>` buy depth exhausted | Immediate table only. Selling the next portion's materials would need more of that material than the hub buy orders hold. | The market cannot absorb more of this material now. Sell the rest later or list it instead. |
+| capped at {{ max_portions }} portions | A safety limit on the purchase walk was reached before any other condition. | Deal size is understated; check the market directly. |
+
+The sell-order table prices materials at a fixed 5% sell price with no depth limit, so
+it is only stopped by input supply or the input price. Use the `exceeds_daily_volume`
+flag to judge whether the listings would actually sell.

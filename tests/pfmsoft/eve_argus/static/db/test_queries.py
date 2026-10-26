@@ -2,6 +2,10 @@
 
 import json
 import sqlite3
+from collections.abc import Iterator
+from contextlib import closing
+
+import pytest
 
 from pfmsoft.eve_argus.esd import models as ESD
 from pfmsoft.eve_argus.models.types import LanguageEnum
@@ -66,22 +70,23 @@ def _write_market_group_test_data(connection: sqlite3.Connection) -> None:
     write.market_groups(connection, dataset=market_groups, language=LanguageEnum.DE)
 
 
-def _make_connection() -> sqlite3.Connection:
-    connection = sqlite3.connect(":memory:")
-    connection.executescript(util.load_table_definitions())
-    return connection
+@pytest.fixture
+def connection() -> Iterator[sqlite3.Connection]:
+    """Provide an in-memory database with the production schema, closed afterward."""
+    with closing(sqlite3.connect(":memory:")) as database:
+        database.executescript(util.load_table_definitions())
+        yield database
 
 
-def test_get_blueprints_returns_empty_dataset() -> None:
+def test_get_blueprints_returns_empty_dataset(connection: sqlite3.Connection) -> None:
     """An empty database returns an empty blueprint dataset."""
-    connection = _make_connection()
-
     assert read.blueprints(connection) == {}
 
 
-def test_get_blueprints_preserves_missing_and_empty_activities() -> None:
+def test_get_blueprints_preserves_missing_and_empty_activities(
+    connection: sqlite3.Connection,
+) -> None:
     """Missing activities stay None; present activities have empty child tuples."""
-    connection = _make_connection()
     connection.executemany(
         """INSERT INTO types (type_id, group_id, name, portion_size, published)
         VALUES (?, 1, 'Blueprint', 1, 1)""",
@@ -113,9 +118,10 @@ def test_get_blueprints_preserves_missing_and_empty_activities() -> None:
     }
 
 
-def test_get_blueprints_reconstructs_all_activities_and_children() -> None:
+def test_get_blueprints_reconstructs_all_activities_and_children(
+    connection: sqlite3.Connection,
+) -> None:
     """Child records are sorted and isolated by blueprint and activity."""
-    connection = _make_connection()
     connection.executemany(
         """INSERT INTO types (type_id, group_id, name, portion_size, published)
         VALUES (?, 1, 'Type', 1, 1)""",
@@ -196,9 +202,10 @@ def test_get_blueprints_reconstructs_all_activities_and_children() -> None:
     assert blueprints == expected
 
 
-def test_write_industrial_activities_writes_string_fields() -> None:
+def test_write_industrial_activities_writes_string_fields(
+    connection: sqlite3.Connection,
+) -> None:
     """Industrial activity records are written to the static database."""
-    connection = _make_connection()
     dataset = ESD.IndustryActivitiesDataset(
         dataset={
             1: ESD.IndustryActivitiesRecord(
@@ -219,9 +226,10 @@ def test_write_industrial_activities_writes_string_fields() -> None:
     }
 
 
-def test_write_market_groups_writes_localized_fields_and_parent() -> None:
+def test_write_market_groups_writes_localized_fields_and_parent(
+    connection: sqlite3.Connection,
+) -> None:
     """Market group records are written to the static database."""
-    connection = _make_connection()
     _write_market_group_test_data(connection)
 
     market_groups = connection.execute(
@@ -283,9 +291,10 @@ def test_write_market_groups_writes_localized_fields_and_parent() -> None:
     ]
 
 
-def test_get_market_groups_returns_argus_static_records() -> None:
+def test_get_market_groups_returns_argus_static_records(
+    connection: sqlite3.Connection,
+) -> None:
     """Market group rows are loaded into Argus static market group records."""
-    connection = _make_connection()
     _write_market_group_test_data(connection)
 
     market_groups = read.market_groups(connection)
@@ -311,9 +320,10 @@ def test_get_market_groups_returns_argus_static_records() -> None:
     assert market_groups[101].types == (1001,)
 
 
-def test_write_map_regions_writes_flattened_position_and_constellations() -> None:
+def test_write_map_regions_writes_flattened_position_and_constellations(
+    connection: sqlite3.Connection,
+) -> None:
     """Map region records are written to parent and child tables."""
-    connection = _make_connection()
     dataset = ESD.MapRegionsDataset(
         dataset={
             10000002: ESD.MapRegionsRecord(
@@ -359,9 +369,10 @@ def test_write_map_regions_writes_flattened_position_and_constellations() -> Non
     assert constellations == [(10000002, 20000020), (10000002, 20000021)]
 
 
-def test_write_map_constellations_writes_flattened_position_and_solar_systems() -> None:
+def test_write_map_constellations_writes_flattened_position_and_solar_systems(
+    connection: sqlite3.Connection,
+) -> None:
     """Map constellation records are written to parent and child tables."""
-    connection = _make_connection()
     write.map_regions(
         connection,
         dataset=ESD.MapRegionsDataset(
@@ -421,9 +432,10 @@ def test_write_map_constellations_writes_flattened_position_and_solar_systems() 
     assert solar_systems == [(20000020, 30000142), (20000020, 30000144)]
 
 
-def test_write_map_solar_systems_writes_flattened_positions_and_lists() -> None:
+def test_write_map_solar_systems_writes_flattened_positions_and_lists(
+    connection: sqlite3.Connection,
+) -> None:
     """Map solar system records are written to parent and child tables."""
-    connection = _make_connection()
     write.categories(
         connection,
         dataset=ESD.CategoriesDataset(
@@ -566,9 +578,10 @@ def test_write_map_solar_systems_writes_flattened_positions_and_lists() -> None:
     assert stargates == [(30000142, 50000342)]
 
 
-def test_get_map_solar_systems_preserves_null_booleans() -> None:
+def test_get_map_solar_systems_preserves_null_booleans(
+    connection: sqlite3.Connection,
+) -> None:
     """Nullable solar-system booleans remain None when read from the database."""
-    connection = _make_connection()
     connection.execute(
         """
         INSERT INTO map_regions (

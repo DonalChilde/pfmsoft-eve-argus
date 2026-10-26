@@ -1,8 +1,10 @@
 """Tests for unified history selection, regional execution, and output."""
 
 import asyncio
+import json
 from dataclasses import dataclass
 from io import StringIO
+from pathlib import Path
 from typing import Literal
 from unittest.mock import AsyncMock, Mock
 
@@ -102,6 +104,21 @@ def environment(monkeypatch: pytest.MonkeyPatch) -> Environment:
     monkeypatch.setattr(
         command.static_read, "blueprints", Mock(return_value=blueprints)
     )
+    monkeypatch.setattr(
+        command.static_read,
+        "type_materials",
+        Mock(
+            return_value={
+                10: ASM.TypeMaterialsRecord(
+                    type_id=10,
+                    materials=tuple(
+                        ASM.Materials(material_type_id=type_id, quantity=1)
+                        for type_id in (11, 12, 13, 99)
+                    ),
+                ),
+            }
+        ),
+    )
     updater = AsyncMock(
         return_value=UpdateResult(status=UpdateStatus.SKIPPED, previous_state=None)
     )
@@ -135,9 +152,11 @@ def test_help_exposes_unified_options(environment: Environment) -> None:
         "--region-id",
         "--hubs",
         "--type-id",
+        "--from",
         "--active",
         "--market-types",
         "--industry-types",
+        "--scrapmetal",
         "--include",
         "--exclude",
         "--workers",
@@ -223,7 +242,7 @@ def test_real_discovery_failures_continue(
         if failure == "malformed"
         else "discovery broke"
     )
-    assert message in " ".join(result.output.split())
+    assert message in " ".join(result.output.replace("│", " ").split())
     assert [
         (call.kwargs["region_id"], call.kwargs["type_id"])
         for call in environment.updater.await_args_list
@@ -312,6 +331,10 @@ def test_below_limit_failures_do_not_accumulate_across_regions(
         ["--active"],
         ["--region-id", "100", "--active", "--market-types"],
         ["--region-id", "100", "--industry-types", "--active"],
+        ["--region-id", "100", "--scrapmetal", "--active"],
+        ["--region-id", "100", "--scrapmetal", "--market-types"],
+        ["--region-id", "100", "--scrapmetal", "--industry-types"],
+        ["--region-id", "100", "--scrapmetal", "--type-id", "10"],
         ["--region-id", "100", "--type-id", "10", "--active"],
         ["--region-id", "100", "--type-id", "10", "--include", "2"],
         ["--region-id", "100", "--type-id", "10", "--exclude", "2"],
@@ -508,6 +531,11 @@ def test_market_membership_uses_types_without_loading_groups(
         ("--industry-types", ["--exclude", "2"], set[int]()),
         ("--industry-types", ["--include", "2", "--include", "3"], {10}),
         ("--industry-types", ["--include", "2", "--exclude", "2"], set[int]()),
+        ("--scrapmetal", list[str](), {10, 12}),
+        ("--scrapmetal", ["--include", "2"], {10}),
+        ("--scrapmetal", ["--include", "2", "--include", "3"], {10, 12}),
+        ("--scrapmetal", ["--exclude", "2"], {12}),
+        ("--scrapmetal", ["--include", "2", "--exclude", "2"], set[int]()),
     ],
 )
 def test_selection_filters(
@@ -539,7 +567,9 @@ def test_filters_cannot_expand_active_candidates(environment: Environment) -> No
     ]
 
 
-@pytest.mark.parametrize("mode", ["--active", "--market-types", "--industry-types"])
+@pytest.mark.parametrize(
+    "mode", ["--active", "--market-types", "--industry-types", "--scrapmetal"]
+)
 @pytest.mark.parametrize("invalid", ["region", "filter", "dataset"])
 def test_static_validation_precedes_discovery(
     environment: Environment,
@@ -560,6 +590,64 @@ def test_static_validation_precedes_discovery(
     )
     assert result.exit_code == 2, result.output
     environment.discovery.assert_not_awaited()
+    environment.updater.assert_not_awaited()
+
+
+def test_scrapmetal_requires_materials(
+    environment: Environment, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Missing material data fails before any history requests."""
+    monkeypatch.setattr(command.static_read, "type_materials", Mock(return_value={}))
+    result = _invoke(environment, "--region-id", "100", "--scrapmetal", "--quiet")
+    assert result.exit_code == 2, result.output
+    assert "Static type materials dataset must be populated" in result.output
+    environment.updater.assert_not_awaited()
+
+
+def test_scrapmetal_candidates_apply_to_all_regions(
+    environment: Environment, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Market-listed non-material types are excluded even without group filters."""
+    materials = Mock(
+        return_value={
+            10: ASM.TypeMaterialsRecord(type_id=10, materials=()),
+        }
+    )
+    monkeypatch.setattr(command.static_read, "type_materials", materials)
+    result = _invoke(
+        environment, "--region-id", "100", "--region-id", "200", "--scrapmetal"
+    )
+    assert result.exit_code == 0, result.output
+    assert [
+        (call.kwargs["region_id"], call.kwargs["type_id"])
+        for call in environment.updater.await_args_list
+    ] == [(100, 10), (200, 10)]
+    materials.assert_called_once_with(environment.resources.argus_static_db_connection)
+    environment.discovery.assert_not_awaited()
+
+
+def test_scrapmetal_without_eligible_types_is_noop(
+    environment: Environment, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Unpublished, nonmarket, and unknown material IDs do not trigger requests."""
+    monkeypatch.setattr(
+        command.static_read,
+        "type_materials",
+        Mock(
+            return_value={
+                11: ASM.TypeMaterialsRecord(
+                    type_id=11,
+                    materials=(
+                        ASM.Materials(material_type_id=13, quantity=1),
+                        ASM.Materials(material_type_id=99, quantity=1),
+                    ),
+                ),
+            }
+        ),
+    )
+    result = _invoke(environment, "--region-id", "100", "--scrapmetal")
+    assert result.exit_code == 0, result.output
+    assert "selected 0 types" in result.output
     environment.updater.assert_not_awaited()
 
 
@@ -926,3 +1014,85 @@ def test_interruption_awaits_cleanup_and_stops_regions(
     assert environment.discovery.await_count == 1
     environment.manager.__aexit__.assert_awaited_once()
     assert not progress.live.is_started
+
+
+def _selection_file(tmp_path: Path, content: object) -> Path:
+    path = tmp_path / "selection.json"
+    path.write_text(content if isinstance(content, str) else json.dumps(content))
+    return path
+
+
+def test_from_file_selects_regions_and_types(
+    environment: Environment, tmp_path: Path
+) -> None:
+    """File regions follow explicit regions, precede hubs, and use file types."""
+    path = _selection_file(tmp_path, {"region_ids": [200, 100], "type_ids": [12, 10]})
+    hub = MARKET_HUBS[0].region_id
+    result = _invoke(environment, "--region-id", "100", "--from", str(path), "--hubs")
+    assert result.exit_code == 0, result.output
+    pairs = [
+        (call.kwargs["region_id"], call.kwargs["type_id"])
+        for call in environment.updater.await_args_list
+    ]
+    regions = list(dict.fromkeys([100, 200, *(h.region_id for h in MARKET_HUBS)]))
+    assert list(dict.fromkeys(region for region, _ in pairs)) == regions
+    assert sorted(type_id for region, type_id in pairs if region == hub) == [10, 12]
+    environment.discovery.assert_not_awaited()
+
+
+@pytest.mark.parametrize(
+    ("type_ids", "message"),
+    [
+        ([10, 11], "unpublished type IDs: [11]"),
+        ([10, 13], "nonmarket type IDs: [13]"),
+        ([10, 99], "unknown type IDs: [99]"),
+    ],
+)
+def test_from_file_invalid_types_fail_before_updates(
+    environment: Environment, tmp_path: Path, type_ids: list[int], message: str
+) -> None:
+    """File types must be published, market-listed static types."""
+    path = _selection_file(tmp_path, {"region_ids": [100], "type_ids": type_ids})
+    result = _invoke(environment, "--from", str(path))
+    assert result.exit_code == 2, result.output
+    assert message in " ".join(result.output.replace("│", " ").split())
+    environment.updater.assert_not_awaited()
+
+
+def test_from_file_unknown_regions_fail(
+    environment: Environment, tmp_path: Path
+) -> None:
+    """File regions must exist in the static database, even for one pair."""
+    path = _selection_file(tmp_path, {"region_ids": [7], "type_ids": [10]})
+    result = _invoke(environment, "--from", str(path))
+    assert result.exit_code == 2, result.output
+    assert "Unknown region IDs" in result.output
+    environment.updater.assert_not_awaited()
+
+
+@pytest.mark.parametrize(
+    ("content", "arguments"),
+    [
+        ({"region_ids": [100]}, []),
+        ({"region_ids": [100], "type_ids": []}, []),
+        ("{bad", []),
+        ({"region_ids": [100], "type_ids": [10]}, ["--type-id", "10"]),
+        ({"region_ids": [100], "type_ids": [10]}, ["--active"]),
+        ({"region_ids": [100], "type_ids": [10]}, ["--market-types"]),
+        ({"region_ids": [100], "type_ids": [10]}, ["--scrapmetal"]),
+        ({"region_ids": [100], "type_ids": [10]}, ["--include", "2"]),
+        ({"region_ids": [100], "type_ids": [10]}, ["--exclude", "2"]),
+    ],
+)
+def test_from_file_argument_errors_precede_resources(
+    environment: Environment,
+    tmp_path: Path,
+    content: object,
+    arguments: list[str],
+) -> None:
+    """Malformed files and conflicting selections fail before opening resources."""
+    path = _selection_file(tmp_path, content)
+    result = _invoke(environment, "--from", str(path), *arguments)
+    assert result.exit_code == 2, result.output
+    environment.manager.__aenter__.assert_not_awaited()
+    environment.updater.assert_not_awaited()

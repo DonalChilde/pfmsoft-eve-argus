@@ -6,6 +6,7 @@ import logging
 from decimal import Decimal
 from sqlite3 import Connection
 from typing import Any
+from warnings import deprecated
 
 from pfmsoft.eve_argus.dynamic import models, order_summary
 from pfmsoft.eve_argus.dynamic.order_summary import FILTER_FACTOR_DEFAULT
@@ -21,6 +22,7 @@ logger = logging.getLogger(__name__)
 _timing_log_level = logging.INFO
 
 
+@deprecated("Use calculate_market_order_summary() instead.")
 @log_timing(logger=logger, level=_timing_log_level)
 def order_summaries(
     connection: Connection, order_summary_response_id: int
@@ -102,6 +104,7 @@ def order_summaries(
     )
 
 
+@deprecated("dynamically generate order summaries.")
 @log_timing(logger=logger, level=_timing_log_level)
 def order_summary_responses(
     connection: Connection, region_id: int | None = None
@@ -286,6 +289,32 @@ def market_orders_responses(
         )
         for row in connection.execute(query, parameters)
     ]
+
+
+@log_timing(logger=logger, level=_timing_log_level)
+def market_order_count(connection: Connection, *, response_metadata_id: int) -> int:
+    """Count stored buy and sell orders without loading the snapshot's records.
+
+    Raises:
+        ValueError: If the response metadata ID has no stored market-order response.
+    """
+    row = connection.execute(
+        """
+        SELECT COUNT(orders.id)
+        FROM get_markets_region_id_orders_response AS response
+        LEFT JOIN market_orders AS orders
+            ON orders.response_metadata_id = response.response_metadata_id
+        WHERE response.response_metadata_id = ?
+        GROUP BY response.response_metadata_id
+        """,
+        (response_metadata_id,),
+    ).fetchone()
+    if row is None:
+        raise ValueError(
+            "No market orders response found for response metadata ID "
+            f"{response_metadata_id}"
+        )
+    return row[0]
 
 
 @log_timing(logger=logger, level=_timing_log_level)

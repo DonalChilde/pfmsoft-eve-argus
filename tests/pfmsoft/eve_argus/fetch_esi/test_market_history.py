@@ -3,6 +3,7 @@
 import asyncio
 import sqlite3
 from collections.abc import Iterator
+from contextlib import closing
 from decimal import Decimal
 from typing import Literal
 from unittest.mock import AsyncMock, Mock
@@ -30,10 +31,9 @@ _RECEIVED = "2026-10-18T00:00:00Z"
 @pytest.fixture
 def connection() -> Iterator[sqlite3.Connection]:
     """Provide an isolated history database with the production schema."""
-    with sqlite3.connect(":memory:") as database:
+    with closing(sqlite3.connect(":memory:")) as database:
         database.executescript(util.load_table_definitions())
         yield database
-    database.close()
 
 
 def _response(

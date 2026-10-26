@@ -1,6 +1,8 @@
 """Tests for dynamic database query helpers."""
 
 import sqlite3
+from collections.abc import Iterator
+from contextlib import closing
 from dataclasses import replace
 from decimal import Decimal
 
@@ -33,15 +35,18 @@ from pfmsoft.eve_argus.dynamic.models import (
 from pfmsoft.eve_argus.esi import models as ERM
 
 
-def _make_connection() -> sqlite3.Connection:
-    connection = sqlite3.connect(":memory:")
-    connection.executescript(util.load_table_definitions())
-    return connection
+@pytest.fixture
+def connection() -> Iterator[sqlite3.Connection]:
+    """Provide an in-memory database with the production schema, closed afterward."""
+    with closing(sqlite3.connect(":memory:")) as database:
+        database.executescript(util.load_table_definitions())
+        yield database
 
 
-def test_market_orders_response_rejects_duplicate_region_timestamp() -> None:
+def test_market_orders_response_rejects_duplicate_region_timestamp(
+    connection: sqlite3.Connection,
+) -> None:
     """Only one source order set per region and receipt time can be stored."""
-    connection = _make_connection()
     connection.executemany(
         "INSERT INTO response_metadata (received_at) VALUES (?)",
         [("2026-09-01T00:00:00Z",), ("2026-09-01T00:00:00Z",)],
@@ -72,9 +77,10 @@ def test_market_orders_response_rejects_duplicate_region_timestamp() -> None:
         )
 
 
-def test_write_market_orders_rolls_back_duplicate_response_metadata() -> None:
+def test_write_market_orders_rolls_back_duplicate_response_metadata(
+    connection: sqlite3.Connection,
+) -> None:
     """A duplicate order set must not leave a second metadata row behind."""
-    connection = _make_connection()
     response = ERM.GetMarketsRegionIdOrders(
         region_id=10000002,
         received_at="2026-09-01T00:00:00Z",
@@ -91,9 +97,10 @@ def test_write_market_orders_rolls_back_duplicate_response_metadata() -> None:
     )
 
 
-def test_write_market_orders_allows_multiple_sets_per_region() -> None:
+def test_write_market_orders_allows_multiple_sets_per_region(
+    connection: sqlite3.Connection,
+) -> None:
     """Distinct response timestamps can coexist within one region."""
-    connection = _make_connection()
     response = ERM.GetMarketsRegionIdOrders(
         region_id=10000002,
         received_at="2026-09-01T00:00:00Z",
@@ -109,9 +116,10 @@ def test_write_market_orders_allows_multiple_sets_per_region() -> None:
     assert len(read.market_orders_responses(connection, 10000002)) == 2
 
 
-def test_order_summary_schema_tracks_scopes_and_type_membership() -> None:
+def test_order_summary_schema_tracks_scopes_and_type_membership(
+    connection: sqlite3.Connection,
+) -> None:
     """A source can own different scopes, each with at most one side per type."""
-    connection = _make_connection()
     connection.execute(
         "INSERT INTO response_metadata (received_at) VALUES ('2026-09-01T00:00:00Z')"
     )
@@ -198,9 +206,10 @@ def _summary_record(*, is_buy_summary: bool) -> OrderSummaryRecord:
     )
 
 
-def test_write_and_get_order_summaries_round_trip_both_sides() -> None:
+def test_write_and_get_order_summaries_round_trip_both_sides(
+    connection: sqlite3.Connection,
+) -> None:
     """Saved records use cents and can be reconstructed as a complete dataset."""
-    connection = _make_connection()
     _insert_source_order_response(connection)
     dataset = _summary_dataset(
         records={
@@ -223,9 +232,10 @@ def test_write_and_get_order_summaries_round_trip_both_sides() -> None:
     assert read.order_summaries(connection, batch_id) == dataset
 
 
-def test_write_order_summaries_accepts_application_row_factory() -> None:
+def test_write_order_summaries_accepts_application_row_factory(
+    connection: sqlite3.Connection,
+) -> None:
     """Summary source validation accepts the application's sqlite3.Row results."""
-    connection = _make_connection()
     connection.row_factory = sqlite3.Row
     _insert_source_order_response(connection)
     dataset = _summary_dataset()
@@ -235,9 +245,10 @@ def test_write_order_summaries_accepts_application_row_factory() -> None:
     assert read.order_summaries(connection, batch_id) == dataset
 
 
-def test_order_summaries_preserve_empty_and_one_sided_types() -> None:
+def test_order_summaries_preserve_empty_and_one_sided_types(
+    connection: sqlite3.Connection,
+) -> None:
     """Type membership persists even when no side has positive volume."""
-    connection = _make_connection()
     _insert_source_order_response(connection)
     empty = _summary_dataset()
 
@@ -264,9 +275,10 @@ def test_order_summaries_preserve_empty_and_one_sided_types() -> None:
     assert connection.execute("SELECT count(*) FROM order_summaries").fetchone() == (0,)
 
 
-def test_order_summary_responses_discover_independent_scopes() -> None:
+def test_order_summary_responses_discover_independent_scopes(
+    connection: sqlite3.Connection,
+) -> None:
     """Each saved scope has a discoverable ID linked to one source response."""
-    connection = _make_connection()
     _insert_source_order_response(connection)
     region = _summary_dataset()
     system = _summary_dataset(system_id=30000142)
@@ -300,9 +312,10 @@ def test_order_summary_responses_discover_independent_scopes() -> None:
     assert read.order_summaries(connection, location_id) == location
 
 
-def test_order_summaries_reject_mismatched_source_or_record() -> None:
+def test_order_summaries_reject_mismatched_source_or_record(
+    connection: sqlite3.Connection,
+) -> None:
     """Invalid data does not create or overwrite a saved summary batch."""
-    connection = _make_connection()
     _insert_source_order_response(connection)
     original = _summary_dataset(
         records={
@@ -335,9 +348,10 @@ def test_order_summaries_reject_mismatched_source_or_record() -> None:
         read.order_summaries(connection, 999)
 
 
-def test_order_summaries_reject_invalid_scope_type_and_region() -> None:
+def test_order_summaries_reject_invalid_scope_type_and_region(
+    connection: sqlite3.Connection,
+) -> None:
     """Record and dataset scope mismatches cannot create a saved response."""
-    connection = _make_connection()
     _insert_source_order_response(connection)
     record = _summary_record(is_buy_summary=True)
     for invalid in (
@@ -358,9 +372,10 @@ def test_order_summaries_reject_invalid_scope_type_and_region() -> None:
     ).fetchone() == (0,)
 
 
-def test_order_summary_replacement_keeps_other_scopes() -> None:
+def test_order_summary_replacement_keeps_other_scopes(
+    connection: sqlite3.Connection,
+) -> None:
     """Replacing one batch does not change other scopes from the same source."""
-    connection = _make_connection()
     _insert_source_order_response(connection)
     region = _summary_dataset(
         records={
@@ -385,9 +400,10 @@ def test_order_summary_replacement_keeps_other_scopes() -> None:
     assert read.order_summaries(connection, location_id) == location
 
 
-def test_order_summary_schema_rejects_orphan_type_and_duplicate_side() -> None:
+def test_order_summary_schema_rejects_orphan_type_and_duplicate_side(
+    connection: sqlite3.Connection,
+) -> None:
     """Foreign keys and the batch/type/side key reject invalid direct inserts."""
-    connection = _make_connection()
     _insert_source_order_response(connection)
     dataset = _summary_dataset(
         records={
@@ -419,9 +435,8 @@ def test_order_summary_schema_rejects_orphan_type_and_duplicate_side() -> None:
         )
 
 
-def test_get_response_metadata_filters_by_ids() -> None:
+def test_get_response_metadata_filters_by_ids(connection: sqlite3.Connection) -> None:
     """Metadata lookup returns all, selected, or no rows as requested."""
-    connection = _make_connection()
     connection.executemany(
         """
         INSERT INTO response_metadata (
@@ -454,9 +469,10 @@ def test_get_response_metadata_filters_by_ids() -> None:
     assert read.response_metadata(connection, set()) == []
 
 
-def test_get_markets_prices_responses_returns_linked_metadata() -> None:
+def test_get_markets_prices_responses_returns_linked_metadata(
+    connection: sqlite3.Connection,
+) -> None:
     """Only metadata linked to universe prices responses is returned."""
-    connection = _make_connection()
     connection.executemany(
         """
         INSERT INTO response_metadata (received_at, expires_at, argus_expires_at)
@@ -492,9 +508,10 @@ def test_get_markets_prices_responses_returns_linked_metadata() -> None:
     ]
 
 
-def test_get_markets_prices_returns_dataset_and_converts_prices() -> None:
+def test_get_markets_prices_returns_dataset_and_converts_prices(
+    connection: sqlite3.Connection,
+) -> None:
     """Universe prices lookup returns metadata and prices as Decimal values."""
-    connection = _make_connection()
     connection.execute(
         """
         INSERT INTO response_metadata (received_at, expires_at, argus_expires_at)
@@ -540,9 +557,10 @@ def test_get_markets_prices_returns_dataset_and_converts_prices() -> None:
     )
 
 
-def test_get_market_orders_returns_grouped_buy_and_sell_order_records() -> None:
+def test_get_market_orders_returns_grouped_buy_and_sell_order_records(
+    connection: sqlite3.Connection,
+) -> None:
     """Market orders lookup reconstructs metadata and type-grouped buy/sell orders."""
-    connection = _make_connection()
     connection.executemany(
         """
         INSERT INTO response_metadata (received_at, expires_at, argus_expires_at)
@@ -689,9 +707,10 @@ def test_get_market_orders_returns_grouped_buy_and_sell_order_records() -> None:
     )
 
 
-def test_get_system_cost_indices_returns_dataset_and_converts_values() -> None:
+def test_get_system_cost_indices_returns_dataset_and_converts_values(
+    connection: sqlite3.Connection,
+) -> None:
     """System cost index lookup reconstructs metadata and four-place decimals."""
-    connection = _make_connection()
     connection.execute(
         """
         INSERT INTO response_metadata (received_at, expires_at, argus_expires_at)
@@ -758,9 +777,10 @@ def test_get_system_cost_indices_returns_dataset_and_converts_values() -> None:
     )
 
 
-def test_get_corporation_industry_jobs_returns_dataset_and_converts_cost() -> None:
+def test_get_corporation_industry_jobs_returns_dataset_and_converts_cost(
+    connection: sqlite3.Connection,
+) -> None:
     """Industry jobs lookup reconstructs metadata and job records."""
-    connection = _make_connection()
     connection.executemany(
         """
         INSERT INTO response_metadata (received_at, expires_at, argus_expires_at)
@@ -900,9 +920,10 @@ def test_get_corporation_industry_jobs_returns_dataset_and_converts_cost() -> No
     )
 
 
-def test_get_corporation_blueprints_returns_dataset() -> None:
+def test_get_corporation_blueprints_returns_dataset(
+    connection: sqlite3.Connection,
+) -> None:
     """Blueprint lookup reconstructs metadata and blueprint records keyed by item ID."""
-    connection = _make_connection()
     connection.executemany(
         """
         INSERT INTO response_metadata (received_at, expires_at, argus_expires_at)
@@ -974,6 +995,20 @@ def test_get_corporation_blueprints_returns_dataset() -> None:
     )
 
 
+def test_market_order_count_scopes_counts_to_response(
+    connection: sqlite3.Connection,
+) -> None:
+    """Count both order sides only within the requested snapshot."""
+    _insert_filterable_orders(connection)
+
+    assert read.market_order_count(connection, response_metadata_id=1) == 5
+    assert read.market_order_count(connection, response_metadata_id=2) == 1
+    connection.execute("DELETE FROM market_orders WHERE response_metadata_id = 2")
+    assert read.market_order_count(connection, response_metadata_id=2) == 0
+    with pytest.raises(ValueError, match="No market orders response"):
+        read.market_order_count(connection, response_metadata_id=999)
+
+
 def _insert_filterable_orders(connection: sqlite3.Connection) -> None:
     """Insert two order responses with mixed types, sides, and locations."""
     connection.executemany(
@@ -1026,10 +1061,11 @@ def _insert_filterable_orders(connection: sqlite3.Connection) -> None:
     ],
 )
 def test_market_orders_filtered_applies_only_supplied_filters(
-    filters: dict[str, int | bool], expected_ids: tuple[int, ...]
+    connection: sqlite3.Connection,
+    filters: dict[str, int | bool],
+    expected_ids: tuple[int, ...],
 ) -> None:
     """Each non-None filter narrows the orders within one response."""
-    connection = _make_connection()
     _insert_filterable_orders(connection)
 
     result = read.market_orders_filtered(connection, 1, **filters)  # type: ignore[arg-type]
@@ -1039,9 +1075,10 @@ def test_market_orders_filtered_applies_only_supplied_filters(
     assert all(order.response_metadata_id == 1 for order in result)
 
 
-def test_market_orders_filtered_converts_record_fields() -> None:
+def test_market_orders_filtered_converts_record_fields(
+    connection: sqlite3.Connection,
+) -> None:
     """Filtered rows are converted the same way as dataset rows."""
-    connection = _make_connection()
     _insert_filterable_orders(connection)
 
     assert read.market_orders_filtered(connection, 1, type_id=35) == (
@@ -1064,9 +1101,10 @@ def test_market_orders_filtered_converts_record_fields() -> None:
     )
 
 
-def test_calculate_market_order_summary_matches_dataset_summary() -> None:
+def test_calculate_market_order_summary_matches_dataset_summary(
+    connection: sqlite3.Connection,
+) -> None:
     """A filtered query summary equals the matching dataset summary."""
-    connection = _make_connection()
     _insert_filterable_orders(connection)
 
     summary = read.calculate_market_order_summary(
@@ -1096,9 +1134,10 @@ def test_calculate_market_order_summary_matches_dataset_summary() -> None:
     assert (summary.total_orders, summary.five_price) == (2, Decimal("100.00"))
 
 
-def test_calculate_market_order_summary_handles_sell_side_and_no_orders() -> None:
+def test_calculate_market_order_summary_handles_sell_side_and_no_orders(
+    connection: sqlite3.Connection,
+) -> None:
     """Sell summaries are supported and missing books return None."""
-    connection = _make_connection()
     _insert_filterable_orders(connection)
 
     sell = read.calculate_market_order_summary(
@@ -1118,9 +1157,10 @@ def test_calculate_market_order_summary_handles_sell_side_and_no_orders() -> Non
     )
 
 
-def test_calculate_market_order_summary_rejects_invalid_options() -> None:
+def test_calculate_market_order_summary_rejects_invalid_options(
+    connection: sqlite3.Connection,
+) -> None:
     """Invalid options fail before any query is run."""
-    connection = _make_connection()
     with pytest.raises(ValueError, match="both"):
         read.calculate_market_order_summary(
             connection, 1, type_id=34, system_id=1, location_id=2
