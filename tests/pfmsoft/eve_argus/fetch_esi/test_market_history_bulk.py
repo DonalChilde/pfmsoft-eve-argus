@@ -2,6 +2,7 @@
 
 import asyncio
 import sqlite3
+from contextlib import closing
 from unittest.mock import AsyncMock, Mock
 
 import pytest
@@ -208,10 +209,9 @@ def test_abort_cancels_pending_and_preserves_commits(
         assert cleaned == {3, 4, 5, 6}
         assert connection.execute("SELECT * FROM saved").fetchall() == [(0,)]
 
-    with sqlite3.connect(":memory:") as connection:
+    with closing(sqlite3.connect(":memory:")) as connection:
         connection.execute("CREATE TABLE saved (id INTEGER)")
         asyncio.run(asyncio.wait_for(scenario(connection), timeout=5))
-    connection.close()
 
 
 def test_parent_cancellation_is_not_a_failure(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -315,6 +315,24 @@ def test_empty_selection(monkeypatch: pytest.MonkeyPatch) -> None:
     assert summary.total == summary.not_started == 0
     assert not summary.aborted
     update.assert_not_called()
+
+
+def test_negative_age_prevents_updates(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Negative day limits fail before workers start, even with no types."""
+    update = AsyncMock()
+    monkeypatch.setattr(bulk, "update_market_history", update)
+    with pytest.raises(ValueError, match="stale_after_days"):
+        asyncio.run(
+            bulk.update_market_histories(
+                Mock(spec=EsiLink),
+                Mock(spec=EsiSchema),
+                Mock(spec=sqlite3.Connection),
+                region_ids={10},
+                type_ids=set(),
+                stale_after_days=-1,
+            )
+        )
+    update.assert_not_awaited()
 
 
 def test_reconciles_updates_finishing_during_abort(
@@ -448,7 +466,6 @@ def test_real_updater_persists_pairs_and_skips_current_data(
         assert refreshed.skipped == refreshed.failed == 0
         assert esi_link.make_request.await_count == 8
 
-    with sqlite3.connect(":memory:") as connection:
+    with closing(sqlite3.connect(":memory:")) as connection:
         connection.executescript(load_table_definitions())
         asyncio.run(asyncio.wait_for(scenario(connection), timeout=5))
-    connection.close()

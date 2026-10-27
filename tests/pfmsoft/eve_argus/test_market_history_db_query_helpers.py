@@ -526,3 +526,42 @@ def test_read_market_history_responses_filter_order_and_group_by_region(
             ),
         ),
     }
+
+
+@pytest.mark.parametrize(
+    ("region_id", "before", "expected"),
+    [
+        (10, "2026-10-04", "2026-10-03"),
+        (10, "2026-10-03", "2026-10-02"),
+        (10, "2026-10-01", None),
+        (99, "2026-10-04", None),
+    ],
+)
+def test_newest_history_date_is_strictly_before_bound(
+    connection: sqlite3.Connection,
+    *,
+    region_id: int,
+    before: str,
+    expected: str | None,
+) -> None:
+    """Select the newest regional date across types, excluding the bound date."""
+    connection.executemany(
+        """
+        INSERT INTO market_history (
+            received_at, region_id, type_id, average, date_, highest,
+            lowest, order_count, volume
+        )
+        VALUES ('2026-10-05', ?, ?, 100, ?, 200, 50, 1, 2)
+        """,
+        [
+            (10, 20, "2026-10-01"),
+            (10, 21, "2026-10-03"),
+            (10, 20, "2026-10-02"),
+            (11, 20, "2026-10-04"),
+        ],
+    )
+
+    assert (
+        read.newest_history_date(connection, region_id=region_id, before=before)
+        == expected
+    )

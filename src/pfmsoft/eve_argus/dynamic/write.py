@@ -4,6 +4,7 @@ import logging
 from dataclasses import astuple, dataclass
 from sqlite3 import Connection
 from typing import cast
+from warnings import deprecated
 
 from pfmsoft.eve_argus.dynamic import models
 from pfmsoft.eve_argus.esi import models as EsiModels
@@ -150,6 +151,7 @@ def market_orders(
         )
 
 
+@deprecated("Prefer on demand calculations.")
 @log_timing(logger=logger, level=_timing_log_level)
 def order_summaries(
     connection: Connection,

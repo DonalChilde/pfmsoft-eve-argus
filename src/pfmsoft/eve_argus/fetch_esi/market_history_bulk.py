@@ -4,6 +4,7 @@ import asyncio
 import logging
 from collections.abc import Callable
 from dataclasses import dataclass
+from functools import partial
 from itertools import product
 from sqlite3 import Connection
 
@@ -59,6 +60,7 @@ async def update_market_histories(
     on_result: ResultReporter | None = None,
     worker_count: int = MARKET_HISTORY_WORKER_COUNT,
     failure_limit: int = MARKET_HISTORY_FAILURE_LIMIT,
+    stale_after_days: int | None = None,
 ) -> MarketHistoryBulkResult:
     """Update unique region/type pairs using a bounded pool of async workers.
 
@@ -71,6 +73,8 @@ async def update_market_histories(
         on_result: Optional synchronous reporter called for each completed pair.
         worker_count: Maximum number of pairs to process concurrently.
         failure_limit: Maximum number of failed pairs before aborting.
+        stale_after_days: Additional received-age gate in 24-hour days.
+            None or zero disables it; existing expiry checks still apply.
 
     Returns:
         Totals after all pairs finish or the global failure limit is reached.
@@ -78,7 +82,8 @@ async def update_market_histories(
         Unexpired responses are skipped even when they contain no history.
 
     Raises:
-        ValueError: If worker_count or failure_limit is not positive.
+        ValueError: If worker_count or failure_limit is not positive, or
+            stale_after_days is negative.
 
     Ordinary updater exceptions are logged and counted as failed pairs. External
     cancellation propagates after child cleanup and is not an update failure.
@@ -87,6 +92,13 @@ async def update_market_histories(
         raise ValueError("worker_count must be positive")
     if failure_limit <= 0:
         raise ValueError("failure_limit must be positive")
+    if stale_after_days is not None and stale_after_days < 0:
+        raise ValueError("stale_after_days must be nonnegative")
+    update_history = update_market_history
+    if stale_after_days is not None:
+        update_history = partial(
+            update_market_history, stale_after_days=stale_after_days
+        )
     summary = MarketHistoryBulkResult(total=len(region_ids) * len(type_ids))
     pairs = product(sorted(region_ids), sorted(type_ids))
     tasks: list[asyncio.Task[None]] = []
@@ -94,7 +106,7 @@ async def update_market_histories(
     async def update_pair(region_id: int, type_id: int) -> None:
         result: MarketHistoryUpdateResult
         try:
-            result = await update_market_history(
+            result = await update_history(
                 esi_link, schema, connection, region_id=region_id, type_id=type_id
             )
         except asyncio.CancelledError:

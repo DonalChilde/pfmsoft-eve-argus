@@ -14,8 +14,8 @@ from pfmsoft.eve_argus.cli import app
 from pfmsoft.eve_argus.cli import helpers as cli_helpers
 from pfmsoft.eve_argus.helpers import connection_helpers
 from pfmsoft.eve_argus.settings import SETTINGS_KEY, EveArgusSettings
-from pfmsoft.eve_argus.static.query_helpers import load_table_definitions
 from pfmsoft.eve_argus.static.store import ManifestEntry, StaticManifest, StaticStore
+from pfmsoft.eve_argus.static.util import load_table_definitions
 
 
 @pytest.fixture

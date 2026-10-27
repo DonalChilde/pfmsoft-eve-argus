@@ -1,6 +1,10 @@
 """Tests for system cost indices updates."""
 
 import sqlite3
+from collections.abc import Iterator
+from contextlib import closing
+
+import pytest
 
 from pfmsoft.eve_argus.dynamic.models import SystemCostIndicesResponse
 from pfmsoft.eve_argus.dynamic.util import load_table_definitions
@@ -8,10 +12,12 @@ from pfmsoft.eve_argus.fetch_esi.system_cost_indices import _current_state
 from pfmsoft.eve_argus.fetch_esi.update import is_expired
 
 
-def _make_connection() -> sqlite3.Connection:
-    connection = sqlite3.connect(":memory:")
-    connection.executescript(load_table_definitions())
-    return connection
+@pytest.fixture
+def connection() -> Iterator[sqlite3.Connection]:
+    """Provide an in-memory database with the production schema, closed afterward."""
+    with closing(sqlite3.connect(":memory:")) as database:
+        database.executescript(load_table_definitions())
+        yield database
 
 
 def _insert_response(
@@ -35,9 +41,10 @@ def _insert_response(
     return response_metadata_id
 
 
-def test_current_state_uses_latest_system_cost_indices_response() -> None:
+def test_current_state_uses_latest_system_cost_indices_response(
+    connection: sqlite3.Connection,
+) -> None:
     """An older expired response must not hide the latest unexpired response."""
-    connection = _make_connection()
     _insert_response(
         connection,
         received_at="2026-09-01T00:00:00Z",

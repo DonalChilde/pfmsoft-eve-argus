@@ -312,6 +312,8 @@ MetaGroupsDatasetRoot = RootModel[MetaGroupsDataset]
 class TypesRecord:
     """Represents a type in the EVE Online universe.
 
+    category_id is read from the linked group, not stored in the types table.
+
     -- ref esd_datasets.py TypesRecord
     CREATE TABLE IF NOT EXISTS types (
         type_id INTEGER PRIMARY KEY,
@@ -346,6 +348,7 @@ class TypesRecord:
     description: str | None
     faction_id: int | None
     graphic_id: int | None
+    category_id: int
     group_id: int
     icon_id: int | None
     is_dynamic_type: bool | None

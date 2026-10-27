@@ -1,0 +1,97 @@
+# Hub Trades from {{ cell(source.hub.system_name) }}
+
+Buy from sell orders at {{ cell(source.hub.station_name) }}, haul the items, and sell
+them immediately into buy orders at another hub's primary station.
+
+- **Source station:** {{ cell(source.hub.station_name) }} (`{{ source.hub.station_id }}`)
+- **Generated at (UTC):** `{{ report.generated_at }}`
+- **Costs:** sales tax {{ number(options.sales_tax_percent) }}%; transport {{ number(options.transport_per_m3) }} ISK/m³; minimum profit {{ number(options.min_profit) }} ISK per row; no broker fees
+{% if include_ids or exclude_ids %}
+- **Market-group filters:** include {{ include_ids or "all" }}; exclude {{ exclude_ids or "none" }} ({{ report.filtered_out_count }} candidate types filtered out)
+{% endif %}
+
+| Hub | Role | Response | Received | Expiry | Freshness |
+| --- | ---- | -------: | -------- | ------ | --------- |
+| {{ cell(source.hub.system_name) }} | source | {{ source.response_metadata_id }} | {{ source.received_at }} | {{ source.expiry_used or "unknown" }} | {{ source.freshness }} |
+{% for destination in report.destinations %}
+| {{ cell(destination.hub.system_name) }} | destination | {{ destination.response_metadata_id }} | {{ destination.received_at }} | {{ destination.expiry_used or "unknown" }} | {{ destination.freshness }} |
+{% endfor %}
+
+{% if report.snapshot_spread_seconds > max_spread_minutes * 60 %}
+> **Snapshot age gap:** order snapshots were received {{ spread_minutes }} minutes apart. Matched orders may not have coexisted; refresh with `eve-argus fetch market-orders --hubs`.
+
+{% endif %}
+{% if source.freshness == "expired" or report.destinations | selectattr("freshness", "equalto", "expired") | list %}
+> **STALE:** one or more order snapshots have expired. Refresh orders with `eve-argus fetch market-orders --hubs` before acting.
+
+{% endif %}
+{% if options.sales_tax_percent == 0 or options.transport_per_m3 == 0 %}
+> **Cost assumption:** {% if options.sales_tax_percent == 0 %}sales tax is 0%{% endif %}{% if options.sales_tax_percent == 0 and options.transport_per_m3 == 0 %} and {% endif %}{% if options.transport_per_m3 == 0 %}transport is 0 ISK/m³{% endif %}; net profit excludes any real costs not entered.
+
+{% endif %}
+> **Competition limitation:** only orders at each hub's primary station are matched. Wider-range buy orders and other stations are not modeled.
+
+## Summary by destination
+
+Totals count each item once, at its best destination.
+
+| Destination | Freshness | Ranked rows | Best-match items | Best-match net profit | Best-match m³ |
+| ----------- | --------- | ----------: | ---------------: | --------------------: | ------------: |
+{% for summary in destination_summaries %}
+| {{ cell(summary.destination) }} | {{ summary.freshness }} | {{ summary.ranked }} | {{ summary.best_matches }} | {{ summary.best_match_profit }} | {{ summary.best_match_m3 }} |
+{% endfor %}
+| **All** | | {{ ranked_total }} | {{ best_match_count }} | {{ best_match_profit }} | {{ best_match_m3 }} |
+
+## Ranked trades (by net profit)
+
+★ marks an item's best destination; `(+N)` counts its other ranked
+destinations. Prices show best / last (marginal) order used.
+
+| Rank | Best | Item | Destination | Units | m³ / unit | Total m³ | Buy from (best / last) | Sell to (best / last) | Purchase cost | Sales tax | Transport | Net profit | Margin | Profit / m³ | Limit | Flags |
+| ---: | :--: | ---- | ----------- | ----: | --------: | -------: | ---------------------: | --------------------: | ------------: | --------: | --------: | ---------: | -----: | ----------: | ----- | ----- |
+{% for row in rows %}
+| {{ row.rank }} | {{ row.best }} | {{ row.item }} | {{ row.destination }} | {{ row.units }} | {{ row.m3_per_unit }} | {{ row.total_m3 }} | {{ row.buy_from }} | {{ row.sell_to }} | {{ row.purchase_cost }} | {{ row.sales_tax }} | {{ row.transport }} | {{ row.net_profit }} | {{ row.margin }} | {{ row.profit_per_m3 }} | {{ row.limit }} | {{ row.flags }} |
+{% else %}
+| | | No trades meet the ranking criteria | | | | | | | | | | | | | | |
+{% endfor %}
+{% if ranked_total > rows | length %}
+
+Showing {{ rows | length }} of {{ ranked_total }} ranked rows.
+{% endif %}
+
+## Items with multiple destinations
+
+Each destination's walk uses the same source sell orders, so these profits are
+alternatives, not additions.
+
+{% for line in multi_destination_lines %}
+- {{ line }}
+{% else %}
+None.
+{% endfor %}
+
+## Unranked candidates
+
+{% for status, count in unranked_counts.items() %}
+- **{{ status }}:** {{ count }}
+{% endfor %}
+
+`no_overlap` candidates are counted but not exported. CSV and JSON contain all
+{{ report.records | length }} kept rows.
+
+## Warnings
+
+{% for warning in report.warnings %}
+- {{ cell(warning) }}
+{% endfor %}
+
+## Definitions and limitations
+
+- **Walk:** source sell orders are matched cheapest first against destination buy orders highest first, while each unit's `buy × (1 − sales tax) − sell − transport per unit` is positive.
+- **Limit:** `profit_exhausted` (the next unit would not profit), `source_supply` (source sell orders ran out), or `destination_demand` (destination buy orders ran out).
+- **m³ / unit:** packaged volume when available, otherwise volume. Transport cost is total m³ times the transport rate.
+- **Net margin:** net profit divided by purchase cost.
+- **Best match:** the destination with the highest net profit for an item, then higher profit per m³, then hub order.
+- **Statuses:** `ranked`, `below_min_profit` (net profit at or below the minimum), `unknown_volume` (no m³ with a nonzero transport rate; not evaluated), `no_overlap` (no profitable unit; dropped).
+- **Flags:** `min_volume_skipped` (a buy order's minimum volume could not be met and it was skipped), `unknown_volume`, `expired_destination_orders`, `unknown_destination_expiry`. Report-wide flags are shown as notices above.
+- Snapshots are stored data, not live markets; other traders, hauling time, and risk are not modeled.

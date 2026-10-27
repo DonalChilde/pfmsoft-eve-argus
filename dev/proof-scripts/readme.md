@@ -4,6 +4,99 @@ This directory contains scripts that prove the operation of various components o
 
 The python scripts are expected to be run with `uv run` from the project root directory, so that the dev env settings are used.
 
+## Market-order summary performance comparison
+
+Compare three ways of calculating both buy and sell summaries:
+
+1. Load a whole stored snapshot and call `order_summary.calculate_dataset_summaries`.
+2. Discover types through `read.market_order_types` and call
+   `read.calculate_market_order_summary` **once per type**, returning a
+   `(buy_summary, sell_summary)` tuple from a single order query.
+3. Call `read.market_orders_filtered` once for the requested scope, then pass the
+   returned tuple to `order_summary.calculate_order_summaries`.
+
+```bash
+# Start with a bounded smoke run against the latest Forge snapshot.
+uv run dev/proof-scripts/market_order_summary_performance.py \
+  --region-id 10000002 --limit-types 3 --repeats 1
+
+# Complete comparison: all types, three runs for each of the three methods.
+uv run dev/proof-scripts/market_order_summary_performance.py \
+  --region-id 10000002 > dev/tmp/order-summary-timing.json
+```
+
+The default database is `dev/app-dir/argus-dynamic-db.sqlite`, opened read-only.
+Use `--database PATH` to select another database, and `--response-metadata-id ID`
+instead of `--region-id` to pin a snapshot. Without either selector, the newest
+stored snapshot in any region is selected. No settings, ESI clients, schema
+initialization, saved summaries, or database/index writes are involved. `--help`
+does not open the database.
+
+The dynamic schema now creates `market_orders_response_type_order` on
+`(response_metadata_id, type_id, order_id)`. Normal application database
+initialization installs it idempotently on existing databases as well as new ones.
+The read-only proof does **not** initialize the schema: make sure the index is
+installed before comparing indexed performance. The report lists existing indexes
+and includes a query plan so this is verifiable.
+
+`--system-id` or `--location-id` restricts the workload to types with orders in
+that scope. All methods use the same `--filter-factor` (default 100), types,
+snapshot, and buy/sell sides. Exact summary equality is checked after every round,
+outside the timers; missing sides and zero-volume books must match too. Invalid
+inputs, empty workloads, missing snapshots, or differing results fail nonzero.
+
+The tuple calculator requires the source `MarketOrdersResponse` as its `response`
+keyword argument, plus the same scope passed to the filtered reader. This preserves
+snapshot timestamps even for an empty tuple, and rejects orders from another
+snapshot, region, or scope. It includes only types present in the filtered tuple;
+the original whole-dataset calculator still preserves all its input type keys,
+even when a scope leaves some with no summaries. The proof compares the same
+scoped type keys in all three paths.
+
+The JSON report on stdout contains all run timings, median stages, the on-demand
+total-time ratio (greater than 1 means slower), extra elapsed seconds, average
+seconds per on-demand call, workload counts, existing index names, and a
+representative on-demand query plan. Progress goes to stderr.
+
+- **Dataset setup:** load and convert the entire regional snapshot, then retain
+  the selected types. **Dataset calculation:** calculate both sides in memory.
+- **On-demand setup:** discover, sort, and optionally limit scoped type IDs.
+  **On-demand calculation:** query, convert, and summarize both sides per type.
+- **Filtered dataset setup:** read source metadata and all orders in the scope
+  once, retaining selected types. **Filtered dataset calculation:** group the flat
+  tuple by type and calculate both sides, without constructing price-sorted
+  `BuySellOrders` containers first.
+- **Total:** setup plus calculation. Connection opening, snapshot selection,
+  initial workload validation/discovery, equality checks, and JSON output are
+  excluded. Result dictionaries are retained in all paths. The dataset path
+  always loads the entire regional snapshot, even for a system/location scope.
+  On-demand progress is printed every 250 completed types; its small output
+  overhead is included in calculation time.
+
+`--limit-types N` calculates only the first N sorted scoped types in **both**
+methods, while the dataset path still pays the full snapshot load cost and the
+filtered-dataset path still loads every order in the scope.
+`sampled: true` explicitly identifies an incomplete comparison. This is useful
+for estimating runtime, but its ratio is **not** the full-workload penalty or a
+guaranteed break-even point; type/order distributions differ. Omit the limit for
+the actual all-types comparison.
+
+**Expect long runs on an unindexed database.** Each per-side query may scan the
+entire `market_orders` table, including other stored snapshots; a regional
+comparison can require tens of thousands of scans. The original implementation
+made two such scans per type; the paired implementation now makes one.
+The proof does not silently
+add indexes, copy/filter the database, or optimize away production queries.
+It uses one read transaction for a consistent snapshot; run when ingestion is
+idle, since this can delay writers depending on SQLite's journal mode.
+
+Execution order alternates between repetitions to reduce order bias. There is
+no explicit warmup or cache clearing: preliminary discovery/counts warm some
+pages, and SQLite/OS caches are shared across measurements. These are repeated
+elapsed-time measurements, not cold-disk or memory benchmarks. Per-function INFO
+timing logging is not configured, avoiding thousands of log writes. Run different
+benchmark commands sequentially on the same otherwise-idle machine.
+
 ## Market history performance comparison
 
 For a **fetch-only** measurement of 500 direct
@@ -125,3 +218,54 @@ files local.
 These are live diagnostic scripts, not offline tests. Fetch failures and validation
 errors propagate with a nonzero exit status. The suite continues after individual
 failures and summarizes them at the end.
+
+## Station-trades report proof
+
+The initial station-trades proof reads the latest stored regional order snapshot
+for each configured market hub, scopes books to each hub's primary station, and
+adds regional history context from a common ten-calendar-day window. It does not
+fetch or refresh application data. All three input databases are opened
+read-only; a missing history database is reported as missing history.
+
+```bash
+uv run dev/proof-scripts/station-trades/station_trades.py \
+  --to dev/proof-scripts/proof-output/station-trades
+```
+
+Use `--orders-database`, `--history-database`, or `--static-database` to select
+other local SQLite files. Existing output is protected unless `--overwrite` is
+passed. The script writes per-hub Markdown, CSV, and JSON files only after all
+reports have been collected and rendered. A filesystem failure during writing
+can still leave a partial output set.
+
+The default static database is build `3607705` at
+`dev/app-dir/static-db-store/build_3607705_2026-10-12T11_08_38Z_sqlite`.
+For static types, the proof reads only `type_id`, `market_group_id`, `name`, and
+`published`; market-group paths use the existing static reader.
+
+The prototype uses the provided rule that prices have four significant figures,
+with a `0.01 ISK` minimum price step. It proposes the next legal tick above the
+current best station buy and below the current best station sell. This remains
+provisional until verified in game, especially at tick boundaries. It
+calculates fees at the configured proof constants (currently 0%), daily
+estimates from 1% of regional average daily volume, and station-local ranks for
+positive estimated daily profit. Missing history leaves daily estimates
+unknown; zero history volume yields zero daily units and is not ranked. Regional
+volume is not station-specific volume or a fill forecast, and buy-order
+competition is station-anchored only.
+
+The assumed step at price `P` is `max(0.01, 10^(floor(log10(P)) - 3))`.
+At a power-of-ten boundary, the lower-price target uses the tick from the price
+band immediately below the boundary: for example, the step below `1,000,000`
+is `100`, producing `999,900`; the step above `999,900` produces `1,000,000`.
+Markdown ranks the top 100 opportunities; CSV and JSON retain all candidates.
+The Markdown ranking includes station best prices, order/depth context, history
+coverage, price deviations from the regional history average, and per-unit and
+daily fee details. JSON and CSV keep per-order IDs, range, minimum volume, price,
+and remaining quantity for the station book.
+
+Offline synthetic checks:
+
+```bash
+uv run pytest dev/proof-scripts/station-trades/test_station_trades.py
+```

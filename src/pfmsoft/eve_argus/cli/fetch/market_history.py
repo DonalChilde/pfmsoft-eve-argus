@@ -4,6 +4,7 @@ import asyncio
 import logging
 from dataclasses import dataclass
 from enum import StrEnum
+from pathlib import Path
 from typing import Annotated
 
 import typer
@@ -25,12 +26,17 @@ from pfmsoft.eve_argus.cli.fetch._market_history_selection import (
     active_type_ids,
     select_market_type_ids,
 )
+from pfmsoft.eve_argus.cli.fetch._selection_file import (
+    load_selection_file,
+    validate_market_type_ids,
+)
 from pfmsoft.eve_argus.cli.helpers import get_eve_argus_settings_from_context
 from pfmsoft.eve_argus.eve_argus import EveArgusResources
 from pfmsoft.eve_argus.fetch_esi import market_history_bulk as bulk
 from pfmsoft.eve_argus.fetch_esi.market_history import MarketHistoryUpdateResult
 from pfmsoft.eve_argus.fetch_esi.update import UpdateStatus
 from pfmsoft.eve_argus.helpers.market_groups import filter_type_ids_by_market_path
+from pfmsoft.eve_argus.helpers.type_materials import types_in_type_materials
 from pfmsoft.eve_argus.models.market_hubs import MARKET_HUBS
 from pfmsoft.eve_argus.settings import EveArgusSettings
 from pfmsoft.eve_argus.static import read as static_read
@@ -53,9 +59,11 @@ class SelectionMode(StrEnum):
     """Mutually exclusive sources of candidate types."""
 
     EXPLICIT = "explicit"
+    FILE = "file"
     ACTIVE = "active"
     MARKET = "market"
     INDUSTRY = "industry"
+    SCRAPMETAL = "scrapmetal"
 
 
 @dataclass(slots=True, kw_only=True, frozen=True)
@@ -71,6 +79,7 @@ class HistoryFetchOptions:
     failure_limit: int
     progress: ProgressStyle
     quiet: bool
+    stale_after_days: int = 6
 
     @property
     def single_pair(self) -> bool:
@@ -93,6 +102,17 @@ def fetch_market_history(
         list[int] | None,
         typer.Option("--type-id", help="Explicit item type ID; repeat to combine."),
     ] = None,
+    from_file: Annotated[
+        Path | None,
+        typer.Option(
+            "--from",
+            help=(
+                "JSON file with 'region_ids' and 'type_ids' lists; regions follow "
+                "--region-id, types are the selection."
+            ),
+            dir_okay=False,
+        ),
+    ] = None,
     hubs: Annotated[
         bool, typer.Option("--hubs", help="Append all defined market hub regions.")
     ] = False,
@@ -109,6 +129,13 @@ def fetch_market_history(
         typer.Option(
             "--industry-types",
             help="Select published market-listed blueprint, material, and product types.",
+        ),
+    ] = False,
+    scrapmetal: Annotated[
+        bool,
+        typer.Option(
+            "--scrapmetal",
+            help="Select published market-listed type-material parents and components.",
         ),
     ] = False,
     include: Annotated[
@@ -147,6 +174,19 @@ def fetch_market_history(
             "--progress", help="Auto uses live progress on interactive terminals."
         ),
     ] = ProgressStyle.AUTO,
+    stale_after_days: Annotated[
+        int,
+        typer.Option(
+            "--stale-after-days",
+            "-s",
+            min=0,
+            help=(
+                "Only update responses received more than N days ago; "
+                "missing responses are fetched. Expiry checks still apply. "
+                "0 disables this filter."
+            ),
+        ),
+    ] = 6,
     quiet: Annotated[
         bool,
         typer.Option("--quiet", help="Suppress progress messages, but not errors."),
@@ -154,37 +194,54 @@ def fetch_market_history(
 ) -> None:
     """Fetch history using exactly one type-selection mode, region by region.
 
-    Includes/excludes apply to active, market, and industry selections,
-    not explicit type IDs. Each region has an independent failure budget.
+    Includes/excludes apply to active, market, industry, and scrapmetal selections,
+    not explicit or --from type IDs. Regions are processed as --region-id, then
+    --from, then hubs. --from types must be published and market-listed. Each
+    region has an independent failure budget. --stale-after-days adds a received-age
+    gate after selection without overriding existing expiration checks.
     """
     region_ids = list(region_id or ())
+    file_type_ids: tuple[int, ...] = ()
+    if from_file is not None:
+        try:
+            selection_file = load_selection_file(from_file, require_type_ids=True)
+        except ValueError as error:
+            raise typer.BadParameter(str(error), param_hint="--from") from error
+        region_ids.extend(selection_file.region_ids)
+        file_type_ids = selection_file.type_ids or ()
     if hubs:
         region_ids.extend(hub.region_id for hub in MARKET_HUBS)
     if not region_ids:
-        raise typer.BadParameter("Provide at least one --region-id or use --hubs.")
+        raise typer.BadParameter(
+            "Provide at least one --region-id, use --from, or use --hubs."
+        )
     selections = [
         mode
         for mode, enabled in (
             (SelectionMode.EXPLICIT, bool(type_id)),
+            (SelectionMode.FILE, from_file is not None),
             (SelectionMode.ACTIVE, active),
             (SelectionMode.MARKET, market_types),
             (SelectionMode.INDUSTRY, industry_types),
+            (SelectionMode.SCRAPMETAL, scrapmetal),
         )
         if enabled
     ]
     if len(selections) != 1:
         raise typer.BadParameter(
-            "Choose exactly one of --type-id, --active, --market-types, "
-            "or --industry-types."
+            "Choose exactly one of --type-id, --from, --active, --market-types, "
+            "--industry-types, or --scrapmetal."
         )
     selection = selections[0]
-    if selection is SelectionMode.EXPLICIT and (include or exclude):
+    if selection in (SelectionMode.EXPLICIT, SelectionMode.FILE) and (
+        include or exclude
+    ):
         raise typer.BadParameter(
-            "--include and --exclude cannot be used with --type-id."
+            "--include and --exclude cannot be used with --type-id or --from."
         )
     options = HistoryFetchOptions(
         region_ids=list(dict.fromkeys(region_ids)),
-        type_ids=set(type_id or ()),
+        type_ids=set(type_id or file_type_ids),
         selection=selection,
         include=set(include or ()),
         exclude=set(exclude or ()),
@@ -198,6 +255,7 @@ def fetch_market_history(
         ),
         progress=progress,
         quiet=quiet,
+        stale_after_days=stale_after_days,
     )
     settings = get_eve_argus_settings_from_context(ctx)
     asyncio.run(_fetch_market_history(settings=settings, options=options))
@@ -218,10 +276,15 @@ async def _fetch_market_history(
         if unknown_regions and not options.single_pair:
             raise typer.BadParameter(f"Unknown region IDs: {sorted(unknown_regions)}")
         types = static_read.types(connection, only_published=False)
+        if options.selection is SelectionMode.FILE:
+            try:
+                validate_market_type_ids(options.type_ids, types=types)
+            except ValueError as error:
+                raise typer.BadParameter(str(error), param_hint="--from") from error
         selected_ids = options.type_ids
         excluded_ids: set[int] = set()
         if (
-            options.selection is SelectionMode.MARKET
+            options.selection in (SelectionMode.MARKET, SelectionMode.SCRAPMETAL)
             or options.include
             or options.exclude
         ):
@@ -254,6 +317,13 @@ async def _fetch_market_history(
                 raise typer.BadParameter("Static blueprints dataset must be populated.")
             for blueprint in blueprints.values():
                 industry_ids.update(types_in_blueprint(blueprint))
+        if options.selection is SelectionMode.SCRAPMETAL:
+            type_materials = static_read.type_materials(connection)
+            if not type_materials:
+                raise typer.BadParameter(
+                    "Static type materials dataset must be populated."
+                )
+            selected_ids &= types_in_type_materials(type_materials)
 
         for region_id in options.region_ids:
             region = regions.get(region_id)
@@ -441,4 +511,5 @@ async def _fetch_region_history(
             on_result=report,
             worker_count=options.worker_count,
             failure_limit=options.failure_limit,
+            stale_after_days=options.stale_after_days,
         )

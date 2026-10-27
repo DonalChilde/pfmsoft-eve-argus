@@ -1,0 +1,89 @@
+# Station Trades: {{ cell(hub.system_name) }}
+
+Place buy orders at {{ cell(hub.station_name) }}, then relist the filled items as sell
+orders at the same station.
+
+- **Station:** {{ cell(hub.station_name) }} (`{{ hub.station_id }}`)
+- **System:** {{ cell(hub.system_name) }} (`{{ hub.system_id }}`)
+- **Region:** {{ cell(hub.region_name) }} (`{{ hub.region_id }}`)
+- **Generated at (UTC):** `{{ report.generated_at }}`
+- **Orders:** response `{{ report.order_response_metadata_id }}`, received `{{ report.orders_received_at }}`, expiry `{{ report.orders_expiry_used or "unknown" }}` ({{ report.orders_freshness }})
+{% if report.history_window is none %}
+- **History window:** unavailable
+{% else %}
+- **History window:** {{ report.history_window.oldest_date }} to {{ report.history_window.newest_date }} ({{ history_days }} calendar days; stale after {{ stale_days }} days)
+{% endif %}
+{% if include_ids or exclude_ids %}
+- **Market-group filters:** include {{ include_ids or "all" }}; exclude {{ exclude_ids or "none" }} ({{ report.filtered_out_count }} station types filtered out)
+{% endif %}
+
+{% if report.orders_freshness == "expired" %}
+> **STALE:** The stored order snapshot has expired. Refresh orders with `eve-argus fetch market-orders --hubs` before acting.
+
+{% elif report.orders_freshness == "unknown" %}
+> **Freshness unknown:** the stored order snapshot has no expiry.
+
+{% endif %}
+{% if options.zero_fee_names %}
+> **Fee assumption:** {{ options.zero_fee_names | join(", ") }} {{ "is" if options.zero_fee_names | length == 1 else "are" }} 0%; net profit excludes any real fees not entered.
+
+{% endif %}
+> **Competition limitation:** buy-order competition is station-anchored only. Wider-range buy orders may compete but are not modeled.
+
+Assumptions: participation {{ number(options.participation_percent) }}% of regional daily volume; acquisition broker fee {{ number(options.acquisition_broker_fee_percent) }}%, sale broker fee {{ number(options.sale_broker_fee_percent) }}%, sales tax {{ number(options.sales_tax_percent) }}%. Prices use four significant figures with a {{ minimum_tick }} ISK minimum tick. Capital limits and repricing costs are not modeled.
+
+## Ranked opportunities (by estimated daily net profit)
+
+Station depth shows order count/remaining quantity. Deviations compare each proposed
+price with the regional history average.
+
+| Rank | Item | Market path | Best buy | Best sell | Proposed buy | Proposed sell | Net profit / unit | Net margin | Regional average | Regional daily volume | Modeled daily units | Est. daily net profit | Acquisition capital | Station depth | History coverage | Buy deviation | Sell deviation | Flags |
+| ---: | ---- | ----------- | -------: | --------: | -----------: | ------------: | ----------------: | ---------: | ---------------: | --------------------: | ------------------: | --------------------: | ------------------: | ------------- | ---------------- | ------------: | -------------: | ----- |
+{% for row in rows %}
+| {{ row.rank }} | {{ row.item }} | {{ row.market_path }} | {{ row.best_buy }} | {{ row.best_sell }} | {{ row.proposed_buy }} | {{ row.proposed_sell }} | {{ row.net_profit }} | {{ row.margin }} | {{ row.history_average }} | {{ row.daily_volume }} | {{ row.daily_units }} | {{ row.daily_profit }} | {{ row.capital }} | {{ row.station_depth }} | {{ row.history_coverage }} | {{ row.buy_deviation }} | {{ row.sell_deviation }} | {{ row.flags }} |
+{% else %}
+| | No opportunities meet the ranking criteria | | | | | | | | | | | | | | | | | |
+{% endfor %}
+{% if ranked_total > rows | length %}
+
+Showing {{ rows | length }} of {{ ranked_total }} ranked rows.
+{% endif %}
+
+## Fee details
+
+| Rank | Item | Acquisition broker fee / unit | Sale broker fee / unit | Sales tax / unit | Daily acquisition broker fee | Daily sale broker fee | Daily sales tax |
+| ---: | ---- | ----------------------------: | ---------------------: | ---------------: | ---------------------------: | --------------------: | --------------: |
+{% for row in rows %}
+| {{ row.rank }} | {{ row.item }} | {{ row.acquisition_fee }} | {{ row.sale_fee }} | {{ row.sales_tax }} | {{ row.daily_acquisition_fee }} | {{ row.daily_sale_fee }} | {{ row.daily_sales_tax }} |
+{% else %}
+| | No opportunities meet the ranking criteria | | | | | | |
+{% endfor %}
+
+## Unranked candidates
+
+{% for status, count in unranked_counts.items() %}
+- **{{ status }}:** {{ count }}
+{% else %}
+None.
+{% endfor %}
+
+CSV and JSON retain all {{ report.records | length }} candidates.
+
+## Warnings
+
+{% for warning in report.warnings %}
+- {{ cell(warning) }}
+{% endfor %}
+
+## Definitions and limitations
+
+- **Best buy/sell:** highest remaining station-anchored buy price and lowest remaining station sell price.
+- **Proposed prices:** the next valid price above the best buy and below the best sell, using four significant figures and a {{ minimum_tick }} ISK minimum tick.
+- **5% price:** a summary depth threshold, not a +/-5% price band or an execution price. Outlier filtering uses factor {{ number(filter_factor) }}.
+- **Regional daily volume:** average traded volume per calendar day across the common history window; missing days count as zero. It does not identify the station's share.
+- **Participation:** a scenario assumption applied once to completed buy-then-sell cycles, not a fill probability.
+- **Net margin:** net profit per unit divided by acquisition cost per unit (price plus acquisition broker fee).
+- **Acquisition capital:** modeled daily units times acquisition cost per unit; portfolio constraints are not modeled.
+- **Estimated daily net profit:** a regional-volume participation scenario, not a fill forecast or guaranteed profit.
+- **Statuses:** `ranked` (two usable prices, positive profit, and positive known volume), `unprofitable`, `missing_buy`, `missing_sell`, `missing_history`, `zero_history_volume`, `invalid_price_target` (no lower sell price, or proposed prices meet or cross).
+- **Flags:** `missing_history`, `stale_history` (newest used date older than {{ stale_days }} days), `zero_history_volume`, `invalid_price_target`, `missing_buy`, `missing_sell`. Report-wide flags are shown as notices above.
