@@ -79,6 +79,7 @@ class HistoryFetchOptions:
     failure_limit: int
     progress: ProgressStyle
     quiet: bool
+    stale_after_days: int = 6
 
     @property
     def single_pair(self) -> bool:
@@ -173,6 +174,19 @@ def fetch_market_history(
             "--progress", help="Auto uses live progress on interactive terminals."
         ),
     ] = ProgressStyle.AUTO,
+    stale_after_days: Annotated[
+        int,
+        typer.Option(
+            "--stale-after-days",
+            "-s",
+            min=0,
+            help=(
+                "Only update responses received more than N days ago; "
+                "missing responses are fetched. Expiry checks still apply. "
+                "0 disables this filter."
+            ),
+        ),
+    ] = 6,
     quiet: Annotated[
         bool,
         typer.Option("--quiet", help="Suppress progress messages, but not errors."),
@@ -183,7 +197,8 @@ def fetch_market_history(
     Includes/excludes apply to active, market, industry, and scrapmetal selections,
     not explicit or --from type IDs. Regions are processed as --region-id, then
     --from, then hubs. --from types must be published and market-listed. Each
-    region has an independent failure budget.
+    region has an independent failure budget. --stale-after-days adds a received-age
+    gate after selection without overriding existing expiration checks.
     """
     region_ids = list(region_id or ())
     file_type_ids: tuple[int, ...] = ()
@@ -240,6 +255,7 @@ def fetch_market_history(
         ),
         progress=progress,
         quiet=quiet,
+        stale_after_days=stale_after_days,
     )
     settings = get_eve_argus_settings_from_context(ctx)
     asyncio.run(_fetch_market_history(settings=settings, options=options))
@@ -495,4 +511,5 @@ async def _fetch_region_history(
             on_result=report,
             worker_count=options.worker_count,
             failure_limit=options.failure_limit,
+            stale_after_days=options.stale_after_days,
         )

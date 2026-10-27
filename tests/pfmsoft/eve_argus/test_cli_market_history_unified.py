@@ -161,6 +161,7 @@ def test_help_exposes_unified_options(environment: Environment) -> None:
         "--exclude",
         "--workers",
         "--failure-limit",
+        "--stale-after-days",
         "--progress",
         "--quiet",
     ):
@@ -168,6 +169,58 @@ def test_help_exposes_unified_options(environment: Environment) -> None:
     assert "--all-market-types" not in result.output
     assert "--all-industry-types" not in result.output
     assert "--batch-size" not in result.output
+    environment.manager.__aenter__.assert_not_awaited()
+
+
+@pytest.mark.parametrize("days", [0, 3])
+@pytest.mark.parametrize("flag", ["--stale-after-days", "-s"])
+@pytest.mark.parametrize(
+    "selection",
+    [
+        ["--type-id", "10", "--type-id", "12"],
+        ["--market-types"],
+        ["--active"],
+        ["--industry-types"],
+        ["--scrapmetal"],
+    ],
+)
+def test_age_option_reaches_each_selected_pair(
+    environment: Environment, *, days: int, flag: str, selection: list[str]
+) -> None:
+    """All selection modes forward the age gate to every regional pair."""
+    result = _invoke(
+        environment,
+        "--region-id",
+        "100",
+        "--region-id",
+        "200",
+        *selection,
+        flag,
+        str(days),
+    )
+    assert result.exit_code == 0, result.output
+    assert environment.updater.await_count > 0
+    assert {
+        call.kwargs["region_id"] for call in environment.updater.await_args_list
+    } == {100, 200}
+    assert all(
+        call.kwargs["stale_after_days"] == days
+        for call in environment.updater.await_args_list
+    )
+
+
+def test_negative_age_option_is_rejected(environment: Environment) -> None:
+    """Negative day limits are rejected before resource initialization."""
+    result = _invoke(
+        environment,
+        "--region-id",
+        "100",
+        "--type-id",
+        "10",
+        "--stale-after-days",
+        "-1",
+    )
+    assert result.exit_code == 2, result.output
     environment.manager.__aenter__.assert_not_awaited()
 
 
@@ -750,8 +803,9 @@ def test_active_regions_are_isolated_and_sequential(environment: Environment) ->
         return {10} if region_id == 200 else {12}
 
     async def update(
-        *args: object, region_id: int, type_id: int
+        *args: object, region_id: int, type_id: int, stale_after_days: int
     ) -> UpdateResult[object]:
+        assert stale_after_days == 6
         events.append(("start", region_id, type_id))
         await asyncio.sleep(0)
         events.append(("finish", region_id, type_id))
@@ -824,9 +878,10 @@ def test_abort_cleanup_precedes_next_region(environment: Environment) -> None:
         return {10, 12}
 
     async def update(
-        *args: object, region_id: int, type_id: int
+        *args: object, region_id: int, type_id: int, stale_after_days: int
     ) -> UpdateResult[object]:
         nonlocal cleaned
+        assert stale_after_days == 6
         assert started is not None
         if region_id == 200:
             return UpdateResult(status=UpdateStatus.SKIPPED, previous_state=None)

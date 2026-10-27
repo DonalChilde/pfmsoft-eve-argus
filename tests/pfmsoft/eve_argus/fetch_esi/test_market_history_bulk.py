@@ -317,6 +317,24 @@ def test_empty_selection(monkeypatch: pytest.MonkeyPatch) -> None:
     update.assert_not_called()
 
 
+def test_negative_age_prevents_updates(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Negative day limits fail before workers start, even with no types."""
+    update = AsyncMock()
+    monkeypatch.setattr(bulk, "update_market_history", update)
+    with pytest.raises(ValueError, match="stale_after_days"):
+        asyncio.run(
+            bulk.update_market_histories(
+                Mock(spec=EsiLink),
+                Mock(spec=EsiSchema),
+                Mock(spec=sqlite3.Connection),
+                region_ids={10},
+                type_ids=set(),
+                stale_after_days=-1,
+            )
+        )
+    update.assert_not_awaited()
+
+
 def test_reconciles_updates_finishing_during_abort(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

@@ -200,6 +200,7 @@ region begins discovery or history updates.
 | ------------------------------ | --------------------------------------------- | -------------------------------------------------------------------------------------- |
 | `--workers`                    | `MARKET_HISTORY_WORKER_COUNT` (currently 100) | Positive integer; maximum concurrent updates using continuously refilled workers       |
 | `--failure-limit`              | `MARKET_HISTORY_FAILURE_LIMIT` (currently 50) | Positive integer; independent failure budget for each region                           |
+| `--stale-after-days N`, `-s N` | `6`                                           | Nonnegative integer; only update pairs whose latest response is older than N days; 0 disables the age filter |
 | `--progress auto\|live\|plain` | `auto`                                        | Live progress on interactive terminals by default; plain completion messages otherwise |
 | `--quiet`                      | Off                                           | Hide routine output and progress, but retain warnings, failures, and abort notices     |
 
@@ -228,6 +229,16 @@ freshness and expiry details.
 
 Unexpired stored responses skip fetching; Argus expiry overrides ESI expiry, and
 missing expiry triggers a refresh. Existing ESI caching and rate limiting apply.
+
+Use `--stale-after-days 3` to additionally skip selected region/type pairs whose
+latest response `received_at` is no more than three days old. Days are rolling
+24-hour periods, not calendar dates; a response exactly N days old is skipped.
+The check uses response metadata even for empty histories and counts recent
+pairs as skipped in progress and summaries. Pairs without a stored response
+are still fetched. Older responses must also pass the existing expiration
+check before fetching. The default is six days; `-s 3` is shorthand for
+`--stale-after-days 3`. Pass `-s 0` to disable the age filter.
+This filter applies to every type-selection mode, independently for each region.
 
 Successful updates store response metadata and daily history transactionally.
 Overlapping dates are replaced and older dates remain stored. Empty responses
