@@ -218,3 +218,54 @@ files local.
 These are live diagnostic scripts, not offline tests. Fetch failures and validation
 errors propagate with a nonzero exit status. The suite continues after individual
 failures and summarizes them at the end.
+
+## Station-trades report proof
+
+The initial station-trades proof reads the latest stored regional order snapshot
+for each configured market hub, scopes books to each hub's primary station, and
+adds regional history context from a common ten-calendar-day window. It does not
+fetch or refresh application data. All three input databases are opened
+read-only; a missing history database is reported as missing history.
+
+```bash
+uv run dev/proof-scripts/station-trades/station_trades.py \
+  --to dev/proof-scripts/proof-output/station-trades
+```
+
+Use `--orders-database`, `--history-database`, or `--static-database` to select
+other local SQLite files. Existing output is protected unless `--overwrite` is
+passed. The script writes per-hub Markdown, CSV, and JSON files only after all
+reports have been collected and rendered. A filesystem failure during writing
+can still leave a partial output set.
+
+The default static database is build `3607705` at
+`dev/app-dir/static-db-store/build_3607705_2026-10-12T11_08_38Z_sqlite`.
+For static types, the proof reads only `type_id`, `market_group_id`, `name`, and
+`published`; market-group paths use the existing static reader.
+
+The prototype uses the provided rule that prices have four significant figures,
+with a `0.01 ISK` minimum price step. It proposes the next legal tick above the
+current best station buy and below the current best station sell. This remains
+provisional until verified in game, especially at tick boundaries. It
+calculates fees at the configured proof constants (currently 0%), daily
+estimates from 1% of regional average daily volume, and station-local ranks for
+positive estimated daily profit. Missing history leaves daily estimates
+unknown; zero history volume yields zero daily units and is not ranked. Regional
+volume is not station-specific volume or a fill forecast, and buy-order
+competition is station-anchored only.
+
+The assumed step at price `P` is `max(0.01, 10^(floor(log10(P)) - 3))`.
+At a power-of-ten boundary, the lower-price target uses the tick from the price
+band immediately below the boundary: for example, the step below `1,000,000`
+is `100`, producing `999,900`; the step above `999,900` produces `1,000,000`.
+Markdown ranks the top 100 opportunities; CSV and JSON retain all candidates.
+The Markdown ranking includes station best prices, order/depth context, history
+coverage, price deviations from the regional history average, and per-unit and
+daily fee details. JSON and CSV keep per-order IDs, range, minimum volume, price,
+and remaining quantity for the station book.
+
+Offline synthetic checks:
+
+```bash
+uv run pytest dev/proof-scripts/station-trades/test_station_trades.py
+```
