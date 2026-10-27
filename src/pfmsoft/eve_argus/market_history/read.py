@@ -3,12 +3,10 @@
 import logging
 from sqlite3 import Connection
 
-from pfmsoft.eve_snippets.eve.eve_dates import downtime_bracket
-from whenever import Instant
-
 from pfmsoft.eve_argus.helpers.currency import from_cents
 from pfmsoft.eve_argus.helpers.timing import log_timing
 from pfmsoft.eve_argus.market_history import models
+from pfmsoft.eve_argus.market_history.helpers import first_possible_date
 from pfmsoft.eve_argus.market_history.history_summary import (
     calculate_history_summary,
     date_range_days,
@@ -110,10 +108,7 @@ def history_summary(
         )
         if not most_recent_record:
             return None
-        previous_dt, _ = downtime_bracket(
-            Instant.parse_iso(most_recent_record[0].received_at)
-        )
-        start = previous_dt.to_stdlib().date().isoformat()
+        start = first_possible_date(most_recent_record[0].received_at)
     if count is None:
         # Get count of total records available for the given region and type
         # FIXME not sure this is doing what I want.
