@@ -445,6 +445,52 @@ command warns and continues. Expired order snapshots are reported, not
 refreshed. `--quiet` hides progress, not warnings or errors. Use `--overwrite`
 to replace existing files.
 
+## Station trades reports
+
+```bash
+uv run eve-argus fetch market-orders --hubs
+uv run eve-argus fetch market-history --hubs --market-types   # slow
+uv run eve-argus reports station-trades --to ./reports
+uv run eve-argus reports station-trades --to ./reports \
+  --buy-broker-fee 1.5 --sell-broker-fee 1.5 --sales-tax 3.37 \
+  --include 4   # Ships only
+```
+
+Finds items to buy with a buy order and relist with a sell order at each hub's
+primary station (Jita IV - Moon 4, Amarr VIII, Dodixie IX - Moon 20, Hek VIII -
+Moon 12, Rens VI - Moon 8). Inputs are opened read-only; nothing is fetched.
+Three files per station share the stem
+`station-trades-<system>-<station_id>-<file_safe_received_at>` (`.md`, `.csv`,
+`.json`).
+
+For each published market type with active orders at the station:
+
+- Proposed prices are one valid tick above the best station buy and below the
+  best station sell. Ticks use four significant figures with a 0.01 ISK
+  minimum. Only station-anchored buy orders are considered; wider-range buy
+  orders may compete but are not modeled.
+- Broker fees on both orders and sales tax on the sale are percentages of the
+  proposed prices. They default to 0%, which is flagged in every output.
+- Regional daily volume is the average over a common 10-day history window that
+  ends on the newest stored date before the generation date. Missing days count
+  as zero. `--participation-percent` (default 1) sets the assumed share of that
+  volume completed per day.
+- Rows are ranked by estimated daily net profit, then net margin. Rows with
+  missing books, invalid price targets, missing or zero-volume history, or no
+  profit are kept unranked in CSV and JSON and counted in Markdown. Markdown
+  shows the top 100 ranked rows.
+
+`--include` and `--exclude` take market-group IDs and may be repeated. They use
+the same subtree rules as `fetch market-history`: an empty include means all,
+exclusions always win, and unknown groups are a usage error. Filtered types are
+dropped from every output, and the filters and the filtered-out count are
+recorded in each report.
+
+Every hub needs a stored order snapshot; otherwise the command fails before
+writing. A missing history database warns and leaves every row unranked.
+Expired order snapshots are reported, not refreshed. `--quiet` hides progress,
+not warnings or errors. Use `--overwrite` to replace existing files.
+
 ## Corporation blueprints report
 
 ```bash
