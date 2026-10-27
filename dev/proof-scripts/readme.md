@@ -4,6 +4,51 @@ This directory contains scripts that prove the operation of various components o
 
 The python scripts are expected to be run with `uv run` from the project root directory, so that the dev env settings are used.
 
+## ME research PTV comparison
+
+[`industry-research/compare_me_research.py`](industry-research/compare_me_research.py)
+compares provisional PTV formulas and fee rounding policies, using stored data
+only. Both SQLite connections use `mode=ro`; no settings initialization, fetch,
+migration, or database write is performed.
+
+```bash
+uv run dev/proof-scripts/industry-research/compare_me_research.py \
+  --static-database dev/app-dir/static-db-store/build_3607705_2026-10-12T11_08_38Z_sqlite \
+  --output-dir dev/proof-scripts/proof-output/industry-research/antimatter-charge-s-osmeden-alpha-2026-10-27
+```
+
+Defaults select Antimatter Charge S Blueprint, Osmeden, and an NPC/Alpha scenario:
+0.25% facility tax, 2% SCC, 0.25% Alpha, installation-cost factor 1.
+Use `--help` for overrides. `--alpha-tax 0` models an Omega fee scenario.
+Rates are fractions, not displayed percentages. Changing the system/blueprint
+does not resolve a different facility configuration automatically.
+
+The script selects the newest stored price and cost-index responses and records
+their IDs, timestamps, expirations, database paths, recipe, and adjusted prices
+in JSON. Expired snapshots remain usable for historical comparisons and are
+not refreshed. Retain generated JSON when comparing with an in-game quote.
+Stored cost indices have four decimal places and can differ from live precision.
+
+`me_research.csv` and `me_research.json` contain the same thirty flat rows: ten
+alternative single ME jobs (`0 -> 1` through `0 -> 10`) for each of three
+candidate PTV formulas. Charges are calculated and rounded for the entire
+zero-to-target installation, matching the in-game quote boundary.
+CSV scenario provenance is in the companion JSON. Times are unmodified base
+durations, not character-adjusted times. For a rank-one blueprint all three
+formulas coincide; compare a different-rank blueprint to test normalization.
+Rounding columns deliberately offer competing hypotheses, not verified rules.
+In these primary exports, the cumulative component-cents column equals that
+row's job total; do not sum rows representing alternative installations.
+The `incremental/` subdirectory retains the separately installed one-step
+CSV/JSON comparison, whose cumulative column sums rounded one-step fees.
+The legacy field `base_step_seconds` is the unmodified duration of the entire
+row's job, including all levels in a zero-to-target installation.
+No production formula module is changed.
+Console output and explicit `*_whole_isk` columns use the game's labels:
+Gross Job Cost (index-based charge after bonuses), Total Taxes (facility/SCC/Alpha),
+and Total Job Cost (their sum). These columns use the provisional per-component
+whole-ISK rounding policy; other rounding candidates remain available.
+
 ## Market-order summary performance comparison
 
 Compare three ways of calculating both buy and sell summaries:
