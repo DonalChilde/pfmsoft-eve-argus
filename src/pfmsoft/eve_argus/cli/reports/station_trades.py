@@ -3,9 +3,7 @@
 import logging
 import sqlite3
 from contextlib import ExitStack
-from dataclasses import dataclass
 from datetime import date
-from decimal import Decimal
 from pathlib import Path
 from typing import Annotated
 
@@ -17,13 +15,17 @@ from pfmsoft.eve_argus.cli.helpers import (
     get_eve_argus_settings_from_context,
     get_static_database_path,
 )
+from pfmsoft.eve_argus.cli.reports._hub_snapshots import (
+    HubSnapshot,
+    option_decimal,
+    percent_option,
+    select_hub_snapshots,
+)
 from pfmsoft.eve_argus.dynamic import read as dynamic_read
-from pfmsoft.eve_argus.dynamic.models import MarketOrdersResponse
 from pfmsoft.eve_argus.helpers.connection_helpers import db_connection_manager
 from pfmsoft.eve_argus.helpers.file_safe_string import file_safe_string
 from pfmsoft.eve_argus.market_history import read as history_read
 from pfmsoft.eve_argus.market_history.models import MarketHistoryRecord
-from pfmsoft.eve_argus.models.market_hubs import MARKET_HUBS, MarketHub
 from pfmsoft.eve_argus.reports.station_trades import (
     RegionalHistory,
     StationTradesOptions,
@@ -48,19 +50,6 @@ HISTORY_FETCH_HINT = (
 )
 
 
-@dataclass(slots=True, kw_only=True, frozen=True)
-class _HubSnapshot:
-    """The latest regional order response selected for one hub."""
-
-    hub: MarketHub
-    response: MarketOrdersResponse
-
-
-def _percent_option(help_text: str) -> typer.models.OptionInfo:
-    """Build a 0-100 percent option."""
-    return typer.Option(min=0, max=100, help=help_text)
-
-
 @app.command(name="station-trades")
 def station_trades(
     ctx: typer.Context,
@@ -76,17 +65,17 @@ def station_trades(
         typer.Option("--quiet", help="Suppress progress, not errors or data warnings."),
     ] = False,
     buy_broker_fee: Annotated[
-        float, _percent_option("Broker fee percent on the proposed buy order.")
+        float, percent_option("Broker fee percent on the proposed buy order.")
     ] = 0.0,
     sell_broker_fee: Annotated[
-        float, _percent_option("Broker fee percent on the proposed sell order.")
+        float, percent_option("Broker fee percent on the proposed sell order.")
     ] = 0.0,
     sales_tax: Annotated[
-        float, _percent_option("Sales tax percent of the gross sale value.")
+        float, percent_option("Sales tax percent of the gross sale value.")
     ] = 0.0,
     participation_percent: Annotated[
         float,
-        _percent_option(
+        percent_option(
             "Assumed percent of regional daily volume completed (greater than 0)."
         ),
     ] = 1.0,
@@ -111,10 +100,10 @@ def station_trades(
     """
     try:
         options = StationTradesOptions(
-            participation_percent=_decimal(participation_percent),
-            acquisition_broker_fee_percent=_decimal(buy_broker_fee),
-            sale_broker_fee_percent=_decimal(sell_broker_fee),
-            sales_tax_percent=_decimal(sales_tax),
+            participation_percent=option_decimal(participation_percent),
+            acquisition_broker_fee_percent=option_decimal(buy_broker_fee),
+            sale_broker_fee_percent=option_decimal(sell_broker_fee),
+            sales_tax_percent=option_decimal(sales_tax),
             include_market_group_ids=tuple(sorted(set(include or ()))),
             exclude_market_group_ids=tuple(sorted(set(exclude or ()))),
         )
@@ -137,37 +126,8 @@ def station_trades(
         raise typer.Exit(code=1) from error
 
 
-def _decimal(value: float) -> Decimal:
-    """Convert a CLI float without binary-float artifacts or a trailing `.0`."""
-    return Decimal(int(value)) if value.is_integer() else Decimal(str(value))
-
-
-def _select_snapshots(dynamic: sqlite3.Connection) -> list[_HubSnapshot]:
-    """Select the latest regional order response for every hub.
-
-    Raises:
-        ValueError: If any hub has no stored orders.
-    """
-    responses_by_region = {
-        region_id: dynamic_read.market_orders_responses(dynamic, region_id=region_id)
-        for region_id in dict.fromkeys(hub.region_id for hub in MARKET_HUBS)
-    }
-    missing = [
-        hub.system_name for hub in MARKET_HUBS if not responses_by_region[hub.region_id]
-    ]
-    if missing:
-        raise ValueError(
-            f"No stored regional market orders for: {', '.join(missing)}. "
-            "Run 'eve-argus fetch market-orders --hubs' to fetch source orders."
-        )
-    return [
-        _HubSnapshot(hub=hub, response=responses_by_region[hub.region_id][0])
-        for hub in MARKET_HUBS
-    ]
-
-
 def _output_stems(
-    *, destination: Path, snapshots: list[_HubSnapshot], overwrite: bool
+    *, destination: Path, snapshots: list[HubSnapshot], overwrite: bool
 ) -> dict[int, Path]:
     """Name and preflight every output before any data is calculated.
 
@@ -277,7 +237,7 @@ def _generate_reports(
             )
         except ValueError as error:
             raise typer.BadParameter(str(error)) from error
-        snapshots = _select_snapshots(dynamic)
+        snapshots = select_hub_snapshots(dynamic)
         stems = _output_stems(
             destination=destination, snapshots=snapshots, overwrite=overwrite
         )

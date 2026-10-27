@@ -524,7 +524,7 @@ def is_selected_market_path(
     return path.isdisjoint(exclude)
 
 
-def _orders_freshness(
+def order_snapshot_freshness(
     response: MarketOrdersResponse, generated_at: Instant
 ) -> tuple[str | None, OrdersFreshness]:
     """Argus expiry overrides source expiry; no expiry means unknown freshness."""
@@ -534,7 +534,7 @@ def _orders_freshness(
     return expiry, "expired" if Instant.parse_iso(expiry) <= generated_at else "current"
 
 
-def _validate_snapshot(
+def validate_order_snapshot(
     *, hub: MarketHub, response: MarketOrdersResponse, orders: MarketOrdersDataset
 ) -> None:
     """Check that the response and orders describe the same regional snapshot.
@@ -552,7 +552,7 @@ def _validate_snapshot(
     Instant.parse_iso(response.received_at)
 
 
-def _active_station_book(
+def active_station_book(
     *, hub: MarketHub, type_id: int, book: BuySellOrders, response_metadata_id: int
 ) -> tuple[tuple[MarketOrderRecord, ...], tuple[MarketOrderRecord, ...]]:
     """Validate a regional book and return active station buy and sell orders.
@@ -613,7 +613,7 @@ def _deviation(price: Decimal | None, average: Decimal | None) -> Decimal | None
     return (price / average - 1) * 100
 
 
-def _station_path(
+def station_market_path(
     *, type_id: int, types: TypesDataset, market_groups: MarketGroupsDataset
 ) -> tuple[int, tuple[int, ...], tuple[str, ...]] | None:
     """Validate static identity and return the type's market-group path.
@@ -780,12 +780,12 @@ def collect_station_trades(
         ValueError: If inputs are inconsistent, a filter ID is unknown, or an
             order has invalid data.
     """
-    _validate_snapshot(hub=hub, response=response, orders=orders)
+    validate_order_snapshot(hub=hub, response=response, orders=orders)
     validate_market_group_ids(
         market_groups,
         (*options.include_market_group_ids, *options.exclude_market_group_ids),
     )
-    expiry, orders_freshness = _orders_freshness(response, generated_at)
+    expiry, orders_freshness = order_snapshot_freshness(response, generated_at)
     generation_date = date.fromisoformat(generated_at.format_iso()[:10])
     summaries = calculate_dataset_summaries(
         _active_dataset(orders), location_id=hub.station_id
@@ -801,7 +801,7 @@ def collect_station_trades(
     rows: list[StationTradeRow] = []
     excluded_without_group = filtered_out = 0
     for type_id, book in sorted(orders.records.items()):
-        buys, sells = _active_station_book(
+        buys, sells = active_station_book(
             hub=hub,
             type_id=type_id,
             book=book,
@@ -809,7 +809,9 @@ def collect_station_trades(
         )
         if not buys and not sells:
             continue
-        path = _station_path(type_id=type_id, types=types, market_groups=market_groups)
+        path = station_market_path(
+            type_id=type_id, types=types, market_groups=market_groups
+        )
         if path is None:
             excluded_without_group += 1
             continue

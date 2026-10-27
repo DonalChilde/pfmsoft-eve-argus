@@ -491,6 +491,52 @@ writing. A missing history database warns and leaves every row unranked.
 Expired order snapshots are reported, not refreshed. `--quiet` hides progress,
 not warnings or errors. Use `--overwrite` to replace existing files.
 
+## Hub-to-hub trades reports
+
+```bash
+uv run eve-argus fetch market-orders --hubs
+uv run eve-argus reports hub-trades --to ./reports
+uv run eve-argus reports hub-trades --to ./reports \
+  --sales-tax 3.37 --transport-per-m3 800 --min-profit 1000000 \
+  --exclude 4   # No ships
+```
+
+Finds items to buy from sell orders at one hub's primary station, haul, and sell
+immediately into buy orders at another hub's primary station. Each hub is a
+source in turn, and the other four are its destinations. Inputs are opened
+read-only; nothing is fetched. Three files per source share the stem
+`hub-trades-from-<system>-<station_id>-<file_safe_generated_at>` (`.md`,
+`.csv`, `.json`).
+
+For each published market type with station sells at the source and station
+buys at a destination:
+
+- Both books are walked: the cheapest source sells fill the highest destination
+  buys while each unit's `buy × (1 − sales tax) − sell − transport per unit`
+  is positive. Buy orders whose minimum volume cannot be met are skipped and
+  flagged. The row records why the walk stopped (`profit_exhausted`,
+  `source_supply`, or `destination_demand`).
+- Volume is packaged m³ when available, otherwise m³. Transport cost is total
+  m³ times `--transport-per-m3`. Sales tax and transport default to 0, and each
+  zero is flagged. Broker fees do not apply.
+- Rows are ranked by total net profit, then profit per m³. Rows at or below
+  `--min-profit` and rows with unknown m³ (when transport is above 0) are kept
+  unranked in CSV and JSON. Routes with no profitable unit are only counted.
+  Markdown shows the top 100 ranked rows.
+- When an item is profitable to several destinations, every row records the
+  match count, the best destination (highest net profit), and the alternates.
+  Markdown marks the best row with ★ and lists these items in their own
+  section. Each destination's walk uses the same source supply, so
+  per-destination profits are alternatives. Summary totals count only best
+  matches.
+
+`--include` and `--exclude` follow the same market-group subtree rules as
+`station-trades`. Every hub needs a stored order snapshot; otherwise the command
+fails before writing. Expired snapshots, and snapshots received more than 30
+minutes apart, are flagged rather than refreshed. Only primary-station orders
+are matched. `--quiet` hides progress, not warnings or errors. Use
+`--overwrite` to replace existing files.
+
 ## Corporation blueprints report
 
 ```bash

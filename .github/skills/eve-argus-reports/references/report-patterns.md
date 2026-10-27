@@ -16,6 +16,7 @@ exposes the following commands.
 | `hub-prices` | All entries in `MARKET_HUBS`, using stored regional orders | CSV and JSON per hub |
 | `scrapmetal` | All entries in `MARKET_HUBS`, using stored regional orders and optional market history | Markdown, CSV, JSON per hub; price-point CSV and JSON per run |
 | `station-trades` | Primary station of every `MARKET_HUBS` entry, using stored regional orders and regional market history; repeatable `--include`/`--exclude` market-group filters | Markdown, CSV, JSON per station |
+| `hub-trades` | Each `MARKET_HUBS` primary station as a source, matched against every other hub's primary station, using stored regional orders; repeatable `--include`/`--exclude` market-group filters | Markdown, CSV, JSON per source station |
 
 All of them require `--to` and offer `--overwrite` and `--quiet`. Corporation
 commands accept a positive `--corporation-id`, falling back to configuration.
