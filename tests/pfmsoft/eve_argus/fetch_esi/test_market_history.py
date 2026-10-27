@@ -6,7 +6,7 @@ from collections.abc import Iterator
 from contextlib import closing
 from decimal import Decimal
 from typing import Literal
-from unittest.mock import AsyncMock, Mock
+from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 from pfmsoft.eve_link import (
@@ -137,6 +137,99 @@ def test_update_persists_validated_history(connection: sqlite3.Connection) -> No
     assert record.highest == Decimal("130.00")
     assert record.lowest == Decimal("120.00")
     assert (record.date, record.order_count, record.volume) == ("2026-10-17", 5, 100)
+
+
+@pytest.mark.parametrize(
+    ("received_at", "stale_after_days", "expires_at", "expected"),
+    [
+        ("2026-10-26T00:00:00Z", 3, _PAST, UpdateStatus.SKIPPED),
+        ("2026-10-24T00:00:00Z", 3, _PAST, UpdateStatus.SKIPPED),
+        ("2026-10-23T23:59:59Z", 3, _PAST, UpdateStatus.UPDATED),
+        ("2026-10-23T23:59:59Z", 3, _FUTURE, UpdateStatus.SKIPPED),
+        ("2026-10-28T00:00:00Z", 3, _PAST, UpdateStatus.SKIPPED),
+        ("2026-10-26T00:00:00Z", 0, _PAST, UpdateStatus.UPDATED),
+        ("2026-10-26T00:00:00Z", None, _PAST, UpdateStatus.UPDATED),
+    ],
+)
+@pytest.mark.parametrize("has_history", [False, True])
+def test_update_respects_received_age(
+    connection: sqlite3.Connection,
+    *,
+    received_at: str,
+    stale_after_days: int | None,
+    expires_at: str,
+    expected: UpdateStatus,
+    has_history: bool,
+) -> None:
+    """Only strictly older responses pass the age gate, then expiry still applies."""
+    _seed(connection, received_at="2026-10-01T00:00:00Z")
+    _seed(connection, received_at=received_at, expires_at=expires_at)
+    _seed(connection, region_id=11, received_at=_FUTURE)
+    _seed(connection, type_id=21, received_at=_FUTURE)
+    if not has_history:
+        with connection:
+            connection.execute("DELETE FROM market_history")
+            connection.execute("UPDATE market_history_response SET response_count = 0")
+    previous = read.market_history_responses(
+        connection, region_id=10, type_id=20, count=1
+    )[0]
+    esi_link = Mock(spec=EsiLink)
+    esi_link.make_request = AsyncMock(return_value=_response())
+
+    with patch(
+        "pfmsoft.eve_argus.fetch_esi.market_history.Instant", wraps=Instant
+    ) as clock:
+        clock.now.return_value = Instant.parse_iso("2026-10-27T00:00:00Z")
+        result = asyncio.run(
+            update_market_history(
+                esi_link,
+                Mock(spec=EsiSchema),
+                connection,
+                region_id=10,
+                type_id=20,
+                stale_after_days=stale_after_days,
+            )
+        )
+
+    assert result.status is expected
+    assert result.previous_state == previous
+    assert esi_link.make_request.await_count == int(expected is UpdateStatus.UPDATED)
+
+
+def test_age_gate_fetches_missing_pair(connection: sqlite3.Connection) -> None:
+    """A missing response is fetched even with the age gate enabled."""
+    esi_link = Mock(spec=EsiLink)
+    esi_link.make_request = AsyncMock(return_value=_response())
+    result = asyncio.run(
+        update_market_history(
+            esi_link,
+            Mock(spec=EsiSchema),
+            connection,
+            region_id=10,
+            type_id=20,
+            stale_after_days=3,
+        )
+    )
+    assert result.status is UpdateStatus.UPDATED
+    esi_link.make_request.assert_awaited_once()
+
+
+def test_negative_age_is_rejected(connection: sqlite3.Connection) -> None:
+    """Invalid age limits fail before requesting external data."""
+    esi_link = Mock(spec=EsiLink)
+    esi_link.make_request = AsyncMock()
+    with pytest.raises(ValueError, match="stale_after_days"):
+        asyncio.run(
+            update_market_history(
+                esi_link,
+                Mock(spec=EsiSchema),
+                connection,
+                region_id=10,
+                type_id=20,
+                stale_after_days=-1,
+            )
+        )
+    esi_link.make_request.assert_not_awaited()
 
 
 @pytest.mark.parametrize("has_history", [False, True])

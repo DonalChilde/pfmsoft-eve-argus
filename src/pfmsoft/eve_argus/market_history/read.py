@@ -3,12 +3,10 @@
 import logging
 from sqlite3 import Connection
 
-from pfmsoft.eve_snippets.eve.eve_dates import downtime_bracket
-from whenever import Instant
-
 from pfmsoft.eve_argus.helpers.currency import from_cents
 from pfmsoft.eve_argus.helpers.timing import log_timing
 from pfmsoft.eve_argus.market_history import models
+from pfmsoft.eve_argus.market_history.helpers import first_possible_date
 from pfmsoft.eve_argus.market_history.history_summary import (
     calculate_history_summary,
     date_range_days,
@@ -110,10 +108,7 @@ def history_summary(
         )
         if not most_recent_record:
             return None
-        previous_dt, _ = downtime_bracket(
-            Instant.parse_iso(most_recent_record[0].received_at)
-        )
-        start = previous_dt.to_stdlib().date().isoformat()
+        start = first_possible_date(most_recent_record[0].received_at)
     if count is None:
         # Get count of total records available for the given region and type
         # FIXME not sure this is doing what I want.
@@ -395,3 +390,25 @@ def market_history_responses_by_region(
     return {
         type_id: tuple(responses) for type_id, responses in responses_by_type.items()
     }
+
+
+@log_timing(logger=logger, level=_timing_log_level)
+def newest_history_date(
+    connection: Connection, *, region_id: int, before: str
+) -> str | None:
+    """Read the newest stored history date in a region strictly before a date.
+
+    Args:
+        connection: Database connection.
+        region_id: Region ID.
+        before: Exclusive ISO date upper bound.
+
+    Returns:
+        The newest stored ISO date for any type in the region, or None if absent.
+    """
+    with connection:
+        row = connection.execute(
+            "SELECT MAX(date_) FROM market_history WHERE region_id = ? AND date_ < ?",
+            (region_id, before),
+        ).fetchone()
+    return None if row is None else row[0]

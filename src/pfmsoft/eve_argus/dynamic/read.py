@@ -318,6 +318,45 @@ def market_order_count(connection: Connection, *, response_metadata_id: int) -> 
 
 
 @log_timing(logger=logger, level=_timing_log_level)
+def market_order_types(
+    connection: Connection,
+    response_metadata_id: int,
+    *,
+    system_id: int | None = None,
+    location_id: int | None = None,
+) -> set[int]:
+    """Get the distinct type IDs in a response, optionally filtered by system or location.
+
+    Raises:
+        ValueError: If both system_id and location_id are supplied.
+    """
+    if system_id is not None and location_id is not None:
+        raise ValueError("Cannot specify both system_id and location_id.")
+
+    conditions = ["response_metadata_id = ?"]
+    parameters: list[int] = [response_metadata_id]
+    if system_id is not None:
+        conditions.append("system_id = ?")
+        parameters.append(system_id)
+    if location_id is not None:
+        conditions.append("location_id = ?")
+        parameters.append(location_id)
+
+    return {
+        row[0]
+        for row in connection.execute(
+            f"""
+            SELECT DISTINCT type_id
+            FROM market_orders
+            WHERE {" AND ".join(conditions)}
+            ORDER BY type_id
+            """,
+            parameters,
+        )
+    }
+
+
+@log_timing(logger=logger, level=_timing_log_level)
 def market_orders(
     connection: Connection, response_metadata_id: int
 ) -> models.MarketOrdersDataset:
@@ -436,10 +475,9 @@ def calculate_market_order_summary(
     type_id: int,
     system_id: int | None = None,
     location_id: int | None = None,
-    is_buy_summary: bool = True,
     filter_factor: Decimal = FILTER_FACTOR_DEFAULT,
-) -> models.OrderSummaryRecord | None:
-    """Calculate one side of a type's order summary from a filtered query.
+) -> tuple[models.OrderSummaryRecord | None, models.OrderSummaryRecord | None]:
+    """Calculate both sides of a type's order summary from one filtered query.
 
     Only the orders within the requested scope are read from the database, which
     avoids loading a whole region when a single summary is needed.
@@ -450,12 +488,12 @@ def calculate_market_order_summary(
         type_id: The item type to summarize.
         system_id: Limit the calculation to one solar system.
         location_id: Limit the calculation to one station or structure.
-        is_buy_summary: True to summarize buy orders, False for sell orders.
         filter_factor: Exclude buy prices below best / factor and sell prices above
             best * factor. Must be greater than 1.
 
     Returns:
-        The summary, or None if no orders with remaining volume match the query.
+        A (buy, sell) tuple. Each side is None if no orders with remaining volume
+        match. An unknown response or type returns (None, None).
 
     Raises:
         ValueError: If both scopes are supplied or the factor is invalid.
@@ -469,17 +507,15 @@ def calculate_market_order_summary(
         type_id=type_id,
         system_id=system_id,
         location_id=location_id,
-        is_buy_order=is_buy_summary,
     )
     if not orders:
-        return None
-    return order_summary.calculate_order_summary(
+        return None, None
+    return order_summary.calculate_buy_sell_summary(
         orders,
         region_id=orders[0].region_id,
         type_id=type_id,
         system_id=system_id,
         location_id=location_id,
-        is_buy_summary=is_buy_summary,
         filter_factor=filter_factor,
     )
 

@@ -200,6 +200,7 @@ region begins discovery or history updates.
 | ------------------------------ | --------------------------------------------- | -------------------------------------------------------------------------------------- |
 | `--workers`                    | `MARKET_HISTORY_WORKER_COUNT` (currently 100) | Positive integer; maximum concurrent updates using continuously refilled workers       |
 | `--failure-limit`              | `MARKET_HISTORY_FAILURE_LIMIT` (currently 50) | Positive integer; independent failure budget for each region                           |
+| `--stale-after-days N`, `-s N` | `6`                                           | Nonnegative integer; only update pairs whose latest response is older than N days; 0 disables the age filter |
 | `--progress auto\|live\|plain` | `auto`                                        | Live progress on interactive terminals by default; plain completion messages otherwise |
 | `--quiet`                      | Off                                           | Hide routine output and progress, but retain warnings, failures, and abort notices     |
 
@@ -228,6 +229,16 @@ freshness and expiry details.
 
 Unexpired stored responses skip fetching; Argus expiry overrides ESI expiry, and
 missing expiry triggers a refresh. Existing ESI caching and rate limiting apply.
+
+Use `--stale-after-days 3` to additionally skip selected region/type pairs whose
+latest response `received_at` is no more than three days old. Days are rolling
+24-hour periods, not calendar dates; a response exactly N days old is skipped.
+The check uses response metadata even for empty histories and counts recent
+pairs as skipped in progress and summaries. Pairs without a stored response
+are still fetched. Older responses must also pass the existing expiration
+check before fetching. The default is six days; `-s 3` is shorthand for
+`--stale-after-days 3`. Pass `-s 0` to disable the age filter.
+This filter applies to every type-selection mode, independently for each region.
 
 Successful updates store response metadata and daily history transactionally.
 Overlapping dates are replaced and older dates remain stored. Empty responses
@@ -433,6 +444,98 @@ no history, or a hub's history ends more than 7 days before generation, the
 command warns and continues. Expired order snapshots are reported, not
 refreshed. `--quiet` hides progress, not warnings or errors. Use `--overwrite`
 to replace existing files.
+
+## Station trades reports
+
+```bash
+uv run eve-argus fetch market-orders --hubs
+uv run eve-argus fetch market-history --hubs --market-types   # slow
+uv run eve-argus reports station-trades --to ./reports
+uv run eve-argus reports station-trades --to ./reports \
+  --buy-broker-fee 1.5 --sell-broker-fee 1.5 --sales-tax 3.37 \
+  --include 4   # Ships only
+```
+
+Finds items to buy with a buy order and relist with a sell order at each hub's
+primary station (Jita IV - Moon 4, Amarr VIII, Dodixie IX - Moon 20, Hek VIII -
+Moon 12, Rens VI - Moon 8). Inputs are opened read-only; nothing is fetched.
+Three files per station share the stem
+`station-trades-<system>-<station_id>-<file_safe_received_at>` (`.md`, `.csv`,
+`.json`).
+
+For each published market type with active orders at the station:
+
+- Proposed prices are one valid tick above the best station buy and below the
+  best station sell. Ticks use four significant figures with a 0.01 ISK
+  minimum. Only station-anchored buy orders are considered; wider-range buy
+  orders may compete but are not modeled.
+- Broker fees on both orders and sales tax on the sale are percentages of the
+  proposed prices. They default to 0%, which is flagged in every output.
+- Regional daily volume is the average over a common 10-day history window that
+  ends on the newest stored date before the generation date. Missing days count
+  as zero. `--participation-percent` (default 1) sets the assumed share of that
+  volume completed per day.
+- Rows are ranked by estimated daily net profit, then net margin. Rows with
+  missing books, invalid price targets, missing or zero-volume history, or no
+  profit are kept unranked in CSV and JSON and counted in Markdown. Markdown
+  shows the top 100 ranked rows.
+
+`--include` and `--exclude` take market-group IDs and may be repeated. They use
+the same subtree rules as `fetch market-history`: an empty include means all,
+exclusions always win, and unknown groups are a usage error. Filtered types are
+dropped from every output, and the filters and the filtered-out count are
+recorded in each report.
+
+Every hub needs a stored order snapshot; otherwise the command fails before
+writing. A missing history database warns and leaves every row unranked.
+Expired order snapshots are reported, not refreshed. `--quiet` hides progress,
+not warnings or errors. Use `--overwrite` to replace existing files.
+
+## Hub-to-hub trades reports
+
+```bash
+uv run eve-argus fetch market-orders --hubs
+uv run eve-argus reports hub-trades --to ./reports
+uv run eve-argus reports hub-trades --to ./reports \
+  --sales-tax 3.37 --transport-per-m3 800 --min-profit 1000000 \
+  --exclude 4   # No ships
+```
+
+Finds items to buy from sell orders at one hub's primary station, haul, and sell
+immediately into buy orders at another hub's primary station. Each hub is a
+source in turn, and the other four are its destinations. Inputs are opened
+read-only; nothing is fetched. Three files per source share the stem
+`hub-trades-from-<system>-<station_id>-<file_safe_generated_at>` (`.md`,
+`.csv`, `.json`).
+
+For each published market type with station sells at the source and station
+buys at a destination:
+
+- Both books are walked: the cheapest source sells fill the highest destination
+  buys while each unit's `buy × (1 − sales tax) − sell − transport per unit`
+  is positive. Buy orders whose minimum volume cannot be met are skipped and
+  flagged. The row records why the walk stopped (`profit_exhausted`,
+  `source_supply`, or `destination_demand`).
+- Volume is packaged m³ when available, otherwise m³. Transport cost is total
+  m³ times `--transport-per-m3`. Sales tax and transport default to 0, and each
+  zero is flagged. Broker fees do not apply.
+- Rows are ranked by total net profit, then profit per m³. Rows at or below
+  `--min-profit` and rows with unknown m³ (when transport is above 0) are kept
+  unranked in CSV and JSON. Routes with no profitable unit are only counted.
+  Markdown shows the top 100 ranked rows.
+- When an item is profitable to several destinations, every row records the
+  match count, the best destination (highest net profit), and the alternates.
+  Markdown marks the best row with ★ and lists these items in their own
+  section. Each destination's walk uses the same source supply, so
+  per-destination profits are alternatives. Summary totals count only best
+  matches.
+
+`--include` and `--exclude` follow the same market-group subtree rules as
+`station-trades`. Every hub needs a stored order snapshot; otherwise the command
+fails before writing. Expired snapshots, and snapshots received more than 30
+minutes apart, are flagged rather than refreshed. Only primary-station orders
+are matched. `--quiet` hides progress, not warnings or errors. Use
+`--overwrite` to replace existing files.
 
 ## Corporation blueprints report
 

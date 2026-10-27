@@ -87,6 +87,7 @@ def test_fetch_reports_success(
         environment.resources.market_history_db_connection,
         region_id=10000002,
         type_id=34,
+        stale_after_days=6,
     )
     environment.manager.__aexit__.assert_awaited_once()
     if quiet:

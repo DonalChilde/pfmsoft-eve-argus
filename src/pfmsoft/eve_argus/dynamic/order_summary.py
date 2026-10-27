@@ -9,6 +9,94 @@ from pfmsoft.eve_argus.helpers.currency import as_currency
 FILTER_FACTOR_DEFAULT = Decimal("100.00")
 
 
+def calculate_order_summaries(
+    orders: tuple[models.MarketOrderRecord, ...],
+    *,
+    response: models.MarketOrdersResponse,
+    system_id: int | None = None,
+    location_id: int | None = None,
+    filter_factor: Decimal = FILTER_FACTOR_DEFAULT,
+) -> models.OrderSummaryDataset:
+    """Summarize a pre-filtered tuple without loading or sorting a whole dataset.
+
+    Pass the source response metadata explicitly so empty filtered results retain
+    their identity. Only types present in the tuple are included. Orders must
+    belong to the response and declared scope; filtering is the caller's job.
+
+    Raises:
+        ValueError: If options are invalid or orders do not match the source/scope.
+    """
+    validate_summary_options(
+        system_id=system_id, location_id=location_id, filter_factor=filter_factor
+    )
+    grouped: dict[int, list[models.MarketOrderRecord]] = {}
+    for order in orders:
+        if order.response_metadata_id != response.response_metadata_id:
+            raise ValueError("All orders must belong to the source response.")
+        grouped.setdefault(order.type_id, []).append(order)
+    records: dict[int, models.BuySellSummary] = {}
+    for type_id, type_orders in grouped.items():
+        buy, sell = calculate_buy_sell_summary(
+            type_orders,
+            region_id=response.region_id,
+            type_id=type_id,
+            system_id=system_id,
+            location_id=location_id,
+            filter_factor=filter_factor,
+        )
+        records[type_id] = models.BuySellSummary(buy_summary=buy, sell_summary=sell)
+    return models.OrderSummaryDataset(
+        response_metadata_id=response.response_metadata_id,
+        received_at=response.received_at,
+        expires_at=response.expires_at,
+        argus_expires_at=response.argus_expires_at,
+        region_id=response.region_id,
+        system_id=system_id,
+        location_id=location_id,
+        records=records,
+    )
+
+
+def calculate_buy_sell_summary(
+    orders: Sequence[models.MarketOrderRecord],
+    *,
+    region_id: int,
+    type_id: int,
+    system_id: int | None = None,
+    location_id: int | None = None,
+    filter_factor: Decimal = FILTER_FACTOR_DEFAULT,
+) -> tuple[models.OrderSummaryRecord | None, models.OrderSummaryRecord | None]:
+    """Calculate (buy, sell) summaries from one pre-filtered type's orders.
+
+    Raises:
+        ValueError: If options are invalid or orders do not match the type/scope.
+    """
+    buy_orders: list[models.MarketOrderRecord] = []
+    sell_orders: list[models.MarketOrderRecord] = []
+    for order in orders:
+        (buy_orders if order.is_buy_order else sell_orders).append(order)
+    return (
+        calculate_order_summary(
+            buy_orders,
+            region_id=region_id,
+            type_id=type_id,
+            system_id=system_id,
+            location_id=location_id,
+            is_buy_summary=True,
+            filter_factor=filter_factor,
+        ),
+        calculate_order_summary(
+            sell_orders,
+            region_id=region_id,
+            type_id=type_id,
+            system_id=system_id,
+            location_id=location_id,
+            is_buy_summary=False,
+            filter_factor=filter_factor,
+        ),
+    )
+
+
 def calculate_dataset_summaries(
     market_orders: models.MarketOrdersDataset,
     *,
@@ -81,8 +169,8 @@ def validate_summary_options(
         raise ValueError(
             "Cannot specify both system_id and location_id. Choose one or neither."
         )
-    if filter_factor <= Decimal("1"):
-        raise ValueError("filter_factor must be greater than 1.0.")
+    if not filter_factor.is_finite() or filter_factor <= Decimal("1"):
+        raise ValueError("filter_factor must be finite and greater than 1.0.")
 
 
 def calculate_order_summary(
