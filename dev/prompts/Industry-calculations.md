@@ -423,6 +423,8 @@ The user confirmed the following current rates on **2026-10-27**:
 |---|---|---|---|
 | SCC surcharge | 2% | `0.02` | ME and TE research |
 | SCC surcharge | 4% | `0.04` | Manufacturing |
+| SCC surcharge | 4% | `0.04` | Invention (user-confirmed 2026-10-27) |
+| SCC surcharge | 4% | `0.04` | Copying (user-confirmed 2026-10-27) |
 | Alpha clone tax | 0.25% | `0.0025` | ME and TE research installed by an Alpha clone; zero for an Omega clone |
 
 Use these as the current activity-specific scenario rates, with provenance recorded as
@@ -771,8 +773,395 @@ pure, and dependency-free. It provides the following:
 
 Tests in `tests/pfmsoft/eve_argus/calculations/test_industry_formulas.py` use
 the recorded in-game quotes as expected values. The legacy
-`industry_base_calculations.py` file remains unchanged. Next: CSV/JSON ME and TE
-exports in eve-argus integration code, built on this module.
+`industry_base_calculations.py` file remains unchanged.
+
+Invention was added on 2026-10-27 and includes:
+
+- `INVENTION_SCC_RATE`, along with the `Decryptor` dataclass and `DECRYPTORS`
+  table.
+- The `InventedBlueprint` dataclass.
+- `advanced_industry_time_factor`, `invention_success_chance`,
+  `invented_blueprint`, `invention_process_time_value`, and
+  `invention_duration_seconds`.
+- The probability helpers `expected_attempts_per_success`,
+  `expected_cost_per_success`, `probability_of_at_least_one_success`, and
+  `attempts_for_confidence`.
+
+The module docstring lists the remaining assumptions: decryptors other than
+Attainment, structure invention bonuses, and the chance cap. It also adds
+`invention_inputs` for per-attempt consumption.
+
+Next steps:
+
+- Build CSV/JSON ME, TE, and invention exports in eve-argus integration code,
+  using this module.
+
+## Second implementation slice: invention
+
+Started 2026-10-27. Nothing below is verified in-game yet; the formulas are
+candidates from the sources listed.
+
+### Sources
+
+| Source | Used for | Caveat |
+|---|---|---|
+| [EVE University: Invention](https://wiki.eveuniversity.org/Invention) | Success chance formula, base chance tiers, decryptor table, output BPC runs/ME/TE, input consumption | Community page; gives no job cost or duration formula. Its calculator links are noted as possibly outdated. |
+| [CCP: Industry & 3rd Party Developers](https://www.eveonline.com/news/view/industry-3rd-party-developers) | Invention cost basis: `baseCost x 0.02`, where baseCost uses the **T2 (or T3) blueprint's** manufacturing materials | Crius-era (2014); its NPC 10% tax and pre-SCC fee structure are obsolete, so use only the cost basis. |
+| [EVE University: Manufacturing](https://wiki.eveuniversity.org/Manufacturing) | Advanced Industry: 3% reduction in "all manufacturing & research time" | Whether this includes invention must be checked in-game. |
+
+### Candidate mechanics
+
+- **Success chance:**
+  `base_chance * (1 + (science_1 + science_2) / 30 + encryption / 40) * (1 + decryptor_probability_modifier)`.
+  The result is capped at 1 (assumed).
+  - `base_chance` is in the static data, as
+    `blueprint_activity_products.probability` for `activity = 'invention'`.
+    The 14%-34% tiers match the wiki: modules, rigs, and ammo 34%;
+    frigates and destroyers 30%; cruisers, battlecruisers, barges, and haulers
+    26%; battleships 22%; freighters 18%; relics 26%, 21%, and 14%.
+  - Skills are the two science skills and the encryption skill listed in
+    `blueprint_activity_skills`.
+- **Output BPC:**
+  - Runs: static invention product `quantity` (e.g. 1 for rigs and ships,
+    10 for most others) plus the decryptor runs modifier.
+  - ME: 2 plus the decryptor ME modifier. TE: 4 plus the decryptor TE
+    modifier.
+  - The input BPC's ME, TE, and runs have no effect.
+- **Consumption per attempt:**
+  - One run from the T1 BPC.
+  - The static invention materials (datacores), and the decryptor if used.
+  - These are consumed whether the attempt succeeds or fails.
+- **Decryptors (EVE University table):**
+  - Decryptor attributes are not in the current static DB, which has no
+    dogma data, so record them as cited constants.
+
+  | Decryptor | Type ID | Chance | Runs | ME | TE |
+  |---|---:|---:|---:|---:|---:|
+  | Accelerant | 34201 | +20% | +1 | +2 | +10 |
+  | Attainment | 34202 | +80% | +4 | -1 | +4 |
+  | Augmentation | 34203 | -40% | +9 | -2 | +2 |
+  | Parity | 34204 | +50% | +3 | +1 | -2 |
+  | Process | 34205 | +10% | 0 | +3 | +6 |
+  | Symmetry | 34206 | 0% | +2 | +1 | +8 |
+  | Optimized Attainment | 34207 | +90% | +2 | +1 | -2 |
+  | Optimized Augmentation | 34208 | -10% | +7 | +2 | 0 |
+
+- **Job cost:** Use the same `job_cost` structure as research, with the
+  following inputs.
+  - `invention PTV = 0.02 * EIV(T2 blueprint manufacturing materials)`, times
+    the number of attempts (runs). Multiplying by attempts is assumed.
+  - The activity SCI is `invention`.
+  - The invention SCC rate is **unknown**. Do not assume the 2% research rate
+    or the 4% manufacturing rate.
+- **Duration:**
+  - The candidate is `base invention time * attempts * time factors`.
+  - The base time is static `blueprint_activities.time` for `invention`.
+  - Which skills reduce invention time is unverified. Advanced Industry is a
+    candidate. The science and encryption skills are believed to affect only
+    the chance. Structure science time bonuses should apply as for research.
+- **Economic outputs:**
+  - Expected attempts per success: `1 / p`.
+  - Expected cost per successful BPC:
+    `(job cost + datacores + decryptor + T1 BPC run value) / p`.
+  - Expected T2 runs per attempt: `p * output_runs`.
+  - Probability of at least one success in `n` attempts: `1 - (1 - p)^n`.
+  - Attempts needed for a target confidence:
+    `ceil(log(1 - confidence) / log(1 - p))`.
+  - These are standard probability, not game mechanics, but belong in the
+    reference module.
+
+### First invention comparison candidate: Large Auxiliary Nano Pump I
+
+- **Blueprint:** Large Auxiliary Nano Pump I Blueprint (`25897`) invents Large
+  Auxiliary Nano Pump II Blueprint (`26295`), with base chance 34% and 1 output
+  run.
+- **Inputs per attempt:** 3 Datacore - Hydromagnetic Physics and 3 Datacore -
+  Nanite Engineering.
+- **Required skills:** Amarr Encryption Methods, Hydromagnetic Physics, and
+  Nanite Engineering.
+- **Base time:** 23,400 s.
+- **T2 manufacturing EIV:** 42,129,658.19 ISK, from prices snapshot 41.
+  - R.A.M.- Armor/Hull Tech: 1 x 595.67
+  - Nanite Compound: 18 x 119,094.74
+  - Interface Circuit: 27 x 15,922.48
+  - Intact Armor Plates: 24 x 1,648,143.76
+- **Invention PTV:** 842,593.16 ISK per attempt.
+
+Predicted values for 1 attempt by an Omega clone at an NPC station in Sheroo,
+using the snapshot invention SCI of 2.63%:
+
+| Value | Prediction |
+|---|---:|
+| Gross Job Cost | 22,160 |
+| Facility tax (0.25%) | 2,106 |
+| SCC, if 2% | 16,852 |
+| SCC, if 4% | 33,704 |
+
+### In-game invention comparison: Hobgoblin I, Osmeden, Omega
+
+On 2026-10-27 the user quoted Hobgoblin I Blueprint (`2455`) invention of
+Hobgoblin II Blueprint (`2457`). The setup was 1 run, no decryptor, Omega, an
+NPC station in Osmeden, and invention SCI `4.88%`.
+
+- **Skills:** Gallente Encryption Methods 5, Graviton Physics 5, Electronic
+  Engineering 5, and Advanced Industry 5. The client's "skills and implants"
+  time bonus was `15%`.
+- **T2 manufacturing EIV:** 101,786.09 ISK.
+  - Materials: Hobgoblin I, Guidance Systems, Robotics, Morphite,
+    R.A.M.- Robotics, and Particle Accelerator Unit, 1 of each.
+  - The T1 item is part of the T2 EIV.
+- **PTV:** 2,035.72 ISK.
+
+| Value | In-game | Model | Result |
+|---|---:|---:|---|
+| Gross Job Cost | 99 | `2035.72 * 0.0488 = 99.34` | match |
+| Total Taxes | 86 | `5.09 + 81.43 = 86.52`; per-component half-up gives `5 + 81 = 86` | match |
+| Total Job Cost | 185 | `99 + 86 = 185` | match |
+| Success chance | 49.6% | `0.34 * (1 + 10/30 + 5/40) = 49.583%` | match |
+| Duration | 01:50:30 | `7800 * 0.85 = 6630 s` | exact |
+
+Verified by this comparison:
+
+- Invention PTV is `0.02 * EIV(T2 blueprint manufacturing materials)`.
+- The invention SCC rate is **4%**, as confirmed by the user.
+- The success chance formula without a decryptor is correct.
+- Advanced Industry (3% per level) reduces invention time. No other skill
+  affected invention time here: the science and encryption skills, all at 5,
+  had no time effect.
+
+Still unverified:
+
+- Decryptor effects.
+- Scaling of cost and time with multiple attempts.
+- Structure invention bonuses.
+- The success chance cap.
+
+### In-game decryptor and two-run comparison: Hobgoblin I
+
+On 2026-10-27 the user confirmed that every predicted value matched in-game for
+the following job:
+
+- Hobgoblin I invention.
+- 2 runs, with an Attainment Decryptor.
+- An NPC station in Osmeden.
+- An Omega clone with all skills at 5.
+- Invention SCI `4.88%`.
+
+| Value | Model |
+|---|---|
+| Chance | `0.34 * 1.4583 * 1.8 = 89.25%`, displayed as 89.3% |
+| Output | 14 runs, ME 1, TE 8 |
+| Gross Job Cost | 199 |
+| Total Taxes | 173 (10 + 163) |
+| Total Job Cost | 372 |
+| Duration | `2 * 7800 * 0.85 = 3:41:00` |
+
+The user also noted that two runs consume **two Attainment Decryptors and two of
+each datacore**, so decryptors and datacores are consumed per attempt.
+
+This verifies the following:
+
+- The Attainment decryptor's effects.
+- Decryptors compose multiplicatively on chance and additively on output
+  attributes.
+- PTV and duration scale linearly with attempts.
+- Inputs are consumed per attempt.
+
+The other seven decryptors remain EVE University table values. Structure
+invention bonuses remain unverified.
+
+## Third implementation slice: manufacturing
+
+Started 2026-10-27. The rules below are candidates until compared in-game.
+
+### Sources
+
+| Source | Used for | Caveat |
+|---|---|---|
+| [EVE University: Manufacturing](https://wiki.eveuniversity.org/Manufacturing) | Job cost formula `EIV * (SCI * structure bonuses + facility + SCC + alpha)`; EIV from unmodified ME0 quantities; Industry 4%/level and Advanced Industry 3%/level time; material rounding per job, not per run; minimum one unit per run; T2 science skills give about 1%/level time | No exact rounding expression. Its system cost index formula is outdated, but irrelevant because SCI is an input. |
+| [EVE University: Upwell structures](https://wiki.eveuniversity.org/Upwell_structures#Engineering_complexes) | Engineering complexes give a 1% material bonus and 15-30% time bonuses, plus rigs | Hull and rig values need checking. |
+
+### Candidate mechanics
+
+**Job cost.** This reuses `job_cost` with the following inputs:
+
+- PTV: `EIV * runs`.
+- EIV: the manufacturing blueprint's unmodified materials at adjusted prices.
+- SCC: `MANUFACTURING_SCC_RATE` (4%).
+- Activity SCI: `manufacturing`.
+- Structure cost bonuses apply only to gross cost, as verified for research.
+
+**Materials per job.** The candidate is:
+
+`max(runs, ceil(round(base_qty * runs * (1 - ME/100) * structure_factor * rig_factor, 2)))`
+
+- Rounding is per job, so one multi-run job can use less material than several
+  single-run jobs. The game requires at least one unit per run.
+- The two-decimal round before `ceil` guards against floating-point artifacts.
+  It is reported by community tools; confirm it in-game.
+- Rig material bonuses may scale with system security. Commonly reported
+  multipliers are highsec 1.0, lowsec 1.9, and nullsec/wormhole 2.1. This is
+  unverified.
+
+**Time per job.** The candidate is:
+
+`base_time * runs * (1 - TE/100) * industry_factor * advanced_industry_factor * product(T2 skill factors) * structure_factor * rig_factor`
+
+- Industry gives 4%/level and Advanced Industry gives 3%/level.
+- The science skills required by a T2 blueprint are believed to give 1%/level
+  each. This is unverified.
+
+### Manufacturing comparison candidates (Osmeden, NPC, Omega, all skills 5)
+
+The snapshot manufacturing SCI is `3.61%`.
+
+**Hobgoblin I** (`2455`, base 300 s, EIV 3,491.31):
+
+- Materials at ME10:
+  - 1 run: 459 Tritanium, 7 Pyerite, 4 Isogen, 2 Nocxium.
+  - 10 runs: 4,581 Tritanium, 63 Pyerite, 36 Isogen, 18 Nocxium.
+- 10 runs time: 0:27:12 at TE20, or 0:34:00 at TE0.
+- 10 runs cost: Gross Job Cost 1,260, Total Taxes 1,484 (87 + 1,397), and Total
+  Job Cost 2,744.
+
+**Hobgoblin II** (`2457`, invented BPC ME2/TE4, base 1500 s, EIV 101,786.09):
+
+- 10 runs need 10 of each material, because the minimum of one per run
+  applies.
+- 10 runs time: 2:43:12 without T2 skill bonuses, or 2:27:17 if Graviton Physics
+  5 and Electronic Engineering 5 each give 1%.
+- 10 runs cost: Gross Job Cost 36,745, Total Taxes 43,259, and Total Job Cost
+  80,004.
+
+### In-game manufacturing comparison results
+
+On 2026-10-27 the user reported results for Osmeden, NPC station, Omega, with
+all skills at 5.
+
+**Hobgoblin I, ME10/TE20, 10 runs.**
+
+- Materials and duration (0:27:12) matched exactly.
+- Total Job Cost was 2,741 ISK against a predicted 2,744 ISK. This is accepted
+  as close enough, and attributed to SCI precision or a moved index.
+
+**Hobgoblin II, 10 runs.**
+
+- The user corrected the blueprint: it was the invented **ME1/TE8** copy from the
+  Attainment test, not ME2/TE4.
+- Materials matched at 10 each: `1 * 10 * 0.99 = 9.9`, rounded up to 10.
+- Duration was 02:21:09. The client showed blueprint time efficiency of 8% and
+  skills of -38.6%. The model is
+  `15000 * 0.92 * 0.80 * 0.85 * 0.95 * 0.95 = 8469 s = 2:21:09`, an exact
+  match.
+- Job cost was within the expected error.
+
+These results verify the following:
+
+- Industry reduces manufacturing time by 4% per level.
+- Advanced Industry reduces manufacturing time by 3% per level.
+- **Each required T2 science skill reduces manufacturing time by 1% per level.**
+- All of these skill reductions compose multiplicatively.
+- Manufacturing PTV is `EIV * runs`, with a 4% SCC.
+- Material rounding is per job, with a minimum of one unit per run.
+
+The two-decimal round before `ceil` is still community-reported. It changes real
+results; for example, `21 * 3 * 0.93 * 0.99 = 58.0041` becomes 58 instead of 59.
+Verifying it needs a structure or rig material bonus case.
+
+The following are also unverified:
+
+- Structure and rig material and time factors.
+- Rig security scaling.
+- Ship-construction skills, such as Advanced Small Ship Construction, if they
+  affect time.
+
+### In-game structure and rig material comparison: Cap Booster 200, Raitaru
+
+On 2026-10-27 the user tested Cap Booster 200 Blueprint (`11286`) at ME10/TE20
+with 10 runs in a Raitaru. The industry window showed a `-1%` structure bonus
+and a `-2%` ammunition rig material bonus. The exact rig type and security band
+were not reported.
+
+Tritanium was `17,036`:
+
+`1951 * 10 * 0.90 * 0.99 * 0.98 = 17,035.74`, rounded up to 17,036.
+
+The other amounts also matched: Pyerite 3,476, Mexallon 1,459, Isogen 114,
+Zydrine 35, and Megacyte 18. With the structure bonus alone, the model would
+give 17,384. Without either bonus, it would give 17,559.
+
+This verifies that the ME, structure, and rig material bonuses compose
+multiplicatively before per-job rounding up. Pass the bonus shown by the client;
+whether rigs scale with security is still unverified. None of these values
+exercised the two-decimal round, so it remains community-reported.
+
+The same job's duration was `0:46:14`. The model gives
+`600 * 10 * 0.80 * 0.80 * 0.85 * 0.85 = 2774.4 s = 0:46:14`, an exact match. This
+verifies that the Raitaru's 15% structure manufacturing time bonus composes
+multiplicatively with TE and skills. No rig time bonus was active. Rig time
+bonuses and implants remain assumed to be further multiplicative factors.
+
+## Fourth implementation slice: copying
+
+### Sources
+
+- EVE University, Blueprint copying / research:
+  <https://wiki.eveuniversity.org/Blueprint_copying>. The Science skill reduces
+  copy time by 5% per level. Laboratory Operation and Advanced Laboratory
+  Operation add job slots only.
+- Legacy `copy_job_cost` in `industry_base_calculations.py`. It uses
+  `0.02 * EIV` and defaults SCC to 4%; treat it as a suggestion only.
+
+### Static data
+
+- `blueprint_activities.activity = 'copying'` gives the base copy time per run.
+  For example, Hobgoblin I BP 2455 is 240 s, and Large Auxiliary Nano Pump I
+  BP 25897 is 3600 s.
+- `blueprints.max_production_limit` gives the maximum licensed runs per copy.
+  It is 600 for the Hobgoblin I and 40 for the Nano Pump.
+
+### Candidate formulas (unverified)
+
+- `PTV = 0.02 * EIV(product) * runs_per_copy * copies`
+- Gross = `PTV * SCI(copying) * structure cost factors`. Taxes apply to the
+  undiscounted PTV, as in research.
+- SCC rate is unknown: either 2% (as for research) or 4% (as in the legacy
+  default).
+- `duration = base_copy_seconds * runs_per_copy * copies * Science factor
+  (5%/level) * Advanced Industry factor (3%/level) * structure/rig/implant
+  factors`
+- Output copies keep the original's ME and TE values.
+
+### Predictions: Large Auxiliary Nano Pump I (EIV 2,874,145.02)
+
+| System (copy SCI) | Copies × runs | PTV | Gross | Facility 0.25% | SCC 2% | SCC 4% |
+|---|---|---:|---:|---:|---:|---:|
+| Osmeden (4.11%) | 1 × 10 | 574,829 | 23,625 | 1,437 | 11,497 | 22,993 |
+| Sheroo (3.84%) | 1 × 10 | 574,829 | 22,073 | 1,437 | 11,497 | 22,993 |
+| Sheroo (3.84%) | 2 × 10 | 1,149,658 | 44,147 | 2,874 | 22,993 | 45,986 |
+
+| Copies × runs | Unbonused | Science 5 | Science 5 + Advanced Industry 5 |
+|---|---|---|---|
+| 1 × 10 | 10:00:00 | 7:30:00 | 6:22:30 |
+| 2 × 10 | 20:00:00 | 15:00:00 | 12:45:00 |
+
+### In-game comparison: time (2026-10-27, Osmeden, NPC station)
+
+The user reported that the copy duration matched the prediction at an NPC
+station. This verifies the per-run, per-copy duration model with Science and
+Advanced Industry skill factors that multiply. After the refresh, the copying
+SCI in Osmeden is 4.09% (`response_metadata_id` 43). With it, a 1 × 10 copy
+predicts gross 23,511, a facility tax of 1,437, and SCC of 11,497 (2%) or 22,993
+(4%).
+
+### In-game comparison: fees (2026-10-27, Osmeden, NPC station)
+
+The user confirmed that the SCC is **4%** and that gross 23,511, facility tax
+1,437, and SCC 22,993 all match. Copying PTV is therefore
+`0.02 * EIV * runs_per_copy * copies`, and copying's SCC rate is 4%, the same as
+for manufacturing and invention. The copying functions were added to
+`industry_formulas.py` test-first. Structure cost and time bonuses for copying
+are assumed to work as they do for research.
 
 ## Phased delivery and decision gates
 
