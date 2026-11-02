@@ -6,9 +6,9 @@ from dataclasses import asdict, fields
 from decimal import Decimal
 from io import StringIO
 
-from pfmsoft.eve_argus.reports.market_hub_prices import PriceSummaryMetrics
 from pfmsoft.eve_argus.reports.price_summaries import (
     PriceSummariesReport,
+    PriceSummaryMetrics,
     PriceSummaryRow,
 )
 

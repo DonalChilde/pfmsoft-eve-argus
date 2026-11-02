@@ -19,7 +19,7 @@ Use this evidence order:
 3. Prototypes in `dev/proof-scripts`, as ideas to evaluate, not requirements.
 
 The current exemplars are `reports corporation-jobs`, `reports
-corporation-blueprints`, and `reports hub-prices`. Read the relevant paths in the
+corporation-blueprints`, and `reports price-summaries`. Read the relevant paths in the
 [evidence guide](./references/report-patterns.md) before applying a pattern.
 Re-check the command registry: this guide is a starting map, not a frozen API.
 When code and tests disagree, identify the discrepancy rather than silently

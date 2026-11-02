@@ -16,8 +16,23 @@ from pfmsoft.eve_argus.dynamic.order_summary import (
     FILTER_FACTOR_DEFAULT,
     validate_summary_options,
 )
-from pfmsoft.eve_argus.reports.market_hub_prices import PriceSummaryMetrics
 from pfmsoft.eve_argus.static.models import MarketGroupsDataset, TypesDataset
+
+
+@dataclass(slots=True, kw_only=True, frozen=True)
+class PriceSummaryMetrics:
+    """Calculated depth, valid-order totals/average, and excluded-outlier counts."""
+
+    five_price: Decimal
+    five_orders: int
+    five_items: int
+    lowest: Decimal
+    highest: Decimal
+    average: Decimal
+    total_items: int
+    total_orders: int
+    filtered_items: int
+    filtered_orders: int
 
 
 @dataclass(slots=True, kw_only=True, frozen=True)

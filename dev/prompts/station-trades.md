@@ -83,7 +83,7 @@ This command does not exist yet.
 Check current implementations before coding; historical prompts are not
 authoritative API documentation.
 
-- [Hub-price command](../../src/pfmsoft/eve_argus/cli/reports/hub_prices.py):
+- [Price-summaries command](../../src/pfmsoft/eve_argus/cli/reports/price_summaries.py):
   newest regional snapshots, read-only inputs, on-demand summaries, provenance,
   destination preflight, and render-before-write behavior.
 - [Order summary calculations](../../src/pfmsoft/eve_argus/dynamic/order_summary.py):
@@ -99,8 +99,9 @@ authoritative API documentation.
   format rendered Markdown with `format_markdown()`, including table alignment.
 
 Station-scoped collection is a deliberate departure from the existing
-system-scoped hub-price and scrapmetal reports. Do not pass station summaries
-to their system-only collectors or relabel system prices as station prices.
+system-scoped price-summaries and scrapmetal reports. Do not pass station
+summaries to their system-only collectors or relabel system prices as station
+prices.
 
 ## Available datasets
 

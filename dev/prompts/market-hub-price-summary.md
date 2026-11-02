@@ -1,5 +1,9 @@
 # Market hub system price summary exports: planning prompt
 
+> Historical record: this report was superseded by the generalized
+> `price-summaries` command. The original `hub-prices` CLI command and
+> implementation have been removed; see the README for current usage.
+
 ## Approved implementation decisions
 
 Implementation requested on 2026-10-18:
