@@ -4,6 +4,12 @@ This directory contains scripts that prove the operation of various components o
 
 The python scripts are expected to be run with `uv run` from the project root directory, so that the dev env settings are used.
 
+The proof-scripts directory has the following common-use subdirectories:
+
+- tests - Any tests that directly relate to proof-scripts. proof script tests should not go in the project tests directory, because proof scripts are used for development, and might be erased or changed.
+- logging - Log files related to proof scripts.
+- proof-output - a directory that can be used for proof-script output. sub directories are used to separate the output of the various scripts.
+
 ## ME research PTV comparison
 
 [`industry-research/compare_me_research.py`](industry-research/compare_me_research.py)
