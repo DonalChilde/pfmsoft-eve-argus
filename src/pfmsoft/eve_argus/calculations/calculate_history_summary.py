@@ -3,6 +3,9 @@
 This module provides functionality to calculate statistical summaries of market
 history data over specified time periods, including volume-weighted price averages
 and trading metrics.
+
+Reference Implementation. Not in current use.
+
 """
 
 from dataclasses import dataclass
