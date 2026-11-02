@@ -1,4 +1,4 @@
-"""Pure CSV and JSON serializers for per-system market hub price snapshots."""
+"""Pure CSV and JSON serializers for region and system price summaries."""
 
 import csv
 import json
@@ -6,18 +6,18 @@ from dataclasses import asdict, fields
 from decimal import Decimal
 from io import StringIO
 
-from pfmsoft.eve_argus.reports.market_hub_prices import (
-    MarketHubPriceRow,
-    MarketHubPricesReport,
+from pfmsoft.eve_argus.reports.price_summaries import (
+    PriceSummariesReport,
     PriceSummaryMetrics,
+    PriceSummaryRow,
 )
 
 _METADATA_COLUMNS = tuple(
-    field.name for field in fields(MarketHubPricesReport) if field.name != "records"
+    field.name for field in fields(PriceSummariesReport) if field.name != "records"
 )
 _ROW_COLUMNS = tuple(
     field.name
-    for field in fields(MarketHubPriceRow)
+    for field in fields(PriceSummaryRow)
     if field.name not in ("buy_summary", "sell_summary")
 )
 _METRIC_COLUMNS = tuple(field.name for field in fields(PriceSummaryMetrics))
@@ -31,22 +31,22 @@ CSV_COLUMNS = (
 
 
 def _json_decimal(value: object) -> str:
-    """Use plain decimal strings rather than binary floats or exponent notation."""
+    """Serialize exact monetary values as plain decimal strings."""
     if isinstance(value, Decimal):
         return format(value, "f")
     raise TypeError(f"Cannot serialize {type(value).__name__} as JSON.")
 
 
-def render_market_hub_prices_json(report: MarketHubPricesReport) -> str:
-    """Render schema metadata and ordered records, preserving exact prices and nulls."""
+def render_price_summaries_json(report: PriceSummariesReport) -> str:
+    """Render metadata and ordered records, preserving exact prices and nulls."""
     return (
         json.dumps(asdict(report), default=_json_decimal, ensure_ascii=False, indent=2)
         + "\n"
     )
 
 
-def render_market_hub_prices_csv(report: MarketHubPricesReport) -> str:
-    """Render one LF-terminated CSV record per type, with empty missing-side cells."""
+def render_price_summaries_csv(report: PriceSummariesReport) -> str:
+    """Render one LF-terminated CSV row per type with empty missing-side cells."""
     stream = StringIO(newline="")
     writer = csv.DictWriter(stream, fieldnames=CSV_COLUMNS, lineterminator="\n")
     writer.writeheader()

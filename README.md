@@ -307,76 +307,93 @@ read them back or precompute regional or system-scoped price summaries. The
 legacy `fetch hub-orders` command has been removed; use
 `fetch market-orders --hubs` to fetch its regional order data.
 
-## Market hub price summaries
+## Price summaries
 
 ```bash
-uv run eve-argus reports hub-prices --to ./reports
+uv run eve-argus reports price-summaries \
+  --region-id 10000002 \
+  --system-id 30000142 \
+  --filter-factor 100 \
+  --to ./reports
 ```
 
-Calculates **system-scoped** price summaries on demand for Jita, Amarr, Dodixie,
-Hek, and Rens from each region's newest stored order snapshot. These are not
-regional or primary-station prices. Each regional dataset is loaded once and
-summarized in memory for its hub systems, without per-type database queries.
-Inputs are opened read-only; no network, credentials, or order fetching is
-required, and calculated summaries are not saved to the database. The configured
-static database build (latest when unspecified) must already contain types and
-market groups.
+Repeat `--region-id` or `--system-id` to request additional scopes. Supplying
+both does not combine them: each region produces a region-wide summary, and each
+system produces a separate system summary. A system's region is resolved from
+the configured static database, so `--system-id` does not require `--region-id`.
+Use `--hubs` to append the configured market-hub system scopes. Repeated and
+overlapping scopes are deduplicated.
 
-Each hub produces CSV and JSON with a shared source-timestamp stem, for example:
+The command uses each selected region's latest stored order snapshot, calculates
+summaries without fetching or saving data, and emits CSV and JSON files. Region
+scope filenames use the region name; system scope filenames use the system name.
+Both use the sanitized source receipt timestamp. The JSON uses schema version
+`2`; for region-scoped reports, `system_id` and `system_name` are null. The filter
+factor must be finite and greater than 1; it defaults to `100.00`.
 
-```text
-price-summary-Jita-2026-10-17T22_07_37_553890662Z.csv
-price-summary-Jita-2026-10-17T22_07_37_553890662Z.json
-```
-
-Names and timestamps use the existing filename sanitizer. Hubs may have different
-source timestamps; this is not a synchronized cross-hub snapshot. Missing regional
-order snapshots fail with the complete list of affected hubs before any output
-is written. Use `fetch market-orders --hubs` to fetch source orders. A newer empty
-snapshot, or one with no orders in the hub system, does not fall back to an older
-populated one. Persisted price-summary tables are not read.
-
-JSON schema version `2` contains metadata and a `records` array sorted by
-`type_id`. Each record has type and market-group IDs/names, nullable
-`market_path_ids` / `market_path_names` arrays, and nested `buy_summary` /
-`sell_summary` objects (or null). Unpublished stored types are included. Types
-with neither side are omitted; a missing side is not a zero price.
-
-CSV has one record per exported type, with both sides on the same row. It uses
-UTF-8 without a BOM, comma delimiters, standard quoting, LF record terminators,
-and `/`-joined paths. Embedded newlines in names remain quoted field content.
-The fixed columns, in order, are:
-
-1. `response_metadata_id`, `received_at`, `expires_at`, `argus_expires_at`,
-   `schema_version`, `scope`, `region_id`, `region_name`, `system_id`,
-   `system_name`, `filter_factor`, `generated_at`, `is_stale`.
-2. `type_id`, `type_name`, `market_group_id`, `market_group_name`,
-   `market_path_ids`, `market_path_names`, `has_buy_summary`, `has_sell_summary`.
-3. Each metric below with `buy_` prefixes, then the same with `sell_` prefixes:
-   `five_price`, `five_orders`, `five_items`, `lowest`, `highest`, `average`,
-   `total_items`, `total_orders`, `filtered_items`, `filtered_orders`.
-
-Prices are exact plain decimal strings, never binary floats; counts are
-integers. JSON absent values are null; CSV absent values are empty cells, and
-flags use `True` / `False`. Empty exports retain CSV headers and JSON metadata.
-The source `response_metadata_id` identifies the regional order snapshot. Schema
-v2 removes `order_summary_response_id` because on-demand summaries have no stored
-summary ID, and adds `filter_factor` as an exact decimal string in JSON and CSV.
-
-Metrics use the existing whole-dataset summary calculations: `five_price` is the
-price threshold reaching 5% of valid volume, including all orders tied at that cutoff—not a 5%
-price band. `average` is volume-weighted over valid orders. `total_items` /
-`total_orders` count valid orders; `filtered_items` / `filtered_orders` count
-excluded outliers. The default outlier `filter_factor` is `100.00`: buy prices
-below best/factor and sell prices above best*factor are excluded. The actual
-factor used for the calculation is recorded in the export.
+The report includes type and market-group IDs/names, market paths,
+independently nullable buy/sell summaries, source metadata, and freshness. Types
+with neither side are omitted; a missing side is not a zero price. Prices are
+exact decimal strings, not binary floats; absent values are null in JSON and
+empty in CSV. Metrics use the existing whole-dataset calculations: `five_price`
+is the price threshold reaching 5% of valid volume, including all orders tied at
+the cutoff; `average` is volume-weighted. The filter factor and filtered counts
+are included in each output.
 
 Argus expiry overrides source expiry; absent expiry means unknown freshness.
 Expired snapshots remain exportable with visible warnings. `--quiet` hides
 progress, not errors or stale-data warnings. Use `--overwrite` to replace
-existing files. All hub snapshots, paths, static references and renderings are
-validated before writes; filesystem failures may still leave partial output
-and return a nonzero exit status. No Markdown report is generated.
+existing files. Inputs are read-only and no market orders are fetched by the
+report command; fetch required orders with `fetch market-orders --region-id`
+or `fetch market-orders --hubs`.
+
+## Market history summaries
+
+```bash
+uv run eve-argus reports history-summary --region-id 10000002 --period 10 --to ./reports
+uv run eve-argus reports history-summary --hubs --start-date 2026-10-25 --period 10 --to ./reports
+```
+
+Creates one CSV and JSON report per selected region from locally stored market
+history. Repeat `--region-id` to select multiple regions; `--hubs` appends the
+regions used by the configured market hubs. Duplicate region IDs are removed.
+At least one region or `--hubs` is required. The history database is read-only
+and is never refreshed by this command.
+
+`--period` is a positive number of calendar days and defaults to `10`.
+`--start-date` is an optional ISO date (`YYYY-MM-DD`) that means the newest day
+included in each window, inclusive; the period counts backward from it. For
+example, `--start-date 2026-10-25 --period 10` covers October 16 through 25.
+Without `--start-date`, each type uses its own latest possible history date,
+derived from that type's latest stored history receipt. Consequently, rows in
+one region report may have different date bounds.
+
+The JSON uses schema version `1` and contains report metadata (`generated_at`,
+region ID/name, period, and optional start date) plus records sorted by
+`type_id`. Each type row includes its market-group ID/name and market path IDs
+and names, actual newest/oldest window dates, missing-day count, volume-weighted
+high/average/low prices, average daily order count and volume, and source
+receipt/expiry metadata. Market paths follow the same static-data convention as
+`price-summaries`. Prices are rounded to two decimal places using currency
+rounding and emitted as strings; average daily volume remains a full-precision
+decimal string. Unknown values are null in JSON and empty in CSV.
+
+Types with stored history are included even when none of their records falls
+inside the selected date window: their missing-day count equals the period,
+summary metrics are null, and receipt/expiry metadata comes from their latest
+stored history record. Those metadata fields are null only if the region/type
+has no stored history at all. Stale history is reported with a warning and is
+not refreshed. `--quiet` suppresses progress only; `--overwrite` allows replacing
+existing report files.
+
+Output names use the sanitized region name, period, date selector, and report
+generation timestamp. For example:
+
+```text
+history-summary-The_Forge-10d-latest-2026-11-02T17_18_16_154Z.json
+history-summary-The_Forge-10d-latest-2026-11-02T17_18_16_154Z.csv
+history-summary-The_Forge-10d-2026-10-25-2026-11-02T17_18_16_154Z.json
+```
 
 ## Scrapmetal reprocessing reports
 

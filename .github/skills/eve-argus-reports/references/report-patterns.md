@@ -13,15 +13,14 @@ exposes the following commands.
 | -------------------------------- | ----- | ------- |
 | `corporation-jobs` | One corporation's latest stored jobs response | JSON, CSV, Markdown |
 | `corporation-blueprints` | One corporation's latest stored blueprints response | JSON, Markdown, owned CSV, missing-BPO CSV |
-| `hub-prices` | All entries in `MARKET_HUBS`, using stored regional orders | CSV and JSON per hub |
+| `price-summaries` | Selected regions and systems, optionally `MARKET_HUBS`, using stored regional orders | CSV and JSON per scope |
 | `scrapmetal` | All entries in `MARKET_HUBS`, using stored regional orders and optional market history | Markdown, CSV, JSON per hub; price-point CSV and JSON per run |
 | `station-trades` | Primary station of every `MARKET_HUBS` entry, using stored regional orders and regional market history; repeatable `--include`/`--exclude` market-group filters | Markdown, CSV, JSON per station |
 | `hub-trades` | Each `MARKET_HUBS` primary station as a source, matched against every other hub's primary station, using stored regional orders; repeatable `--include`/`--exclude` market-group filters | Markdown, CSV, JSON per source station |
 
 All of them require `--to` and offer `--overwrite` and `--quiet`. Corporation
 commands accept a positive `--corporation-id`, falling back to configuration.
-Hub prices currently has no hub-selection option and deliberately no Markdown.
-Do not impose either decision on unrelated reports.
+Price summaries deliberately has no Markdown output.
 
 HTML is an optional format for future reports supported by this skill's design
 workflow. None of these current CLI exemplars emits HTML; treat HTML layout,
@@ -66,23 +65,22 @@ semantics or BPO analysis to other datasets.
 Output stems are `corporation-blueprints-{corporation_id}-{received_at}`,
 with `-owned.csv` and `-missing-bpo.csv` for the CSV views.
 
-### Hub prices
+### Price summaries
 
-- [CLI orchestration](../../../../src/pfmsoft/eve_argus/cli/reports/hub_prices.py):
-  `hub_prices()` and `_generate_reports()`.
-- [Collection and models](../../../../src/pfmsoft/eve_argus/reports/market_hub_prices.py):
-  `collect_market_hub_prices()`, `PriceSummaryMetrics`, `MarketHubPriceRow`,
-  `MarketHubPricesReport`.
-- [Renderers](../../../../src/pfmsoft/eve_argus/reports/market_hub_prices_render.py):
-  `render_market_hub_prices_json()`, `render_market_hub_prices_csv()`.
-- [Report tests](../../../../tests/pfmsoft/eve_argus/reports/test_market_hub_prices.py).
+- [CLI orchestration](../../../../src/pfmsoft/eve_argus/cli/reports/price_summaries.py):
+  repeatable scope options, snapshot selection, and file handling.
+- [Collection and models](../../../../src/pfmsoft/eve_argus/reports/price_summaries.py):
+  `collect_price_summaries()`, `PriceSummaryMetrics`, and `PriceSummariesReport`.
+- [Renderers](../../../../src/pfmsoft/eve_argus/reports/price_summaries_render.py):
+  `render_price_summaries_json()` and `render_price_summaries_csv()`.
+- [Report tests](../../../../tests/pfmsoft/eve_argus/reports/test_price_summaries.py).
 
-Use this exemplar for local on-demand summaries, system scope, validation of
-response provenance/static paths, nullable buy/sell sides, and precise prices.
-It calculates dataset summaries from stored orders, then collects per-hub
-models. Types with neither side are omitted. The current model uses
-`schema_version=2`; that is not a universal starting version.
-Output stems are `price-summary-{hub}-{received_at}`.
+Use this exemplar for local on-demand summaries, region and system scopes,
+validation of response provenance/static paths, nullable buy/sell sides, and
+precise prices. It calculates summaries from stored orders without fetching or
+saving them. Types with neither side are omitted. The report uses
+`schema_version=2`; that is not a universal starting version. Output stems are
+`price-summary-{scope-name}-{received_at}`.
 
 ## Shared lifecycle and important distinctions
 
@@ -92,8 +90,8 @@ response metadata ID. Source metadata includes receipt and expiry information.
 Stale inputs warn but still render, with Argus expiry preferred when available.
 
 Corporation collection is asynchronous and uses `EveArgusResources`, including
-ESI universe-name resolution. Hub-price orchestration uses synchronous read-only
-connections and local calculations. **No source snapshot refresh** does not mean
+ESI universe-name resolution. Price-summary orchestration uses synchronous
+read-only connections and local calculations. **No source snapshot refresh** does not mean
 **no possible network access** for the corporation reports.
 
 Both corporation Markdown renderers pass template output through
@@ -102,9 +100,8 @@ the shared `mdformat` wrapper with `extensions=["tables"]`. Future Markdown
 reports must use this helper rather than configure `mdformat` independently.
 Cell escaping remains a separate responsibility handled by `markdown_cell()`.
 
-All three commands collect/render before creating report files and preflight
-existing output paths. Hub prices additionally validates all required hub inputs
-before writing. Writes are not an atomic multi-file transaction; a filesystem
+All commands collect/render before creating report files and preflight existing
+output paths. Writes are not an atomic multi-file transaction; a filesystem
 failure may leave a partial output set. Filenames use sanitized components.
 
 Warnings/errors remain visible with `--quiet`; progress uses Rich stderr output.

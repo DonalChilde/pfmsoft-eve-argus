@@ -1,4 +1,4 @@
-"""Collect locally enriched, system-scoped prices from calculated summaries."""
+"""Collect region- or system-scoped prices from stored market-order snapshots."""
 
 from dataclasses import asdict, dataclass
 from decimal import Decimal
@@ -16,7 +16,6 @@ from pfmsoft.eve_argus.dynamic.order_summary import (
     FILTER_FACTOR_DEFAULT,
     validate_summary_options,
 )
-from pfmsoft.eve_argus.models.market_hubs import MarketHub
 from pfmsoft.eve_argus.static.models import MarketGroupsDataset, TypesDataset
 
 
@@ -37,8 +36,8 @@ class PriceSummaryMetrics:
 
 
 @dataclass(slots=True, kw_only=True, frozen=True)
-class MarketHubPriceRow:
-    """One priced type with paired ID/name paths and independently nullable sides."""
+class PriceSummaryRow:
+    """One type's prices, retaining nullable buy and sell sides independently."""
 
     type_id: int
     type_name: str
@@ -51,35 +50,36 @@ class MarketHubPriceRow:
 
 
 @dataclass(slots=True, kw_only=True, frozen=True)
-class MarketHubPricesReport(ResponseMetadata):
-    """One hub snapshot; generation time is shared across an export invocation."""
+class PriceSummariesReport(ResponseMetadata):
+    """A price report tied to one source region snapshot."""
 
     schema_version: Literal[2]
-    scope: Literal["system"]
+    scope: Literal["region", "system"]
     region_id: int
     region_name: str
-    system_id: int
-    system_name: str
+    system_id: int | None
+    system_name: str | None
     filter_factor: Decimal
     generated_at: str
     is_stale: bool | None
-    records: tuple[MarketHubPriceRow, ...]
+    records: tuple[PriceSummaryRow, ...]
 
 
 def _collect_metrics(
     *,
     summary: OrderSummaryRecord | None,
     type_id: int,
+    region_id: int,
+    system_id: int | None,
     is_buy: bool,
-    hub: MarketHub,
 ) -> PriceSummaryMetrics | None:
-    """Validate side identity and copy metrics without redundant scope fields."""
+    """Validate side identity and copy exact calculated metrics."""
     if summary is None:
         return None
     if (
         summary.type_id != type_id
-        or summary.region_id != hub.region_id
-        or summary.system_id != hub.system_id
+        or summary.region_id != region_id
+        or summary.system_id != system_id
         or summary.location_id is not None
         or summary.is_buy_summary != is_buy
     ):
@@ -98,34 +98,35 @@ def _collect_metrics(
     )
 
 
-def collect_market_hub_prices(
+def collect_price_summaries(
     *,
     summaries: OrderSummaryDataset,
     response: MarketOrdersResponse,
-    hub: MarketHub,
+    region_name: str,
+    system_name: str | None,
     types: TypesDataset,
     market_groups: MarketGroupsDataset,
     generated_at: Instant,
     filter_factor: Decimal = FILTER_FACTOR_DEFAULT,
-) -> MarketHubPricesReport:
-    """Validate and enrich supplied data, omitting types with neither summary side.
+) -> PriceSummariesReport:
+    """Validate and enrich a calculated dataset for its declared scope.
 
-    Argus expiry overrides source expiry; no expiry means unknown freshness.
-    Prices and counts come from the supplied whole-dataset summary calculation.
-    The filter factor records the setting used by that calculation.
+    Types without either buy or sell summaries are omitted. Argus expiry takes
+    precedence over source expiry when determining freshness.
 
     Raises:
-        ValueError: If scope, provenance, side identity, or static references disagree.
+        ValueError: If scope, provenance, summary identity, or static references
+            disagree.
     """
     validate_summary_options(
-        system_id=hub.system_id, location_id=None, filter_factor=filter_factor
+        system_id=summaries.system_id,
+        location_id=None,
+        filter_factor=filter_factor,
     )
-    if (
-        summaries.region_id != hub.region_id
-        or summaries.system_id != hub.system_id
-        or summaries.location_id is not None
-    ):
-        raise ValueError(f"Summary dataset is not the {hub.system_name} system scope.")
+    if summaries.location_id is not None:
+        raise ValueError("Price summaries do not support station-scoped datasets.")
+    if (summaries.system_id is None) != (system_name is None):
+        raise ValueError("System ID and system name must either both be set or unset.")
     for key, value in asdict(response).items():
         if getattr(summaries, key) != value:
             raise ValueError(f"Summary response and dataset disagree on {key}.")
@@ -133,7 +134,8 @@ def collect_market_hub_prices(
     for expiry in (summaries.expires_at, summaries.argus_expires_at):
         if expiry is not None:
             Instant.parse_iso(expiry)
-    rows: list[MarketHubPriceRow] = []
+
+    rows: list[PriceSummaryRow] = []
     for type_id, sides in sorted(summaries.records.items()):
         if sides.buy_summary is None and sides.sell_summary is None:
             continue
@@ -145,7 +147,8 @@ def collect_market_hub_prices(
             group = market_groups.get(type_record.market_group_id)
             if group is None or group.market_group_id != type_record.market_group_id:
                 raise ValueError(
-                    f"Missing or inconsistent static market group {type_record.market_group_id}."
+                    "Missing or inconsistent static market group "
+                    f"{type_record.market_group_id}."
                 )
             if (
                 not group.int_path
@@ -157,7 +160,7 @@ def collect_market_hub_prices(
                     f"Invalid static market path for group {group.market_group_id}."
                 )
         rows.append(
-            MarketHubPriceRow(
+            PriceSummaryRow(
                 type_id=type_id,
                 type_name=type_record.name,
                 market_group_id=type_record.market_group_id,
@@ -167,25 +170,28 @@ def collect_market_hub_prices(
                 buy_summary=_collect_metrics(
                     summary=sides.buy_summary,
                     type_id=type_id,
+                    region_id=summaries.region_id,
+                    system_id=summaries.system_id,
                     is_buy=True,
-                    hub=hub,
                 ),
                 sell_summary=_collect_metrics(
                     summary=sides.sell_summary,
                     type_id=type_id,
+                    region_id=summaries.region_id,
+                    system_id=summaries.system_id,
                     is_buy=False,
-                    hub=hub,
                 ),
             )
         )
+
     expiry = summaries.argus_expires_at or summaries.expires_at
-    return MarketHubPricesReport(
+    return PriceSummariesReport(
         schema_version=2,
-        scope="system",
-        region_id=hub.region_id,
-        region_name=hub.region_name,
-        system_id=hub.system_id,
-        system_name=hub.system_name,
+        scope="region" if summaries.system_id is None else "system",
+        region_id=summaries.region_id,
+        region_name=region_name,
+        system_id=summaries.system_id,
+        system_name=system_name,
         filter_factor=filter_factor,
         response_metadata_id=summaries.response_metadata_id,
         received_at=summaries.received_at,
