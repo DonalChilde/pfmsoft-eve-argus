@@ -1,4 +1,4 @@
-"""Contracts for offline system-scoped market hub price exports."""
+"""Contracts for offline hub and general price-summary exports."""
 
 import csv
 import json
@@ -117,8 +117,36 @@ def populate_static(connection: sqlite3.Connection) -> None:
         """INSERT INTO types
         (type_id, group_id, market_group_id, name, portion_size, published)
         VALUES (?, 1, ?, ?, 1, ?)""",
-        [(34, 10, NAME, 1), (35, 10, "Unpublished", 0), (36, None, "No group", 1)],
+        [
+            (34, 10, NAME, 1),
+            (35, 10, "Unpublished", 0),
+            (36, None, "No group", 1),
+        ],
     )
+    regions = {hub.region_id: hub.region_name for hub in MARKET_HUBS}
+    for region_id, region_name in regions.items():
+        connection.execute(
+            """INSERT INTO map_regions
+            (region_id, description, name, nebula_id, position_x, position_y,
+             position_z)
+            VALUES (?, '', ?, 1, 0, 0, 0)""",
+            (region_id, region_name),
+        )
+    for index, hub in enumerate(MARKET_HUBS):
+        constellation_id = 200000 + index
+        connection.execute(
+            """INSERT INTO map_constellations
+            (constellation_id, name, position_x, position_y, position_z, region_id)
+            VALUES (?, ?, 0, 0, 0, ?)""",
+            (constellation_id, f"{hub.system_name} constellation", hub.region_id),
+        )
+        connection.execute(
+            """INSERT INTO map_solar_systems
+            (solar_system_id, constellation_id, name, position_x, position_y,
+             position_z, radius, region_id, security_status)
+            VALUES (?, ?, ?, 0, 0, 0, 1, ?, 0.9)""",
+            (hub.system_id, constellation_id, hub.system_name, hub.region_id),
+        )
     connection.commit()
 
 
@@ -413,6 +441,15 @@ def invoke(env: Environment, destination: Path, *args: str) -> Result:
     return CliRunner().invoke(
         app,
         ["reports", "hub-prices", "--to", str(destination), *args],
+        obj={SETTINGS_KEY: env.settings},
+    )
+
+
+def invoke_price_summaries(env: Environment, destination: Path, *args: str) -> Result:
+    """Run the generalized price-summaries command with real SQLite readers."""
+    return CliRunner().invoke(
+        app,
+        ["reports", "price-summaries", "--to", str(destination), *args],
         obj={SETTINGS_KEY: env.settings},
     )
 
@@ -803,3 +840,197 @@ def test_last_hub_collection_failure_writes_nothing(
     assert result.exit_code == 1, result.output
     assert "static type 999" in result.output
     assert not destination.exists()
+
+
+def test_price_summaries_region_and_system_are_distinct_scopes(
+    environment: Environment,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Deduplicate repeated IDs while exporting region and system scopes separately."""
+    hub = MARKET_HUBS[0]
+    save(environment, hub=hub)
+    load_orders = Mock(wraps=read.market_orders)
+    monkeypatch.setattr(read, "market_orders", load_orders)
+    with closing(sqlite3.connect(environment.static_path)) as connection:
+        connection.execute(
+            """INSERT INTO types
+            (type_id, group_id, name, portion_size, published)
+            VALUES (999, 1, 'Other system item', 1, 1)"""
+        )
+        connection.commit()
+    destination = tmp_path / "scopes"
+    result = invoke_price_summaries(
+        environment,
+        destination,
+        "--region-id",
+        str(hub.region_id),
+        "--region-id",
+        str(hub.region_id),
+        "--system-id",
+        str(hub.system_id),
+        "--system-id",
+        str(hub.system_id),
+        "--filter-factor",
+        "10",
+        "--quiet",
+    )
+    assert result.exit_code == 0, result.output
+    timestamp = file_safe_string(RECEIVED)
+    region_path = (
+        destination
+        / f"price-summary-{file_safe_string(hub.region_name)}-{timestamp}.json"
+    )
+    system_path = (
+        destination
+        / f"price-summary-{file_safe_string(hub.system_name)}-{timestamp}.json"
+    )
+    region_report = json.loads(region_path.read_text())
+    system_report = json.loads(system_path.read_text())
+    assert len(list(destination.iterdir())) == 4
+    assert load_orders.call_count == 1
+    assert region_report["schema_version"] == system_report["schema_version"] == 2
+    assert region_report["scope"] == "region"
+    assert region_report["region_id"] == hub.region_id
+    assert region_report["region_name"] == hub.region_name
+    assert region_report["system_id"] is None
+    assert region_report["system_name"] is None
+    assert region_report["filter_factor"] == "10"
+    assert 999 in {row["type_id"] for row in region_report["records"]}
+    region_csv = list(
+        csv.DictReader(StringIO(region_path.with_suffix(".csv").read_text()))
+    )
+    assert [int(row["type_id"]) for row in region_csv] == [
+        row["type_id"] for row in region_report["records"]
+    ]
+    assert {row["filter_factor"] for row in region_csv} == {"10"}
+    assert system_report["scope"] == "system"
+    assert system_report["system_id"] == hub.system_id
+    assert system_report["system_name"] == hub.system_name
+    assert 999 not in {row["type_id"] for row in system_report["records"]}
+
+
+def test_price_summaries_system_only_and_hubs_are_deduplicated(
+    environment: Environment, tmp_path: Path
+) -> None:
+    """Resolve system-only regions and deduplicate explicit scopes against --hubs."""
+    save_all(environment)
+    destination = tmp_path / "system-only"
+    result = invoke_price_summaries(
+        environment, destination, "--system-id", str(MARKET_HUBS[0].system_id)
+    )
+    assert result.exit_code == 0, result.output
+    system_json = next(destination.glob("*.json"))
+    system_report = json.loads(system_json.read_text())
+    assert system_report["region_id"] == MARKET_HUBS[0].region_id
+    assert system_report["system_id"] == MARKET_HUBS[0].system_id
+    assert system_json.name.startswith("price-summary-Jita-")
+    legacy_destination = tmp_path / "legacy"
+    legacy_result = invoke(environment, legacy_destination, "--quiet")
+    assert legacy_result.exit_code == 0, legacy_result.output
+    legacy_report = json.loads(
+        next(legacy_destination.glob("price-summary-Jita-*.json")).read_text()
+    )
+    for key in (
+        "response_metadata_id",
+        "received_at",
+        "expires_at",
+        "argus_expires_at",
+        "schema_version",
+        "scope",
+        "region_id",
+        "region_name",
+        "system_id",
+        "system_name",
+        "filter_factor",
+        "is_stale",
+        "records",
+    ):
+        assert system_report[key] == legacy_report[key]
+    original_json = system_json.read_bytes()
+    collision = invoke_price_summaries(
+        environment, destination, "--system-id", str(MARKET_HUBS[0].system_id)
+    )
+    assert collision.exit_code == 1
+    assert "--overwrite" in collision.output
+    assert system_json.read_bytes() == original_json
+    overwritten = invoke_price_summaries(
+        environment,
+        destination,
+        "--system-id",
+        str(MARKET_HUBS[0].system_id),
+        "--overwrite",
+        "--quiet",
+    )
+    assert overwritten.exit_code == 0, overwritten.output
+
+    with closing(sqlite3.connect(environment.static_path)) as connection:
+        connection.execute(
+            """INSERT INTO types
+            (type_id, group_id, name, portion_size, published)
+            VALUES (999, 1, 'Other system item', 1, 1)"""
+        )
+        connection.commit()
+    hubs_destination = tmp_path / "with-hubs"
+    result = invoke_price_summaries(
+        environment,
+        hubs_destination,
+        "--system-id",
+        str(MARKET_HUBS[0].system_id),
+        "--region-id",
+        str(MARKET_HUBS[0].region_id),
+        "--hubs",
+        "--quiet",
+    )
+    assert result.exit_code == 0, result.output
+    assert len(list(hubs_destination.iterdir())) == 12
+    assert len(list(hubs_destination.glob("price-summary-Jita-*.json"))) == 1
+    assert len(list(hubs_destination.glob("price-summary-The_Forge-*.json"))) == 1
+
+
+def test_price_summaries_validation_and_missing_snapshot(
+    environment: Environment, tmp_path: Path
+) -> None:
+    """Reject missing/invalid selections and show actionable fetch guidance."""
+    runner = CliRunner()
+    no_selection = runner.invoke(
+        app,
+        ["reports", "price-summaries", "--to", str(tmp_path / "none")],
+        obj={SETTINGS_KEY: environment.settings},
+    )
+    assert no_selection.exit_code == 2
+    assert "--region-id" in no_selection.output
+
+    invalid_factor = invoke_price_summaries(
+        environment,
+        tmp_path / "invalid-factor",
+        "--region-id",
+        str(MARKET_HUBS[0].region_id),
+        "--filter-factor",
+        "1",
+    )
+    assert invalid_factor.exit_code == 2
+    assert "--filter-factor" in invalid_factor.output
+
+    unknown_system = invoke_price_summaries(
+        environment,
+        tmp_path / "unknown-system",
+        "--system-id",
+        "999999999",
+    )
+    assert unknown_system.exit_code == 2
+    assert "Unknown or invalid system ID" in unknown_system.output
+
+    missing_hub = MARKET_HUBS[1]
+    save(environment, hub=MARKET_HUBS[0])
+    missing = invoke_price_summaries(
+        environment,
+        tmp_path / "missing",
+        "--system-id",
+        str(missing_hub.system_id),
+        "--quiet",
+    )
+    assert missing.exit_code == 1
+    assert missing_hub.region_name in missing.output
+    assert f"fetch market-orders --region-id {missing_hub.region_id}" in missing.output
+    assert not (tmp_path / "missing").exists()

@@ -2,6 +2,7 @@
 
 import logging
 from sqlite3 import Connection
+from warnings import deprecated
 
 from pfmsoft.eve_argus.helpers.currency import from_cents
 from pfmsoft.eve_argus.helpers.timing import log_timing
@@ -82,7 +83,7 @@ def history_summary(
     region_id: int,
     type_id: int,
     start: str | None = None,
-    count: int | None = 10,
+    period: int = 10,
 ) -> models.HistorySummaryRecord | None:
     """Calculate a market history summary for the specified date range.
 
@@ -92,39 +93,18 @@ def history_summary(
         type_id: Type ID.
         start: Inclusive ISO date bound for the most recent date, or None to start at
             the beginning of available history.
-        count: Maximum number of records to include in the summary window, or None for
-            all. Defaults to 10.
+        period: Maximum number of days to include in the summary window. Defaults to 10.
 
     Returns:
         A HistorySummaryRecord containing the aggregated market history metrics.
     """
+    start = start or newest_possible_date(
+        connection, region_id=region_id, type_id=type_id
+    )
     if start is None:
-        most_recent_record = market_history(
-            connection,
-            region_id=region_id,
-            type_id=type_id,
-            start=None,
-            count=1,
-        )
-        if not most_recent_record:
-            return None
-        start = first_possible_date(most_recent_record[0].received_at)
-    if count is None:
-        # Get count of total records available for the given region and type
-        # FIXME not sure this is doing what I want.
-        # Consider getting the oldest available record date, and creating dates from start to that date if needed.
-        query = """
-            SELECT COUNT(*)
-            FROM market_history
-            WHERE region_id = ? AND type_id = ?
-        """
-        parameters: list[int | str] = [region_id, type_id]
-        with connection:
-            cursor = connection.execute(query, tuple(parameters))
-            count = cursor.fetchone()[0]
-        if count == 0 or count is None:
-            return None
-    dates = date_range_days(start, count)
+        return None
+
+    dates = date_range_days(start, period)
     records = market_history_date_range(
         connection,
         region_id=region_id,
@@ -327,6 +307,36 @@ def market_history_responses(
 
 
 @log_timing(logger=logger, level=_timing_log_level)
+def newest_possible_date(
+    connection: Connection, *, region_id: int, type_id: int
+) -> str | None:
+    """Get the newest possible date for a region and type.
+
+    The newest possible date is derived from the most recent market history record
+    received_at date for the given region and type. It is done this way because a low
+    trade volume might not have records on each day.
+
+    Args:
+        connection: Database connection.
+        region_id: Region ID.
+        type_id: Type ID.
+
+    Returns:
+        The newest possible date as a string, or None if no records exist.
+    """
+    most_recent_record = market_history(
+        connection,
+        region_id=region_id,
+        type_id=type_id,
+        start=None,
+        count=1,
+    )
+    if not most_recent_record:
+        return None
+    return first_possible_date(most_recent_record[0].received_at)
+
+
+@log_timing(logger=logger, level=_timing_log_level)
 def market_history_responses_by_region(
     connection: Connection, *, region_id: int, count: int | None = None
 ) -> dict[int, tuple[models.MarketHistoryResponse, ...]]:
@@ -392,6 +402,7 @@ def market_history_responses_by_region(
     }
 
 
+@deprecated("newest_history_date is deprecated, use newest_market_history_date instead")
 @log_timing(logger=logger, level=_timing_log_level)
 def newest_history_date(
     connection: Connection, *, region_id: int, before: str
@@ -412,3 +423,22 @@ def newest_history_date(
             (region_id, before),
         ).fetchone()
     return None if row is None else row[0]
+
+
+@log_timing(logger=logger, level=_timing_log_level)
+def types_in_region(connection: Connection, *, region_id: int) -> tuple[int, ...]:
+    """Read all distinct type IDs in a region.
+
+    Args:
+        connection: Database connection.
+        region_id: Region ID.
+
+    Returns:
+        A tuple of distinct type IDs in the region.
+    """
+    with connection:
+        cursor = connection.execute(
+            "SELECT DISTINCT type_id FROM market_history WHERE region_id = ?",
+            (region_id,),
+        )
+        return tuple(row[0] for row in cursor.fetchall())
