@@ -190,6 +190,121 @@ def dependency_tree(report: Report, plan: Plan) -> str:
     return "\n".join(lines)
 
 
+SALES_HEADINGS = (
+    "Hub",
+    "Sale basis",
+    "Price/unit",
+    "Sales tax/batch",
+    "Broker fee/batch",
+    "Net/unit",
+    "Profit/unit",
+    "Profit/batch",
+    "Return %",
+    "5% depth",
+    "Status",
+)
+
+
+def sales_row(outcome: Outcome) -> tuple[object, ...]:
+    """Share sale scenario values between detail and opportunity tables."""
+    hub = next(h for h in MARKET_HUBS if h.station_id == outcome.station_id)
+    return (
+        hub.system_name,
+        outcome.basis,
+        outcome.price,
+        outcome.sales_tax,
+        outcome.broker_fee,
+        outcome.net_per_unit,
+        outcome.profit_per_unit,
+        outcome.total_profit,
+        outcome.return_pct,
+        outcome.depth,
+        outcome.status,
+    )
+
+
+def profit_opportunities(report: Report) -> Section:
+    """List history-average scenarios meeting the unrounded 20-percent threshold."""
+    candidates = [
+        (outcome.return_pct, plan, outcome)
+        for plan in report.plans
+        for outcome in plan.outcomes
+        if outcome.basis == "history_average"
+        and outcome.return_pct is not None
+        and outcome.return_pct >= Decimal(20)
+    ]
+    candidates.sort(
+        key=lambda row: (
+            -row[0],
+            report.data.items[row[1].type_id].name,
+            row[1].type_id,
+            row[1].strategy,
+            row[2].station_id,
+            row[2].basis,
+        )
+    )
+    rows: list[tuple[object, ...]] = []
+    for _, plan, outcome in candidates:
+        market = report.data.markets.get((outcome.station_id, plan.type_id))
+        sale = sales_row(outcome)
+        rows.append(
+            (
+                item_name(report, plan.type_id),
+                plan.strategy,
+                sale[0],
+                None if market is None else market.daily_sales,
+                plan.unit_cost,
+                sale[2],
+                None if market is None else market.sell,
+                None if market is None else market.sell_depth,
+                *sale[3:9],
+                "Sell 5% price below history average"
+                if market is not None
+                and market.sell is not None
+                and outcome.price is not None
+                and market.sell < outcome.price
+                else "",
+            )
+        )
+    return Section(
+        title="Profit Opportunities",
+        anchor="profit-opportunities",
+        paragraphs=(
+            "Scenarios with at least 20% return against history_average prices "
+            "after sale fees, highest return first. "
+            "Average traded units/day is regional, not hub-local. "
+            "Sell 5% price and depth describe current stored sell orders; profit "
+            "and return still use history_average. History proxies remain "
+            "indicative, not guaranteed fills.",
+            *(("No scenarios offer at least 20% return.",) if not rows else ()),
+        ),
+        tables=(
+            table(
+                (
+                    "Product",
+                    "Strategy",
+                    "Hub",
+                    "Avg traded Units/day",
+                    "Unit cost ISK",
+                    "History avg Price/unit",
+                    "Sell 5% Price/unit",
+                    "5% depth",
+                    *SALES_HEADINGS[3:9],
+                    "Status",
+                ),
+                rows,
+                cell_links={
+                    (row, column): f"item-{plan.type_id}"
+                    if column == 0
+                    else plan.anchor
+                    for row, (_, plan, _) in enumerate(candidates)
+                    for column in (0, 1)
+                },
+            ),
+        ),
+    )
+
+
 def sections(report: Report) -> list[Section]:
     """Build decision-first detail sections and audit tables from the same model."""
     data = report.data
@@ -242,6 +357,7 @@ def sections(report: Report) -> list[Section]:
             ),
         )
     ]
+    result.append(profit_opportunities(report))
     index_plans = sorted(
         report.plans,
         key=lambda plan: (
@@ -269,6 +385,7 @@ def sections(report: Report) -> list[Section]:
                         "Product",
                         "Strategy",
                         "Units",
+                        "m3",
                         "Batch cost ISK",
                         "Unit cost ISK",
                         "Job-hours",
@@ -279,6 +396,9 @@ def sections(report: Report) -> list[Section]:
                             data.items[p.type_id].name,
                             p.strategy,
                             p.produced or None,
+                            None
+                            if data.items[p.type_id].volume is None or not p.produced
+                            else data.items[p.type_id].volume * p.produced,
                             p.total,
                             p.unit_cost,
                             sum((j.duration for j in p.jobs), Decimal(0)) / 3600,
@@ -307,6 +427,7 @@ def sections(report: Report) -> list[Section]:
                             "Reference runs",
                             "Portion Size",
                             "Units",
+                            "m3",
                             "Batch cost ISK",
                             "Unit cost ISK",
                             "Job-hours",
@@ -318,6 +439,9 @@ def sections(report: Report) -> list[Section]:
                                 p.reference_runs,
                                 item.portion_size,
                                 p.produced or None,
+                                None
+                                if item.volume is None or not p.produced
+                                else item.volume * p.produced,
                                 p.total,
                                 p.unit_cost,
                                 sum((j.duration for j in p.jobs), Decimal(0)) / 3600,
@@ -414,51 +538,15 @@ def sections(report: Report) -> list[Section]:
 def plan_sections(report: Report, plan: Plan) -> list[Section]:
     """Expose the full production story without charging internal transfers twice."""
     data = report.data
-    by_blueprint = {n.blueprint_id: n for n in plan.nodes}
     by_job = {job.job_id: job for job in plan.jobs}
-    blueprint_inputs: list[tuple[object, ...]] = []
-    for job in plan.jobs:
-        if job.activity != "manufacturing":
-            continue
-        node = by_blueprint[job.blueprint_id]
-        if node.probability is not None:
-            cost = (
-                None
-                if node.preparation_cost is None
-                else node.preparation_cost / node.bpcs
-            )
-        else:
-            cost = known_sum(
-                value
-                for dep in job.dependencies
-                if by_job[dep].activity == "copying"
-                for value in (
-                    by_job[dep].total_fee,
-                    *(
-                        None
-                        if data.input_prices.get(m.type_id) is None
-                        else data.input_prices[m.type_id] * m.quantity
-                        for m in by_job[dep].inputs
-                    ),
-                )
-            )
-        blueprint_inputs.append(
-            (
-                job.job_id,
-                item_name(report, job.blueprint_id),
-                ", ".join(
-                    dep
-                    for dep in job.dependencies
-                    if by_job[dep].activity != "manufacturing"
-                ),
-                f"{job.me} / {job.te}",
-                1,
-                job.licensed_runs,
-                job.runs,
-                job.remaining_runs,
-                cost,
-            )
-        )
+    nodes = {n.type_id: n for n in plan.nodes}
+
+    def input_unit_price(*, type_id: int, activity: str) -> Decimal | None:
+        child = nodes.get(type_id) if activity == "manufacturing" else None
+        if child is not None:
+            return None if child.cost is None else child.cost / child.required
+        return data.input_prices.get(type_id)
+
     outcomes: dict[int, list[Outcome]] = {o.station_id: [] for o in plan.outcomes}
     for outcome in plan.outcomes:
         outcomes[outcome.station_id].append(outcome)
@@ -477,148 +565,101 @@ def plan_sections(report: Report, plan: Plan) -> list[Section]:
             tree=dependency_tree(report, plan),
             tables=(
                 table(
-                    (
-                        "Hub",
-                        "Sale basis",
-                        "Price/unit",
-                        "Sales tax/batch",
-                        "Broker fee/batch",
-                        "Net/unit",
-                        "Profit/unit",
-                        "Profit/batch",
-                        "Return %",
-                        "5% depth",
-                        "Status",
-                    ),
-                    (
-                        (
-                            h.system_name,
-                            o.basis,
-                            o.price,
-                            o.sales_tax,
-                            o.broker_fee,
-                            o.net_per_unit,
-                            o.profit_per_unit,
-                            o.total_profit,
-                            o.return_pct,
-                            o.depth,
-                            o.status,
-                        )
-                        for h in MARKET_HUBS
-                        for o in outcomes[h.station_id]
-                    ),
+                    SALES_HEADINGS,
+                    (sales_row(o) for h in MARKET_HUBS for o in outcomes[h.station_id]),
                     caption="Sales Data",
                 ),
             ),
         )
     ]
-    result.append(
-        Section(
-            title="Blueprints, invention and output allocation",
-            anchor=f"{plan.anchor}-blueprints",
+    activity_groups = [
+        (activity, [j for j in plan.jobs if j.activity == activity])
+        for activity in ("copying", "invention", "manufacturing")
+    ]
+    activity_sections: dict[str, Section] = {}
+    invention_results = {
+        dependency: node
+        for node in plan.nodes
+        for job_id in node.job_ids
+        for dependency in by_job[job_id].dependencies
+        if by_job[dependency].activity == "invention"
+    }
+    for activity, jobs in activity_groups:
+        headings = (
+            "Job",
+            "Blueprint",
+            "Attempts" if activity == "invention" else "Runs/attempts",
+            *(("Licensed runs/BPC",) if activity != "invention" else ()),
+            *(("Remaining runs",) if activity == "manufacturing" else ()),
+            *(("Success Probability", "Result") if activity == "invention" else ()),
+            *(("Licensed runs/BPC",) if activity == "invention" else ()),
+            "ME / TE",
+            "Job-hours",
+            f"{activity.capitalize()} Cost ISK",
+            "Depends on",
+        )
+        job_rows: list[tuple[object, ...]] = []
+        for job in jobs:
+            invention_cells: tuple[object, ...] = ()
+            if activity == "invention":
+                node = invention_results[job.job_id]
+                invention_cells = (
+                    "Unavailable"
+                    if node.probability is None
+                    else f"{number(node.probability * 100)}%",
+                    item_name(report, node.blueprint_id),
+                )
+            input_costs: list[Decimal | None] = [job.total_fee]
+            for material in job.inputs:
+                price = input_unit_price(type_id=material.type_id, activity=activity)
+                input_costs.append(None if price is None else price * material.quantity)
+            job_rows.append(
+                (
+                    job.job_id,
+                    item_name(report, job.blueprint_id),
+                    job.runs,
+                    *((job.licensed_runs,) if activity != "invention" else ()),
+                    *((job.remaining_runs,) if activity == "manufacturing" else ()),
+                    *invention_cells,
+                    *((job.licensed_runs,) if activity == "invention" else ()),
+                    f"{job.me} / {job.te}",
+                    job.duration / 3600,
+                    known_sum(input_costs),
+                    ", ".join(job.dependencies) or "—",
+                )
+            )
+        activity_sections[activity] = Section(
+            title=activity.capitalize(),
+            anchor=f"{plan.anchor}-{activity}",
             level=4,
+            paragraphs=() if jobs else ("No jobs required for this activity.",),
             tables=(
                 table(
-                    (
-                        "Product",
-                        "Blueprint",
-                        "ME / TE",
-                        "BPCs",
-                        "Demand",
-                        "Output",
-                        "Surplus",
-                        "Success probability",
-                        "Raw expected attempts/BPC",
-                        "Costed attempts/BPC",
-                        "BPC preparation cost",
-                        "Rolled-up cost",
-                    ),
-                    (
-                        (
-                            item_name(report, n.type_id),
-                            item_name(report, n.blueprint_id),
-                            f"{n.me} / {n.te}",
-                            n.bpcs,
-                            n.required,
-                            n.produced,
-                            n.produced - n.required,
-                            n.probability,
-                            None
-                            if n.probability is None
-                            else Decimal(1) / n.probability,
-                            n.attempts_per_bpc or None,
-                            n.preparation_cost,
-                            n.cost,
-                        )
-                        for n in plan.nodes
-                    ),
+                    headings,
+                    job_rows,
+                    caption=f"{activity.capitalize()} jobs",
                 ),
             ),
         )
-    )
+    result.extend(activity_sections[activity] for activity, _ in activity_groups)
     result.append(
         Section(
-            title="BPC material inputs to manufacturing",
-            anchor=f"{plan.anchor}-bpc-inputs",
+            title="Installation Costs",
+            anchor=f"{plan.anchor}-installation-costs",
             level=4,
             paragraphs=(
-                "BPC acquisition costs are internal transfers from copying/invention, "
-                "including budgeted failed attempts. Do not add these again to total cost. "
-                "Invented copies are assumed successful outputs for costing, not guarantees.",
-            ),
-            tables=(
-                table(
-                    (
-                        "Manufacturing job",
-                        "BPC type",
-                        "Source steps",
-                        "ME / TE",
-                        "Copies",
-                        "Licensed runs",
-                        "Runs consumed",
-                        "Runs remaining",
-                        "Allocated BPC input ISK",
-                    ),
-                    blueprint_inputs,
+                "Costs below are installation charges only; material and BPC transfer "
+                "values are not added here. Job-hours are summed work, not elapsed time.",
+                *(
+                    ("The plan is incomplete; only known jobs are listed.",)
+                    if plan.status == "incomplete"
+                    else ()
                 ),
             ),
-        )
-    )
-    result.append(
-        Section(
-            title="Jobs and blueprint inputs",
-            anchor=f"{plan.anchor}-jobs",
-            level=4,
             tables=(
                 table(
                     (
-                        "Job",
                         "Activity",
-                        "Blueprint",
-                        "Runs/attempts",
-                        "Licensed runs/BPC",
-                        "Remaining runs",
-                        "ME / TE",
-                        "Duration seconds",
-                        "Depends on",
-                    ),
-                    (
-                        (
-                            j.job_id,
-                            j.activity,
-                            item_name(report, j.blueprint_id),
-                            j.runs,
-                            j.licensed_runs,
-                            j.remaining_runs,
-                            f"{j.me} / {j.te}",
-                            j.duration,
-                            ", ".join(j.dependencies) or "—",
-                        )
-                        for j in plan.jobs
-                    ),
-                ),
-                table(
-                    (
                         "Job",
                         "EIV ISK",
                         "PTV ISK",
@@ -627,9 +668,11 @@ def plan_sections(report: Report, plan: Plan) -> list[Section]:
                         "SCC charge",
                         "Alpha charge",
                         "Total installation ISK",
+                        "Job-hours",
                     ),
                     (
                         (
+                            activity.capitalize(),
                             j.job_id,
                             j.charges.eiv,
                             j.charges.ptv,
@@ -638,31 +681,41 @@ def plan_sections(report: Report, plan: Plan) -> list[Section]:
                             j.charges.scc,
                             0,
                             j.total_fee,
+                            j.duration / 3600,
                         )
-                        for j in plan.jobs
+                        for activity, jobs in activity_groups
+                        for j in jobs
                     ),
+                    caption="Installation charge breakdown",
                 ),
             ),
         )
     )
-    nodes = {n.type_id: n for n in plan.nodes}
     input_rows: list[tuple[object, ...]] = []
+    input_volumes: list[Decimal | None] = []
+    input_values: list[Decimal | None] = []
     for job in plan.jobs:
         for m in job.inputs:
             child = nodes.get(m.type_id) if job.activity == "manufacturing" else None
-            price = (
-                (None if child.cost is None else child.cost / child.required)
-                if child
-                else data.input_prices.get(m.type_id)
+            price = input_unit_price(type_id=m.type_id, activity=job.activity)
+            item = data.items.get(m.type_id)
+            volume = (
+                None
+                if item is None or item.volume is None
+                else item.volume * m.quantity
             )
+            value = None if price is None else price * m.quantity
+            input_volumes.append(volume)
+            input_values.append(value)
             input_rows.append(
                 (
                     job.job_id,
                     item_name(report, m.type_id),
                     m.quantity,
+                    volume,
                     "internal production transfer" if child else "Jita sell 5%",
                     price,
-                    None if price is None else price * m.quantity,
+                    value,
                 )
             )
     result.append(
@@ -671,10 +724,8 @@ def plan_sections(report: Report, plan: Plan) -> list[Section]:
             anchor=f"{plan.anchor}-inputs",
             level=4,
             paragraphs=(
-                "Quantities are rounded per actual manufacturing job after ME. "
-                "Input BPCs are listed in the preceding job/dependency table. "
-                "Internal component transfer prices allocate the whole child batch "
-                "over demanded units, including surplus cost without credit.",
+                f"Total m3: {number(known_sum(input_volumes))}. "
+                f"Total Cost: {number(known_sum(input_values))} ISK.",
             ),
             tables=(
                 table(
@@ -682,11 +733,23 @@ def plan_sections(report: Report, plan: Plan) -> list[Section]:
                         "Job",
                         "Material",
                         "Quantity",
+                        "m3",
                         "Valuation",
                         "ISK/unit",
                         "Value ISK",
                     ),
-                    input_rows,
+                    [
+                        *input_rows,
+                        (
+                            "Total",
+                            "",
+                            "",
+                            known_sum(input_volumes),
+                            "",
+                            "",
+                            known_sum(input_values),
+                        ),
+                    ],
                 ),
             ),
         )

@@ -29,6 +29,14 @@ The **External Shopping List** is an aligned plain-text **Name / Quantity** bloc
 for copying into the game: a fenced text block in Markdown and preformatted text
 in HTML. Material pricing and valuation remain in the per-job input table rather
 than a duplicate shopping detail table.
+Per-job inputs show total **m3** after Quantity, using the same volume basis as
+the product summaries. The section displays **Total m3** and **Total Cost** summed
+over its rows; any missing required value makes its total unavailable.
+The table ends with a Total row summing m3 and Value ISK.
+These are material-input totals, including internal component transfers, not an
+external shopping or production-cost total: component inputs appear at their
+own stages too. Quantities retain per-job ME rounding and internal transfer
+values allocate whole component batches without surplus credit.
 Names are left-aligned and integer quantities right-aligned, without grouping
 separators or pipe delimiters. Quantities are combined by type ID across purchase
 reasons, including external inputs whose prices are unavailable.
@@ -37,6 +45,21 @@ In Markdown and HTML, the item index links each Product to its detail section,
 with a return link to the matching index entry. Index strategy labels are plain
 text. Each product's Strategy Summaries table links its strategies to their
 details, with return links to the matching summary rows.
+The top-level **Profit Opportunities** table lists only `history_average`
+product/strategy/hub scenarios with unrounded return at least 20%, sorted by
+descending return, then product name, type ID, strategy, station ID, and sale
+basis. It reuses history-average Sales Data economics, omits the constant Sale
+basis column, and adds Product, Strategy, regional Avg traded Units/day, and
+Unit cost ISK (the strategy's full production cost per produced unit).
+Hub appears immediately after Strategy.
+Alongside History avg Price/unit, Sell 5% Price/unit and the immediately following
+5% depth show the same
+hub's stored sell-order boundary price and depth, not historical depth.
+These sell-order values do not change profit or return calculations. Missing
+volume, sell price, or depth stays unavailable. Status warns when the unrounded
+Sell 5% price is below the history-average price; otherwise it is blank, rather
+than repeating the generic regional-proxy notice. An empty result is explicitly
+stated. Detailed Sales Data statuses and CSV remain unchanged.
 The index includes batch cost and total job-hours alongside unit cost; detail
 anchors are used by navigation links rather than displayed as a separate column.
 Index rows sort by the product's full market-path string (not displayed), then
@@ -46,6 +69,32 @@ unchanged.
 
 Each product's **Strategy Summaries** table displays the static **Portion Size**;
 actual produced units still come from the manufacturing recipe and batch runs.
+Its **m3** column follows Units and shows produced units times packaged volume,
+falling back to item volume when packaged volume is unavailable. Unknown volume
+or unavailable output is shown as Unavailable.
+The Item Index includes the same **m3** column immediately after Units.
+
+Between **Sales Data** and **Per-job material inputs**, jobs are grouped under
+**Copying**, **Invention**, and **Manufacturing**, each with job details.
+Blueprint and BPC details are shown in the job tables, without separate
+blueprint-allocation or BPC-input subsections.
+Invention job rows include per-attempt success probability, the resulting
+invented blueprint followed by Licensed runs/BPC and ME/TE, and total invention consumables plus invention
+installation fees for the budgeted attempts. This job total excludes source
+copying costs; missing input prices leave it unavailable.
+Invention job rows omit remaining runs and place dependency references last.
+Copying job rows also omit remaining runs and show Copying Cost ISK before
+dependencies, including copying consumables and installation fees.
+Copying and invention job durations are displayed as Job-hours rather than seconds.
+Manufacturing job durations are also displayed only as Job-hours.
+Activity cost columns are labeled Copying Cost ISK, Invention Cost ISK, and
+Manufacturing Cost ISK. Manufacturing cost includes the job's materials and
+installation fees, excluding its own BPC preparation. Internally manufactured
+components use their fully rolled-up transfer prices, as in per-job inputs.
+**Installation Costs** follows with the per-job installation-charge breakdown,
+grouped by activity with Job-hours as its final column; these costs exclude materials and internal
+transfers, and job-hours are not elapsed completion time. Empty activities are
+explicitly marked; incomplete plans show only the known jobs.
 
 Markdown/HTML tables show product, material, and blueprint names instead of game
 IDs; redundant ID columns are omitted. Missing names are explicitly shown as

@@ -313,12 +313,14 @@ def read_inputs(
                 family = "unsupported"
             elif t.tech_level == 2 or t.meta_group_id == 2:
                 family = "t2-ship-rig" if t.category_id == 6 or is_rig else "t2"
+            volume = t.packaged_volume if t.packaged_volume is not None else t.volume
             items[t.type_id] = Item(
                 type_id=t.type_id,
                 name=t.name,
                 portion_size=t.portion_size,
                 family=family,
                 market_path=path.str_path_str() if path is not None else None,
+                volume=None if volume is None else D(str(volume)),
             )
         bps: dict[int, Blueprint] = {}
         inventions: list[Invention] = []

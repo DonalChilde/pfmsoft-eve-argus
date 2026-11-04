@@ -21,6 +21,7 @@ from industry_proof import (
 )
 from proof_inputs import demo_inputs
 from proof_render import (
+    profit_opportunities,
     render_csv,
     render_html,
     render_markdown,
@@ -32,6 +33,167 @@ from run_report import main
 from pfmsoft.eve_argus.helpers.markdown import format_markdown
 
 D = Decimal
+
+
+def test_profit_opportunities_threshold_order_and_sales_data() -> None:
+    """Filter history returns inclusively and reuse each scenario's sales data."""
+    report = build_report(demo_inputs(), product_ids=(100,))
+    plan = report.plans[0]
+    original = plan.outcomes[0]
+    plan.outcomes = [
+        replace(original, basis="buy_5pct", return_pct=D(100)),
+        replace(
+            original,
+            basis="sell_5pct",
+            return_pct=D(100),
+            status="indicative; insufficient 5% depth",
+        ),
+        replace(
+            original,
+            basis="history_average",
+            return_pct=D("30.5"),
+            status="regional proxy; no fill guarantee",
+        ),
+        replace(plan.outcomes[3], basis="history_average", return_pct=D(20)),
+        replace(plan.outcomes[4], basis="history_average", return_pct=D("19.999")),
+        *(replace(o, return_pct=None) for o in plan.outcomes[5:]),
+    ]
+    report.plans[1].outcomes = [
+        replace(o, return_pct=None) for o in report.plans[1].outcomes
+    ]
+    detail = sections(report)
+    opportunities = next(s for s in detail if s.anchor == "profit-opportunities")
+    assert opportunities.title == "Profit Opportunities"
+    assert opportunities.level == 2
+    assert detail.index(opportunities) < next(
+        i for i, s in enumerate(detail) if s.anchor == "item-100"
+    )
+    opportunity_table = opportunities.tables[0]
+    sales = next(s for s in detail if s.anchor == plan.anchor).tables[0]
+    assert opportunity_table.headings == (
+        "Product",
+        "Strategy",
+        "Hub",
+        "Avg traded Units/day",
+        "Unit cost ISK",
+        "History avg Price/unit",
+        "Sell 5% Price/unit",
+        "5% depth",
+        *sales.headings[3:9],
+        "Status",
+    )
+    assert opportunity_table.rows == (
+        (
+            report.data.items[100].name,
+            plan.strategy,
+            sales.rows[2][0],
+            "15.00",
+            f"{plan.unit_cost:,.2f}",
+            sales.rows[2][2],
+            "1,000.00",
+            "2000",
+            *sales.rows[2][3:9],
+            "",
+        ),
+        (
+            report.data.items[100].name,
+            plan.strategy,
+            sales.rows[3][0],
+            "15.00",
+            f"{plan.unit_cost:,.2f}",
+            sales.rows[3][2],
+            "1,000.00",
+            "2000",
+            *sales.rows[3][3:9],
+            "",
+        ),
+    )
+    for render in (render_markdown, render_html):
+        assert "Profit Opportunities" in render(report)
+    del report.data.markets[60003760, 100]
+    updated = next(s for s in sections(report) if s.anchor == "profit-opportunities")
+    assert updated.tables[0].rows[0][3] == "Unavailable"
+    assert updated.tables[0].rows[0][6] == "Unavailable"
+    assert updated.tables[0].rows[0][7] == "Unavailable"
+    plan.outcomes = [replace(o, return_pct=D("19.999")) for o in plan.outcomes]
+    empty = next(s for s in sections(report) if s.anchor == "profit-opportunities")
+    assert not empty.tables[0].rows
+    assert "No scenarios offer at least 20% return." in empty.paragraphs
+
+
+@pytest.mark.parametrize(
+    ("sell_price", "status"),
+    (
+        (D("799.999"), "Sell 5% price below history average"),
+        (D(800), ""),
+        (D(801), ""),
+        (None, ""),
+    ),
+)
+def test_profit_opportunities_sell_price_warning(
+    *, sell_price: Decimal | None, status: str
+) -> None:
+    """Warn only when the unrounded sell price is below the history price."""
+    report = build_report(demo_inputs(), product_ids=(100,))
+    plan = report.plans[0]
+    outcome = next(o for o in plan.outcomes if o.basis == "history_average")
+    plan.outcomes = [replace(outcome, price=D(800), return_pct=D(20))]
+    report.plans[1].outcomes = []
+    key = (outcome.station_id, plan.type_id)
+    report.data.markets[key] = replace(report.data.markets[key], sell=sell_price)
+    opportunity = profit_opportunities(report)
+    assert opportunity.tables[0].rows[0][-1] == status
+
+
+@pytest.mark.parametrize("missing", (False, True))
+def test_material_inputs_volume_and_totals(missing: bool) -> None:
+    """Total displayed material rows, retaining unknown volume and valuation."""
+    data = demo_inputs()
+    data.items[1] = replace(data.items[1], volume=D("0.015"))
+    data.items[10] = replace(data.items[10], volume=D(2))
+    if missing:
+        data.items[1] = replace(data.items[1], volume=None)
+        del data.input_prices[1]
+    report = build_report(data, product_ids=(100,))
+    plan = report.plans[0]
+    inputs = next(s for s in sections(report) if s.anchor == f"{plan.anchor}-inputs")
+    material_table = inputs.tables[0]
+    assert material_table.headings[2:4] == ("Quantity", "m3")
+    total_volume = D(0)
+    total_cost = D(0)
+    for row, material in zip(
+        material_table.rows[:-1],
+        (m for j in plan.jobs for m in j.inputs),
+        strict=True,
+    ):
+        volume = data.items[material.type_id].volume
+        assert row[3] == (
+            "Unavailable" if volume is None else f"{volume * material.quantity:,.2f}"
+        )
+        if volume is not None:
+            total_volume += volume * material.quantity
+        if not missing:
+            total_cost += data.input_prices[material.type_id] * material.quantity
+    expected_volume = "Unavailable" if missing else f"{total_volume:,.2f}"
+    expected_cost = "Unavailable" if missing else f"{total_cost:,.2f}"
+    assert material_table.rows[-1] == (
+        "Total",
+        "",
+        "",
+        expected_volume,
+        "",
+        "",
+        expected_cost,
+    )
+    assert inputs.paragraphs == (
+        f"Total m3: {expected_volume}. Total Cost: {expected_cost} ISK.",
+    )
+    for render in (render_markdown, render_html):
+        assert inputs.paragraphs[0] in render(report)
+        assert (
+            "Quantities are rounded per actual manufacturing job after ME."
+            not in render(report)
+        )
 
 
 def test_sale_table_splits_batch_tax_and_broker_fee() -> None:
@@ -94,15 +256,35 @@ def test_item_index_includes_batch_cost_and_job_hours() -> None:
         "Product",
         "Strategy",
         "Units",
+        "m3",
         "Batch cost ISK",
         "Unit cost ISK",
         "Job-hours",
         "Status",
     )
     for row, strategy_row in zip(index.rows, summary.rows, strict=True):
-        assert row[3:6] == strategy_row[4:7]
+        assert row[3:7] == strategy_row[4:8]
     for render in (render_markdown, render_html):
         assert "Detail anchor" not in render(report)
+
+
+@pytest.mark.parametrize("volume", (D("0.015"), D(0), None))
+def test_strategy_summary_total_volume(volume: Decimal | None) -> None:
+    """Multiply volume by produced units, not runs or static portion size."""
+    data = demo_inputs()
+    data.items[100] = replace(data.items[100], portion_size=100, volume=volume)
+    data.blueprints[1100] = replace(data.blueprints[1100], output=100)
+    report = build_report(data, product_ids=(100,))
+    summary = next(s for s in sections(report) if s.anchor == "item-100").tables[0]
+    index = next(s for s in sections(report) if s.anchor == "item-index").tables[0]
+    assert index.headings[2:4] == ("Units", "m3")
+    assert [row[2:4] for row in index.rows] == [row[3:5] for row in summary.rows]
+    assert summary.headings[3:5] == ("Units", "m3")
+    for row in summary.rows:
+        assert row[3] == "1000"
+        assert row[4] == ("Unavailable" if volume is None else f"{volume * 1000:,.2f}")
+    for render in (render_markdown, render_html):
+        assert "m3" in render(report)
 
 
 def test_product_strategy_summary_uses_portion_size() -> None:
@@ -177,11 +359,195 @@ def test_readable_reports_use_names_not_game_id_columns() -> None:
     assert "UNKNOWN 1100" in render_html(report)
 
 
+@pytest.mark.parametrize("copy_inputs", ("none", "priced", "missing"))
+def test_copying_job_columns_and_total_cost(copy_inputs: str) -> None:
+    """Include copying installation and consumables, preserving unknown prices."""
+    data = demo_inputs()
+    if copy_inputs != "none":
+        data.blueprints[1100] = replace(
+            data.blueprints[1100],
+            copying_materials=(Material(type_id=3, quantity=20),),
+        )
+    if copy_inputs == "missing":
+        del data.input_prices[3]
+    report = build_report(data, product_ids=(100,))
+    plan = report.plans[0]
+    copy = next(j for j in plan.jobs if j.activity == "copying")
+    job_table = next(
+        s for s in sections(report) if s.anchor == f"{plan.anchor}-copying"
+    ).tables[0]
+    assert "Remaining runs" not in job_table.headings
+    assert job_table.headings[-2:] == ("Copying Cost ISK", "Depends on")
+    values = dict(zip(job_table.headings, job_table.rows[0], strict=True))
+    expected_cost = (
+        "Unavailable"
+        if copy_inputs == "missing"
+        else f"{copy.total_fee + sum(m.quantity * data.input_prices[m.type_id] for m in copy.inputs):,.2f}"
+    )
+    assert values["Copying Cost ISK"] == expected_cost
+    assert "Duration seconds" not in job_table.headings
+    assert values["Job-hours"] == f"{copy.duration / 3600:,.2f}"
+    for render in (render_markdown, render_html):
+        assert "Copying Cost ISK" in render(report)
+
+
+@pytest.mark.parametrize("missing_price", (False, True))
+def test_invention_job_result_probability_and_cost(missing_price: bool) -> None:
+    """Show the actual invented blueprint and costs excluding source copying."""
+    data = demo_inputs()
+    if missing_price:
+        del data.input_prices[3]
+    report = build_report(data, product_ids=(200,))
+    plan = report.plans[0]
+    invention = next(j for j in plan.jobs if j.activity == "invention")
+    node = plan.nodes[0]
+    job_table = next(
+        s for s in sections(report) if s.anchor == f"{plan.anchor}-invention"
+    ).tables[0]
+    values = dict(zip(job_table.headings, job_table.rows[0], strict=True))
+    assert "Remaining runs" not in job_table.headings
+    assert job_table.headings[2] == "Attempts"
+    assert job_table.headings[-2:] == ("Invention Cost ISK", "Depends on")
+    assert values["Depends on"] == ", ".join(invention.dependencies)
+    assert values["Success Probability"] == f"{node.probability * 100:,.2f}%"
+    assert values["Result"] == "Synthetic T2 module Blueprint"
+    me_te_index = job_table.headings.index("ME / TE")
+    assert job_table.headings[me_te_index - 2 : me_te_index] == (
+        "Result",
+        "Licensed runs/BPC",
+    )
+    assert values["Licensed runs/BPC"] == str(invention.licensed_runs)
+    assert values["ME / TE"] == "2 / 4"
+    expected_cost = (
+        "Unavailable"
+        if missing_price
+        else f"{invention.total_fee + sum(m.quantity * data.input_prices[m.type_id] for m in invention.inputs):,.2f}"
+    )
+    assert values["Invention Cost ISK"] == expected_cost
+    assert "Duration seconds" not in job_table.headings
+    assert values["Job-hours"] == f"{invention.duration / 3600:,.2f}"
+    for render in (render_markdown, render_html):
+        assert "Success Probability" in render(report)
+        assert "Invention Cost ISK" in render(report)
+
+
+@pytest.mark.parametrize("missing_price", (False, True))
+def test_manufacturing_cost_excludes_own_bpc_preparation(missing_price: bool) -> None:
+    """Value each job's inputs consistently with its material input table."""
+    data = demo_inputs()
+    data.blueprints[1100] = replace(data.blueprints[1100], max_runs=3)
+    if missing_price:
+        del data.input_prices[1]
+    report = build_report(data, product_ids=(100,))
+    for plan in report.plans:
+        detail = sections(report)
+        manufacturing = next(
+            s for s in detail if s.anchor == f"{plan.anchor}-manufacturing"
+        ).tables[0]
+        assert manufacturing.headings[-2:] == ("Manufacturing Cost ISK", "Depends on")
+        for job, row in zip(
+            (j for j in plan.jobs if j.activity == "manufacturing"),
+            manufacturing.rows,
+            strict=True,
+        ):
+            values = dict(zip(manufacturing.headings, row, strict=True))
+            assert values["Job-hours"] == f"{job.duration / 3600:,.2f}"
+            assert "Duration seconds" not in manufacturing.headings
+            if missing_price:
+                assert row[-2] == "Unavailable"
+                continue
+            material_cost = D(0)
+            for material in job.inputs:
+                child = next(
+                    (n for n in plan.nodes if n.type_id == material.type_id), None
+                )
+                price = (
+                    child.cost / child.required
+                    if child
+                    else data.input_prices[material.type_id]
+                )
+                material_cost += material.quantity * price
+            assert row[-2] == f"{job.total_fee + material_cost:,.2f}"
+        if not missing_price:
+            for node in plan.nodes:
+                jobs = [j for j in plan.jobs if j.job_id in node.job_ids]
+                assert node.cost > sum(j.total_fee for j in jobs)
+
+
+@pytest.mark.parametrize("product_id", (100, 200))
+def test_jobs_grouped_by_activity_with_summary(product_id: int) -> None:
+    """Keep each job in its activity group and reconcile cost/time totals."""
+    report = build_report(demo_inputs(), product_ids=(product_id,))
+    plan = report.plans[0]
+    detail = sections(report)
+    start = next(i for i, s in enumerate(detail) if s.anchor == plan.anchor)
+    end = next(i for i, s in enumerate(detail) if s.anchor == f"{plan.anchor}-inputs")
+    area = detail[start + 1 : end]
+    assert [s.anchor for s in area] == [
+        f"{plan.anchor}-{suffix}"
+        for suffix in (
+            "copying",
+            "invention",
+            "manufacturing",
+            "installation-costs",
+        )
+    ]
+    for render in (render_markdown, render_html):
+        text = render(report)
+        assert "Blueprints, invention and output allocation" not in text
+        assert "BPC material inputs to manufacturing" not in text
+    assert [s.title for s in area if s.level == 4] == [
+        "Copying",
+        "Invention",
+        "Manufacturing",
+        "Installation Costs",
+    ]
+    for activity in ("copying", "invention", "manufacturing"):
+        group = next(s for s in area if s.anchor == f"{plan.anchor}-{activity}")
+        jobs = [j for j in plan.jobs if j.activity == activity]
+        assert [row[0] for row in group.tables[0].rows] == [j.job_id for j in jobs]
+        assert len(group.tables) == 1
+        if not jobs:
+            assert group.paragraphs == ("No jobs required for this activity.",)
+    summary = area[-1]
+    assert summary.title == "Installation Costs"
+    (charges,) = summary.tables
+    assert charges.headings == (
+        "Activity",
+        "Job",
+        "EIV ISK",
+        "PTV ISK",
+        "Index charge",
+        "Facility charge",
+        "SCC charge",
+        "Alpha charge",
+        "Total installation ISK",
+        "Job-hours",
+    )
+    expected_jobs = [
+        j
+        for activity in ("copying", "invention", "manufacturing")
+        for j in plan.jobs
+        if j.activity == activity
+    ]
+    assert [row[:2] for row in charges.rows] == [
+        (j.activity.capitalize(), j.job_id) for j in expected_jobs
+    ]
+    assert [row[-1] for row in charges.rows] == [
+        f"{j.duration / 3600:,.2f}" for j in expected_jobs
+    ]
+    for render in (render_markdown, render_html):
+        text = render(report)
+        assert "Job Summary" not in text
+        assert "Installation cost and time totals" not in text
+        assert text.index("Installation Costs") < text.index("Per-job material inputs")
+
+
 def test_job_output_omits_unique_source_bpo_id() -> None:
     """Keep blueprint types visible but omit the owned BPO instance column."""
     report = build_report(demo_inputs(), product_ids=(100,))
     jobs = next(
-        s for s in sections(report) if s.anchor == f"{report.plans[0].anchor}-jobs"
+        s for s in sections(report) if s.anchor == f"{report.plans[0].anchor}-copying"
     )
     job_table = jobs.tables[0]
     assert "Source BPO item" not in job_table.headings
@@ -359,13 +725,6 @@ def test_copy_consumables_per_licensed_run(product_id: int) -> None:
     assert sum(p.quantity for p in plan.shopping if p.type_id == 3) == (
         sum(p.quantity for p in baseline.shopping if p.type_id == 3) + added_quantity
     )
-    bpc_table = next(
-        s
-        for s in sections(build_report(data, product_ids=(product_id,)))
-        if s.anchor == f"{plan.anchor}-bpc-inputs"
-    ).tables[0]
-    allocated = sum(D(row[-1].replace(",", "")) for row in bpc_table.rows)
-    assert abs(allocated - plan.nodes[0].preparation_cost) < D("0.05")
     del data.input_prices[3]
     incomplete = build_report(data, product_ids=(product_id,)).plans[0]
     assert incomplete.total is None

@@ -240,6 +240,31 @@ def test_loads_prices_for_copy_only_consumables(snapshot_paths: DatabasePaths) -
     )
 
 
+@pytest.mark.parametrize(
+    ("packaged", "unpackaged", "expected"),
+    (
+        (2.5, 10.0, Decimal("2.5")),
+        (None, 10.0, Decimal("10")),
+        (0.0, 10.0, Decimal(0)),
+        (None, None, None),
+    ),
+)
+def test_reads_product_volume(
+    snapshot_paths: DatabasePaths,
+    packaged: float | None,
+    unpackaged: float | None,
+    expected: Decimal | None,
+) -> None:
+    """Prefer packaged volume, retaining zero and explicit unknown volume."""
+    with sqlite3.connect(snapshot_paths.static) as connection:
+        connection.execute(
+            "UPDATE types SET packaged_volume = ?, volume = ? WHERE type_id = 100",
+            (packaged, unpackaged),
+        )
+    data, _ = read_inputs(snapshot_paths, corporation_id=7, product_ids=(100,))
+    assert data.items[100].volume == expected
+
+
 def test_reads_product_market_path(snapshot_paths: DatabasePaths) -> None:
     """Carry the full stored market-group path into presentation inputs."""
     with sqlite3.connect(snapshot_paths.static) as connection:

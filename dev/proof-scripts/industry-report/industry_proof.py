@@ -31,6 +31,7 @@ class Item:
     portion_size: int = 1
     family: Literal["ordinary", "t2", "t2-ship-rig", "unsupported"] = "ordinary"
     market_path: str | None = None
+    volume: Decimal | None = None
 
 
 @dataclass(slots=True, kw_only=True, frozen=True)
