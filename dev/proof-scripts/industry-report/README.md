@@ -121,6 +121,12 @@ an ordinary product, a component chain, a T2 non-ship/non-rig product, and a T2
 ship/rig. Missing sample categories produce warnings; ambiguous routes are not
 chosen automatically.
 
+For an Atron invention example, add `--type-id 608`, `--type-id 11200`, and
+`--type-id 11202` to include Atron, Taranis, and Ares. The latter two products are resolved
+from the Atron Blueprint's static invention results (Taranis Blueprint and Ares
+Blueprint), with access verified against the owned source BPO. Selecting Atron
+alone does not automatically add its invention products to the report.
+
 All databases open with SQLite `mode=ro` and `query_only`. No settings
 initialization, migrations, data writes, ESI requests, or implicit refreshes occur.
 Each source selects its latest scoped response and reads rows by that response
