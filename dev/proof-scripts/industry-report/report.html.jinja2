@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Industry report — proof</title>
+<style>
+body { font: 16px/1.5 system-ui, sans-serif; margin: 2rem auto; max-width: 100rem; padding: 0 1rem; color: #222; background: #fff; }
+nav { padding: 1rem; background: #eef3f8; }
+a { color: #125396; }
+table { border-collapse: collapse; width: 100%; margin: 1rem 0 2rem; font-size: .9rem; }
+th, td { padding: .5rem; border: 1px solid #bbb; text-align: left; vertical-align: top; }
+th { background: #eef3f8; }
+tbody tr:nth-child(even) { background: #f7f7f7; }
+.table-wrap { overflow-x: auto; }
+pre { overflow-x: auto; padding: 1rem; background: #f3f3f3; }
+section { scroll-margin-top: 1rem; }
+@media print { nav { display: none; } body { margin: 0; } }
+</style>
+</head>
+<body>
+<h1>Industry report — proof</h1>
+<nav aria-label="Report contents"><ul>
+{% for section in sections if section.level == 2 %}
+<li><a href="#{{ section.anchor }}">{{ section.title }}</a></li>
+{% endfor %}
+</ul></nav>
+{% for section in sections %}
+<section id="{{ section.anchor }}">
+<h{{ section.level }}>{{ section.title }}</h{{ section.level }}>
+{% if section.index_anchor %}<p><a href="#{{ section.index_anchor }}">Back to item index</a></p>{% endif %}
+{% if section.summary_anchor %}<p><a href="#{{ section.summary_anchor }}">Back to Strategy Summaries</a></p>{% endif %}
+{% for paragraph in section.paragraphs %}<p>{{ paragraph }}</p>{% endfor %}
+{% if section.tree %}<pre>{{ section.tree }}</pre>{% endif %}
+{% for table in section.tables %}
+<div class="table-wrap">
+<table>
+<caption>{% if table.caption %}{{ table.caption }}{% else %}{{ section.title }}{% if section.tables | length > 1 %} — {{ loop.index }}{% endif %}{% endif %}</caption>
+<thead><tr>{% for heading in table.headings %}<th scope="col">{{ heading }}</th>{% endfor %}</tr></thead>
+<tbody>
+{% for row in table.rows %}{% set row_index = loop.index0 %}<tr>{% for cell in row %}{% set key = (row_index, loop.index0) %}<td{% if key in table.cell_anchors %} id="{{ table.cell_anchors[key] }}"{% endif %}>{% if key in table.cell_links %}<a href="#{{ table.cell_links[key] }}">{{ cell }}</a>{% else %}{{ cell }}{% endif %}</td>{% endfor %}</tr>{% endfor %}
+</tbody>
+</table>
+</div>
+{% endfor %}
+{% if section.raw_text %}<pre>{{ section.raw_text }}</pre>{% endif %}
+</section>
+{% endfor %}
+</body>
+</html>

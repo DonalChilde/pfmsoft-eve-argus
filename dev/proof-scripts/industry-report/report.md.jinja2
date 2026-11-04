@@ -1,0 +1,46 @@
+# Industry report — proof
+
+{% for section in sections %}
+<a id="{{ section.anchor }}"></a>
+
+{{ "#" * section.level }} {{ section.title | md }}
+
+{% if section.index_anchor %}
+[Back to item index](#{{ section.index_anchor }})
+
+{% endif %}
+{% if section.summary_anchor %}
+[Back to Strategy Summaries](#{{ section.summary_anchor }})
+
+{% endif %}
+{% for paragraph in section.paragraphs %}
+{{ paragraph | md }}
+
+{% endfor %}
+{% if section.tree %}
+```text
+{{ section.tree }}
+```
+
+{% endif %}
+{% for table in section.tables %}
+{% if table.caption %}
+**{{ table.caption | md }}**
+
+{% endif %}
+| {{ table.headings | map('md') | join(' | ') }} |
+| {{ (['---'] * (table.headings | length)) | join(' | ') }} |
+{% for row in table.rows %}
+{% set row_index = loop.index0 %}
+| {% for cell in row %}{% set key = (row_index, loop.index0) %}{% if key in table.cell_anchors %}<a id="{{ table.cell_anchors[key] }}"></a>{% endif %}{% if key in table.cell_links %}[{{ cell | md }}](#{{ table.cell_links[key] }}){% else %}{{ cell | md }}{% endif %} | {% endfor %}
+
+{% endfor %}
+
+{% endfor %}
+{% if section.raw_text %}
+```text
+{{ section.raw_text }}
+```
+
+{% endif %}
+{% endfor %}
