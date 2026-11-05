@@ -7,7 +7,7 @@ are imported from the project; composition and economic policy stay in this proo
 from collections import defaultdict
 from collections.abc import Iterable
 from dataclasses import dataclass, field, replace
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from fractions import Fraction
 from typing import Literal
@@ -30,6 +30,7 @@ class Item:
     name: str
     portion_size: int = 1
     family: Literal["ordinary", "t2", "t2-ship-rig", "unsupported"] = "ordinary"
+    meta_level: int | None = None
     market_path: str | None = None
     volume: Decimal | None = None
     group_id: int | None = None
@@ -92,9 +93,21 @@ class Source:
     received_at: str
     expires_at: str | None = None
     argus_expires_at: str | None = None
+    history_stale_days: int | None = None
 
     def freshness(self, *, now: datetime) -> str:
-        """Prefer Argus expiry and preserve unknown expiry."""
+        """Use history receipt age, otherwise prefer Argus expiry."""
+        if self.history_stale_days is not None:
+            if self.history_stale_days < 0:
+                raise ValueError("History stale days must be nonnegative.")
+            received = datetime.fromisoformat(self.received_at.replace("Z", "+00:00"))
+            if received.tzinfo is None:
+                raise ValueError(f"Receipt lacks timezone: {self.label}")
+            return (
+                "stale"
+                if now - received > timedelta(days=self.history_stale_days)
+                else "fresh"
+            )
         expiry = self.argus_expires_at or self.expires_at
         if expiry is None:
             return "unknown"

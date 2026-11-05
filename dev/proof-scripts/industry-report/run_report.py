@@ -28,6 +28,12 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--static-database", type=Path)
     parser.add_argument("--dynamic-database", type=Path)
     parser.add_argument("--history-database", type=Path)
+    parser.add_argument(
+        "--history-stale",
+        type=int,
+        default=7,
+        help="History receipt age in days before stale (default: 7; nonnegative).",
+    )
     parser.add_argument("--corporation-id", type=int, help="Stored corporation scope.")
     selection = parser.add_mutually_exclusive_group()
     selection.add_argument(
@@ -59,6 +65,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--to", type=Path, required=True, help="Output directory.")
     parser.add_argument("--overwrite", action="store_true")
     args = parser.parse_args(argv)
+    if args.history_stale < 0:
+        parser.error("--history-stale must be nonnegative.")
     if args.corporation_id is not None and args.corporation_id < 1:
         parser.error("--corporation-id must be positive.")
     if any(t < 1 for t in args.type_id):
@@ -103,6 +111,7 @@ def main(argv: list[str] | None = None) -> int:
                 else "sample",
                 me=args.me,
                 te=args.te,
+                history_stale_days=args.history_stale,
             )
         report = build_report(data, product_ids=selected)
         for warning in data.warnings:

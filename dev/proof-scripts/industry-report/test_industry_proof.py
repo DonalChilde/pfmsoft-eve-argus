@@ -4,7 +4,7 @@ import csv
 import io
 import re
 from dataclasses import replace
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from html.parser import HTMLParser
 from pathlib import Path
@@ -39,6 +39,33 @@ from run_report import main
 from pfmsoft.eve_argus.helpers.markdown import format_markdown
 
 D = Decimal
+
+
+@pytest.mark.parametrize(
+    ("age", "status"),
+    (
+        (timedelta(days=7), "fresh"),
+        (timedelta(days=7, microseconds=1), "stale"),
+        (timedelta(days=6), "fresh"),
+    ),
+)
+def test_history_receipt_staleness(age: timedelta, status: str) -> None:
+    """Only receipts strictly older than the configured age are stale."""
+    received = datetime(2026, 11, 1, tzinfo=UTC)
+    source = Source(
+        label="History",
+        reference="fixture",
+        received_at=received.isoformat(),
+        expires_at=received.isoformat(),
+        history_stale_days=7,
+    )
+    assert source.freshness(now=received + age) == status
+    assert (
+        replace(source, history_stale_days=3).freshness(
+            now=received + timedelta(days=4)
+        )
+        == "stale"
+    )
 
 
 @pytest.mark.parametrize("activity", ("copying", "manufacturing", "invention"))
@@ -1344,6 +1371,7 @@ def test_cli_help_demo_and_errors(
         ("--te", "21"),
         ("--type-id", "0"),
         ("--corporation-id", "0"),
+        ("--history-stale", "-1"),
     ),
 )
 def test_cli_selection_validation(tmp_path: Path, flags: tuple[str, ...]) -> None:

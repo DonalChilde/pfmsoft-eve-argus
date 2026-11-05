@@ -70,6 +70,67 @@ def test_not_owned_excludes_zero_copying_time() -> None:
     )
 
 
+@pytest.mark.parametrize("missing_market", ("blueprint", "product", None))
+def test_not_owned_requires_market_membership(
+    snapshot_paths: DatabasePaths, missing_market: str | None
+) -> None:
+    """Both published source blueprint and its output must have market groups."""
+    with sqlite3.connect(snapshot_paths.dynamic) as db:
+        db.execute("DELETE FROM corporation_blueprints WHERE corporation_id = 7")
+    with sqlite3.connect(snapshot_paths.static) as db:
+        db.execute(
+            "UPDATE types SET market_group_id = 123 WHERE type_id IN (100, 1100)"
+        )
+        if missing_market is not None:
+            db.execute(
+                "UPDATE types SET market_group_id = NULL WHERE type_id = ?",
+                (1100 if missing_market == "blueprint" else 100,),
+            )
+    if missing_market is not None:
+        with pytest.raises(ValueError, match="No supported published"):
+            read_inputs(snapshot_paths, corporation_id=7, selection="not-owned")
+    else:
+        _, selected = read_inputs(
+            snapshot_paths, corporation_id=7, selection="not-owned"
+        )
+        assert selected == (100,)
+
+
+@pytest.mark.parametrize("meta_level", (None, -1, 0, 1, 4, 5, 6))
+def test_not_owned_requires_output_meta_level(
+    snapshot_paths: DatabasePaths, meta_level: int | None
+) -> None:
+    """Filter manufactured output meta level, not the blueprint's meta level."""
+    with sqlite3.connect(snapshot_paths.dynamic) as db:
+        db.execute("DELETE FROM corporation_blueprints WHERE corporation_id = 7")
+    with sqlite3.connect(snapshot_paths.static) as db:
+        db.execute(
+            "UPDATE types SET market_group_id = 123, meta_level = 9 "
+            "WHERE type_id IN (100, 1100)"
+        )
+        db.execute("UPDATE types SET meta_level = ? WHERE type_id = 100", (meta_level,))
+    if meta_level in (0, 5):
+        _, selected = read_inputs(
+            snapshot_paths, corporation_id=7, selection="not-owned"
+        )
+        assert selected == (100,)
+    else:
+        with pytest.raises(ValueError, match="No supported published"):
+            read_inputs(snapshot_paths, corporation_id=7, selection="not-owned")
+    with sqlite3.connect(snapshot_paths.dynamic) as db:
+        db.execute(
+            "INSERT INTO corporation_blueprints(corporation_id, item_id, type_id, "
+            "location_id, location_flag, quantity, time_efficiency, "
+            "material_efficiency, runs, response_metadata_id) "
+            "VALUES (7, 1000, 1100, 1, 'Hangar', -1, 20, 10, -1, 4)"
+        )
+    for selection in ("owned", "sample"):
+        _, selected = read_inputs(snapshot_paths, corporation_id=7, selection=selection)
+        assert selected == (100,)
+    _, selected = read_inputs(snapshot_paths, corporation_id=7, product_ids=(100,))
+    assert selected == (100,)
+
+
 def test_not_owned_invention_and_component_access() -> None:
     """Unowned source invention and component manufacturing use assumed research."""
     data = demo_inputs()
@@ -87,6 +148,22 @@ def test_not_owned_invention_and_component_access() -> None:
     assert (me, te) == (2, 4)
 
 
+@pytest.mark.parametrize("meta_level", (None, 1, 4, 6))
+def test_not_owned_filters_invention_and_component_meta(
+    meta_level: int | None,
+) -> None:
+    """Excluded outputs grant neither invention selection nor component BPO access."""
+    data = demo_inputs()
+    data.originals = ()
+    data.items[10] = replace(data.items[10], meta_level=meta_level)
+    data.items[200] = replace(data.items[200], meta_level=meta_level)
+    selected = select_bpo_products(
+        data, published_blueprint_ids=set(data.blueprints), owned=False
+    )
+    assert selected == (100, 300)
+    assert {o.blueprint_id for o in data.originals} == {1100}
+
+
 def test_stored_owned_selection(snapshot_paths: DatabasePaths) -> None:
     """Stored owned selection uses the real inventory and loads market inputs."""
     data, selected = read_inputs(snapshot_paths, corporation_id=7, selection="owned")
@@ -97,6 +174,11 @@ def test_stored_owned_selection(snapshot_paths: DatabasePaths) -> None:
     assert data.items[100].group_name == "Fixture group"
     assert data.items[100].category_id == 7
     assert data.items[100].category_name == "UNKNOWN 7"
+    custom, _ = read_inputs(
+        snapshot_paths, corporation_id=7, product_ids=(100,), history_stale_days=12
+    )
+    history_sources = [s for s in custom.sources if s.history_stale_days is not None]
+    assert history_sources and all(s.history_stale_days == 12 for s in history_sources)
 
 
 @pytest.mark.parametrize("me,te", ((10, 20), (0, 0), (8, 16)))
@@ -111,6 +193,9 @@ def test_stored_not_owned_selection(
                        (1101, 1, 'Unowned blueprint', 1, 1),
                        (102, 1, 'Unpublished product', 1, 0),
                        (1102, 1, 'Unpublished blueprint', 1, 0);
+            UPDATE types SET market_group_id = 123
+                WHERE type_id IN (101, 1101, 102, 1102);
+            UPDATE types SET meta_level = 0 WHERE type_id IN (101, 102);
             INSERT INTO blueprints VALUES (1101, 100), (1102, 100);
             INSERT INTO blueprint_activities VALUES
                 (1101, 'manufacturing', 600), (1101, 'copying', 60),
@@ -210,6 +295,7 @@ def test_history_window_coverage_zero_and_receipts(tmp_path: Path) -> None:
         assert market.history_price == 2
         assert market.days_present == 10
         assert sources[0].received_at == RECEIPT
+        assert sources[0].history_stale_days == 7
         connection.execute("DELETE FROM market_history WHERE date_ = '2020-01-02'")
         market = history_market(
             connection,
@@ -266,6 +352,7 @@ def snapshot_paths(tmp_path: Path) -> DatabasePaths:
                 VALUES (1, 1, 'Fixture material', 1, 1),
                        (100, 1, 'Fixture product', 1, 1),
                        (1100, 1, 'Fixture blueprint', 1, 1);
+            UPDATE types SET meta_level = 0 WHERE type_id = 100;
             INSERT INTO blueprints VALUES (1100, 100);
             INSERT INTO blueprint_activities VALUES
                 (1100, 'manufacturing', 600), (1100, 'copying', 60);

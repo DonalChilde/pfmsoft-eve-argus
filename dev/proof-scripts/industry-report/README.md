@@ -199,6 +199,15 @@ are not source BPOs. Selections are deduplicated and sorted by product type ID.
 Not-owned selection rejects zero/negative copying-time stubs with named warnings
 before granting hypothetical BPO access. This is a static-data eligibility
 heuristic, not proof that an original is available for purchase.
+For not-owned source BPOs, both the blueprint and its manufactured product must
+be published and have a non-null `market_group_id`. The same restriction applies
+to hypothetical component BPO access. This checks market membership, not current
+order availability. Invented BPC results retain their existing published
+eligibility; they are not purchased source BPOs. In not-owned mode, manufactured
+outputs must also have `meta_level` 0 or 5, including invention products and
+hypothetical component BPO outputs. Other or missing meta levels are excluded;
+the blueprint's own meta level is not used. Owned/sample/explicit product
+selection is unchanged.
 Invalid copying, invention, or manufacturing durations encountered during planning
 produce named incomplete estimates rather than aborting the report.
 No matching BPOs is an explicit error. Ambiguous manufacturing/invention routes
@@ -222,6 +231,11 @@ initialization, migrations, data writes, ESI requests, or implicit refreshes occ
 Each source selects its latest scoped response and reads rows by that response
 ID. The latest blueprint snapshot is corporation-scoped; orders are
 region-scoped and filtered to each hub's primary station.
+History freshness uses snapshot `received_at`: stale only when strictly older
+than `--history-stale` days (default 7; nonnegative integer). Exactly seven days
+is still fresh with the default. This overrides expiry-based freshness for
+history receipts only; other sources retain Argus/source expiry precedence.
+The same rule applies to stderr warnings and Markdown/HTML provenance.
 
 Required preparation includes stored corporation blueprints, CCP adjusted
 prices, Osmeden industry indices, and market orders. Missing price/industry/BPO

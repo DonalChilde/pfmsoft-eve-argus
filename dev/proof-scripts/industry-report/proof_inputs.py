@@ -40,10 +40,12 @@ def demo_inputs() -> Inputs:
         1: Item(type_id=1, name="Synthetic mineral"),
         2: Item(type_id=2, name="Synthetic reaction product"),
         3: Item(type_id=3, name="Synthetic datacore"),
-        10: Item(type_id=10, name="Synthetic component"),
-        100: Item(type_id=100, name="Synthetic T1 assembly"),
-        200: Item(type_id=200, name="Synthetic T2 module", family="t2"),
-        300: Item(type_id=300, name="Synthetic T2 rig", family="t2-ship-rig"),
+        10: Item(type_id=10, name="Synthetic component", meta_level=0),
+        100: Item(type_id=100, name="Synthetic T1 assembly", meta_level=0),
+        200: Item(type_id=200, name="Synthetic T2 module", family="t2", meta_level=5),
+        300: Item(
+            type_id=300, name="Synthetic T2 rig", family="t2-ship-rig", meta_level=5
+        ),
     }
     bps: dict[int, Blueprint] = {}
     for product, blueprint, materials in (
@@ -153,8 +155,11 @@ def history_market(
     type_id: int,
     sources: list[Source],
     before: str,
+    history_stale_days: int = 7,
 ) -> Market:
     """Anchor ten calendar days to this region/type's latest completed record."""
+    if history_stale_days < 0:
+        raise ValueError("History stale days must be nonnegative.")
     row = connection.execute(
         "SELECT MAX(date_) FROM market_history "
         "WHERE region_id = ? AND type_id = ? AND date_ < ?",
@@ -183,6 +188,7 @@ def history_market(
                 received_at=received,
                 expires_at=expires,
                 argus_expires_at=argus,
+                history_stale_days=history_stale_days,
             )
         )
     return Market(
@@ -238,6 +244,7 @@ def select_bpo_products(
     *,
     published_blueprint_ids: set[int],
     owned: bool,
+    marketable_source_ids: set[int] | None = None,
     me: int = 10,
     te: int = 20,
 ) -> tuple[int, ...]:
@@ -245,6 +252,8 @@ def select_bpo_products(
 
     Not-owned selection adds explicitly hypothetical access to missing published
     BPOs, including component sources, without changing actual owned research.
+    Manufactured outputs must have meta level 0 or 5 in not-owned selection,
+    including invention results and hypothetical component BPOs.
     """
     if not 0 <= me <= 10 or not 0 <= te <= 20:
         raise ValueError("Unowned BPO ME must be 0-10 and TE must be 0-20.")
@@ -254,9 +263,15 @@ def select_bpo_products(
         bp.blueprint_id: bp
         for bp in data.blueprints.values()
         if bp.blueprint_id in published_blueprint_ids
+        and (
+            owned
+            or marketable_source_ids is None
+            or bp.blueprint_id in marketable_source_ids
+        )
         and bp.blueprint_id not in invented_ids
         and bp.copying_seconds is not None
         and data.items[bp.product_id].family == "ordinary"
+        and (owned or data.items[bp.product_id].meta_level in (0, 5))
         and bp.product_id not in data.reaction_products
     }
     if not owned:
@@ -279,6 +294,7 @@ def select_bpo_products(
             and target is not None
             and target.blueprint_id in published_blueprint_ids
             and data.items[target.product_id].family in ("t2", "t2-ship-rig")
+            and (owned or data.items[target.product_id].meta_level in (0, 5))
             and target.product_id not in data.reaction_products
         ):
             products.add(target.product_id)
@@ -318,10 +334,13 @@ def read_inputs(
     selection: Literal["sample", "owned", "not-owned"] = "sample",
     me: int = 10,
     te: int = 20,
+    history_stale_days: int = 7,
 ) -> tuple[Inputs, tuple[int, ...]]:
     """Read only selected snapshots; never fetch, migrate, or initialize schemas."""
     if corporation_id < 1:
         raise ValueError("Corporation ID must be positive.")
+    if history_stale_days < 0:
+        raise ValueError("History stale days must be nonnegative.")
     if selection not in ("sample", "owned", "not-owned"):
         raise ValueError("Unknown blueprint selection.")
     if product_ids and selection != "sample":
@@ -400,6 +419,7 @@ def read_inputs(
                 name=t.name,
                 portion_size=t.portion_size,
                 family=family,
+                meta_level=t.meta_level,
                 market_path=path.str_path_str() if path is not None else None,
                 volume=None if volume is None else D(str(volume)),
                 group_id=t.group_id,
@@ -520,6 +540,9 @@ def read_inputs(
                 ),
             ],
             warnings=[
+                f"History is stale only when its snapshot receipt is older than "
+                f"{history_stale_days} days; history expiry timestamps do not "
+                "override this threshold.",
                 "Station service availability is unverified; this is not an executable schedule.",
                 "Whole-ISK client fee rounding and material rounding retain reference caveats.",
             ],
@@ -538,6 +561,12 @@ def read_inputs(
                     and types[bp.product_id].published
                 },
                 owned=selection == "owned",
+                marketable_source_ids={
+                    bp.blueprint_id
+                    for bp in bps.values()
+                    if types[bp.blueprint_id].market_group_id is not None
+                    and types[bp.product_id].market_group_id is not None
+                },
                 me=me,
                 te=te,
             )
@@ -605,6 +634,7 @@ def read_inputs(
                     type_id=t,
                     sources=data.sources,
                     before=datetime.now(UTC).date().isoformat(),
+                    history_stale_days=history_stale_days,
                 )
                 data.markets[hub.station_id, t] = replace(
                     market,
