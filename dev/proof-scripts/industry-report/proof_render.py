@@ -4,7 +4,7 @@ import csv
 import io
 from collections import defaultdict
 from collections.abc import Iterable
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from decimal import Decimal
 from pathlib import Path
 
@@ -126,6 +126,8 @@ class Section:
     raw_text: str = ""
     index_anchor: str = ""
     summary_anchor: str = ""
+    category_id: int | None = None
+    category_name: str = "Unknown category"
 
 
 def table(
@@ -325,7 +327,8 @@ def sections(report: Report) -> list[Section]:
                 "and history_average, but not sales to buy orders (buy_5pct).",
                 "Rounded-up expected-attempt costing: ceil(1/p) per required successful BPC. "
                 "All budgeted attempts consume inputs and incur fees/time. Success is not guaranteed.",
-                "Ten-run reference batches, except one run for T2 ships/rigs. Combine component "
+                "Invented BPC licensed runs come from the static invention product quantity. "
+                "Ten-run reference batches, except T2 ships/rigs use those licensed runs. Combine component "
                 "demand per product/strategy; charge whole batches without surplus credit.",
                 "Ignore existing BPCs/inventory. Exclude historical BPO purchase/research, hauling, "
                 "relisting and scheduling. Job-hours are not elapsed completion time.",
@@ -565,8 +568,17 @@ def plan_sections(report: Report, plan: Plan) -> list[Section]:
             tree=dependency_tree(report, plan),
             tables=(
                 table(
-                    SALES_HEADINGS,
-                    (sales_row(o) for h in MARKET_HUBS for o in outcomes[h.station_id]),
+                    (*SALES_HEADINGS[:-1], "Avg traded units/day", "Status"),
+                    (
+                        (
+                            *sales_row(o)[:-1],
+                            None if market is None else market.daily_sales,
+                            o.status,
+                        )
+                        for h in MARKET_HUBS
+                        for market in (data.markets.get((h.station_id, plan.type_id)),)
+                        for o in outcomes[h.station_id]
+                    ),
                     caption="Sales Data",
                 ),
             ),
@@ -824,6 +836,7 @@ def environment() -> Environment:
         lstrip_blocks=True,
     )
     env.filters["md"] = markdown_cell  # type: ignore[reportUnknownMemberType]
+    env.filters["href"] = lambda anchor: f"#{anchor}"  # type: ignore[reportUnknownMemberType]
     return env
 
 
@@ -844,21 +857,235 @@ def render_html(report: Report) -> str:
     )
 
 
+def report_pages(report: Report) -> dict[str, list[Section]]:
+    """Partition presentation sections by static group, preserving each story."""
+    pages: dict[str, list[Section]] = {
+        "index": [],
+        "profit-opportunities": [],
+        "assumptions": [],
+        "sources": [],
+    }
+    fixed = {
+        "item-index": "index",
+        "profit-opportunities": "profit-opportunities",
+        "assumptions": "assumptions",
+        "sources": "sources",
+    }
+    current = ""
+    for section in sections(report):
+        if section.anchor == "profit-opportunities":
+            pages["profit-opportunities"].append(replace(section, tables=()))
+            entry = section.tables[0]
+            for hub in MARKET_HUBS:
+                rows = [
+                    row
+                    for row, values in enumerate(entry.rows)
+                    if values[2] == hub.system_name
+                ]
+                pages["profit-opportunities"].append(
+                    Section(
+                        title=hub.system_name,
+                        anchor=f"opportunities-hub-{hub.station_id}",
+                        level=3,
+                        paragraphs=()
+                        if rows
+                        else ("No scenarios offer at least 20% return for this hub.",),
+                        tables=(
+                            replace(
+                                entry,
+                                headings=entry.headings[:2] + entry.headings[3:],
+                                rows=tuple(
+                                    entry.rows[row][:2] + entry.rows[row][3:]
+                                    for row in rows
+                                ),
+                                cell_links={
+                                    (new, col): entry.cell_links[old, col]
+                                    for new, old in enumerate(rows)
+                                    for col in (0, 1)
+                                },
+                            ),
+                        ),
+                    )
+                )
+            continue
+        if section.anchor == "item-index":
+            pages["index"].append(replace(section, tables=()))
+            entry = section.tables[0]
+            grouped_rows: dict[int | None, list[int]] = defaultdict(list)
+            group_names: dict[int | None, str] = {}
+            group_categories: dict[int | None, tuple[int | None, str]] = {}
+            for row in range(len(entry.rows)):
+                type_id = int(entry.cell_links[row, 0].removeprefix("item-"))
+                item = report.data.items[type_id]
+                grouped_rows[item.group_id].append(row)
+                group_names[item.group_id] = item.group_name
+                group_categories[item.group_id] = (item.category_id, item.category_name)
+            for group_id, rows in sorted(
+                grouped_rows.items(),
+                key=lambda pair: (
+                    pair[0] is None,
+                    group_names[pair[0]].casefold(),
+                    pair[0] or 0,
+                ),
+            ):
+                pages["index"].append(
+                    Section(
+                        title=f"{group_names[group_id]} products",
+                        anchor=f"index-group-{group_id if group_id is not None else 'unknown'}",
+                        level=3,
+                        category_id=group_categories[group_id][0],
+                        category_name=group_categories[group_id][1],
+                        tables=(
+                            replace(
+                                entry,
+                                rows=tuple(entry.rows[row] for row in rows),
+                                cell_links={
+                                    (new, col): entry.cell_links[old, col]
+                                    for new, old in enumerate(rows)
+                                    for col in range(len(entry.headings))
+                                    if (old, col) in entry.cell_links
+                                },
+                                cell_anchors={
+                                    (new, col): entry.cell_anchors[old, col]
+                                    for new, old in enumerate(rows)
+                                    for col in range(len(entry.headings))
+                                    if (old, col) in entry.cell_anchors
+                                },
+                            ),
+                        ),
+                    )
+                )
+            continue
+        if section.anchor in fixed:
+            pages[fixed[section.anchor]].append(section)
+            continue
+        if section.index_anchor:
+            type_id = int(section.anchor.removeprefix("item-"))
+            item = report.data.items[type_id]
+            current = (
+                f"group-{item.group_id}"
+                if item.group_id is not None
+                else "group-unknown"
+            )
+            if current not in pages:
+                pages[current] = [
+                    Section(
+                        title=f"{item.group_name} products",
+                        anchor=current,
+                    )
+                ]
+        if not current:
+            raise ValueError(f"Product section has no group: {section.anchor}")
+        pages[current].append(section)
+    return pages
+
+
+def render_pages(pages: dict[str, list[Section]], *, extension: str) -> dict[str, str]:
+    """Render linked documents with validated relative anchor destinations."""
+    owners: dict[str, str] = {}
+    for stem, content in pages.items():
+        for section in content:
+            anchors = [section.anchor]
+            for entry in section.tables:
+                anchors.extend(entry.cell_anchors.values())
+            for anchor in anchors:
+                if anchor in owners:
+                    raise ValueError(f"Duplicate report anchor: {anchor}")
+                owners[anchor] = stem
+    navigation = tuple(
+        (content[0].title, f"{stem}.{extension}") for stem, content in pages.items()
+    )
+    rendered: dict[str, str] = {}
+    for stem, content in pages.items():
+
+        def href(anchor: str, *, current: str = stem) -> str:
+            target = owners.get(anchor)
+            if target is None:
+                raise ValueError(f"Unknown report link: {anchor}")
+            return (
+                f"#{anchor}" if target == current else f"{target}.{extension}#{anchor}"
+            )
+
+        env = environment()
+        env.filters["href"] = href
+        grouped_navigation: dict[tuple[int | None, str], list[tuple[str, str]]] = (
+            defaultdict(list)
+        )
+        for section in content:
+            if section.anchor.startswith("index-group-"):
+                grouped_navigation[section.category_id, section.category_name].append(
+                    (section.title, f"#{section.anchor}")
+                )
+        text = env.get_template(f"report.{extension}.jinja2").render(
+            sections=content,
+            page_title=content[0].title,
+            navigation=tuple(
+                (title, link)
+                for title, link in navigation
+                if link != f"{stem}.{extension}"
+                and (stem == "index" or not link.startswith("group-"))
+            ),
+            split_page=True,
+            index_sidebar=stem == "index" and extension == "html",
+            product_sidebar=stem.startswith("group-") and extension == "html",
+            hub_sidebar=stem == "profit-opportunities" and extension == "html",
+            hub_navigation=tuple(
+                (section.title, f"#{section.anchor}")
+                for section in content
+                if section.anchor.startswith("opportunities-hub-")
+            ),
+            product_navigation=tuple(
+                (section.title, f"#{section.anchor}")
+                for section in content
+                if section.index_anchor
+            ),
+            group_navigation=tuple(
+                (category[1], links)
+                for category, links in sorted(
+                    grouped_navigation.items(),
+                    key=lambda pair: (
+                        pair[0][0] is None,
+                        pair[0][1].casefold(),
+                        pair[0][0] or 0,
+                    ),
+                )
+            ),
+        )
+        rendered[f"{stem}.{extension}"] = (
+            format_markdown(text) if extension == "md" else text
+        )
+    return rendered
+
+
 def write_reports(
     report: Report, *, destination: Path, overwrite: bool = False
 ) -> tuple[Path, ...]:
     """Render/preflight before writing; writes are not a multi-file transaction."""
     if destination.exists() and not destination.is_dir():
         raise ValueError(f"Destination is not a directory: {destination}")
-    paths = tuple(
-        destination / f"industry-report{suffix}" for suffix in (".csv", ".md", ".html")
+    pages = report_pages(report)
+    paths = (
+        destination / "industry-report.csv",
+        *(
+            destination / folder / f"{stem}.{extension}"
+            for folder, extension in (("markdown", "md"), ("html", "html"))
+            for stem in pages
+        ),
     )
+    for folder in (destination / "markdown", destination / "html"):
+        if folder.exists() and not folder.is_dir():
+            raise ValueError(f"Destination is not a directory: {folder}")
     for path in paths:
         if path.exists() and (not overwrite or not path.is_file()):
             raise FileExistsError(f"Report exists: {path}; use --overwrite.")
-    rendered = (render_csv(report), render_markdown(report), render_html(report))
-    destination.mkdir(parents=True, exist_ok=True)
-    for path, text in zip(paths, rendered, strict=True):
+    rendered = {destination / "industry-report.csv": render_csv(report)}
+    for folder, extension in (("markdown", "md"), ("html", "html")):
+        rendered.update(
+            (destination / folder / name, text)
+            for name, text in render_pages(pages, extension=extension).items()
+        )
+    for path, text in rendered.items():
+        path.parent.mkdir(parents=True, exist_ok=True)
         with path.open(
             "w" if overwrite else "x", encoding="utf-8", newline=""
         ) as stream:

@@ -2,9 +2,11 @@
 
 import csv
 import io
+import re
 from dataclasses import replace
 from datetime import UTC, datetime
 from decimal import Decimal
+from html.parser import HTMLParser
 from pathlib import Path
 
 import pytest
@@ -13,6 +15,7 @@ from industry_proof import (
     Item,
     Material,
     Original,
+    Planner,
     Purchase,
     Source,
     build_report,
@@ -21,10 +24,13 @@ from industry_proof import (
 )
 from proof_inputs import demo_inputs
 from proof_render import (
+    Section,
     profit_opportunities,
     render_csv,
     render_html,
     render_markdown,
+    render_pages,
+    report_pages,
     sections,
     write_reports,
 )
@@ -33,6 +39,64 @@ from run_report import main
 from pfmsoft.eve_argus.helpers.markdown import format_markdown
 
 D = Decimal
+
+
+@pytest.mark.parametrize("activity", ("copying", "manufacturing", "invention"))
+def test_zero_activity_time_is_named_incomplete(activity: str) -> None:
+    """Malformed source timings cannot abort the entire report."""
+    data = demo_inputs()
+    if activity == "invention":
+        data.inventions = tuple(replace(r, seconds=0) for r in data.inventions)
+        product = 200
+    else:
+        field = f"{activity}_seconds"
+        data.blueprints[1100] = replace(data.blueprints[1100], **{field: 0})
+        product = 100
+    report = build_report(data, product_ids=(product,))
+    assert all(p.status == "incomplete" for p in report.plans)
+    assert any(
+        f"Invalid {activity} duration" in warning
+        and "Synthetic T1 assembly Blueprint (1100)" in warning
+        for warning in report.plans[0].warnings
+    )
+
+
+@pytest.mark.parametrize("daily_sales", (D("12.5"), D(0), None))
+def test_sales_data_daily_traded_units(daily_sales: Decimal | None) -> None:
+    """Show regional daily volume for every basis, retaining zero and unknown."""
+    data = demo_inputs()
+    key = (60003760, 100)
+    data.markets[key] = replace(data.markets[key], daily_sales=daily_sales)
+    report = build_report(data, product_ids=(100,))
+    plan = report.plans[0]
+    sale = next(s for s in sections(report) if s.anchor == plan.anchor).tables[0]
+    assert sale.headings[-2:] == ("Avg traded units/day", "Status")
+    expected = "Unavailable" if daily_sales is None else f"{daily_sales:,.2f}"
+    assert all(row[-2] == expected for row in sale.rows[:3])
+    assert all(
+        row[-1] == outcome.status
+        for row, outcome in zip(sale.rows, plan.outcomes, strict=True)
+    )
+
+
+def test_diagnostics_include_names_and_ids() -> None:
+    """Keep human identity and machine identity together across report warnings."""
+    data = demo_inputs()
+    del data.input_prices[1]
+    del data.adjusted_prices[1]
+    plan = build_report(data, product_ids=(100,)).plans[0]
+    assert "Missing Jita sell 5% price: Synthetic mineral (1)." in plan.warnings
+    assert any(
+        "Missing adjusted price for Synthetic mineral (1)" in warning
+        and "Synthetic T1 assembly Blueprint (1100)" in warning
+        for warning in plan.warnings
+    )
+    data.originals = ()
+    missing = build_report(data, product_ids=(100,)).plans[0]
+    assert "Missing owned BPO for Synthetic T1 assembly (100)." in missing.warnings
+    assert Planner(data).identity(999999) == "UNKNOWN (999999)"
+    report = build_report(data, product_ids=(100,))
+    assert "Synthetic T1 assembly (100)" in render_html(report)
 
 
 def test_profit_opportunities_threshold_order_and_sales_data() -> None:
@@ -751,6 +815,58 @@ def test_copy_limits_split_material_rounding() -> None:
     assert sum(job.runs for job in plan.jobs if job.activity == "copying") == 10
 
 
+@pytest.mark.parametrize(
+    ("product_id", "licensed_runs", "expected_reference", "manufacturing_runs"),
+    (
+        (200, 20, 10, (10,)),
+        (200, 4, 10, (4, 4, 2)),
+        (300, 3, 3, (3,)),
+    ),
+)
+def test_invention_product_quantity_sets_licensed_runs(
+    product_id: int,
+    licensed_runs: int,
+    expected_reference: int,
+    manufacturing_runs: tuple[int, ...],
+) -> None:
+    """Use static invention quantities rather than family-based run constants."""
+    data = demo_inputs()
+    blueprint_id = 1200 if product_id == 200 else 1300
+    data.inventions = tuple(
+        replace(route, licensed_runs=licensed_runs)
+        if route.target_blueprint_id == blueprint_id
+        else route
+        for route in data.inventions
+    )
+    plan = build_report(data, product_ids=(product_id,)).plans[0]
+    assert plan.status == "complete"
+    assert plan.reference_runs == expected_reference
+    jobs = [j for j in plan.jobs if j.activity == "manufacturing"]
+    assert tuple(j.runs for j in jobs) == manufacturing_runs
+    assert all(j.licensed_runs == licensed_runs for j in jobs)
+    assert [j.remaining_runs for j in jobs] == [
+        licensed_runs - runs for runs in manufacturing_runs
+    ]
+    assert all(
+        j.licensed_runs == licensed_runs for j in plan.jobs if j.activity == "invention"
+    )
+    assert plan.produced == expected_reference * data.blueprints[blueprint_id].output
+    assert plan.unit_cost == plan.total / plan.produced
+
+
+@pytest.mark.parametrize("licensed_runs", (0, -1))
+def test_invalid_invention_product_quantity_is_incomplete(licensed_runs: int) -> None:
+    """Invalid quantities are surfaced rather than becoming free or crashing."""
+    data = demo_inputs()
+    data.inventions = tuple(
+        replace(route, licensed_runs=licensed_runs) for route in data.inventions
+    )
+    for product_id in (200, 300):
+        plan = build_report(data, product_ids=(product_id,)).plans[0]
+        assert plan.status == "incomplete"
+        assert any("Invalid invented BPC runs" in warning for warning in plan.warnings)
+
+
 def test_invention_budget_and_ship_runs() -> None:
     """Budget three attempts per BPC and do not copy a T2 original."""
     report = build_report(demo_inputs(), product_ids=(200, 300))
@@ -874,6 +990,244 @@ def test_write_protection(tmp_path: Path) -> None:
     write_reports(report, destination=tmp_path, overwrite=True)
 
 
+def test_group_pages_and_cross_file_navigation(tmp_path: Path) -> None:
+    """Partition by static group and resolve every exported link and anchor."""
+    data = demo_inputs()
+    for type_id, group_id, group_name in (
+        (100, 25, "Frigate <&> / group"),
+        (200, 53, "Energy Weapon"),
+        (300, 53, "Energy Weapon"),
+    ):
+        data.items[type_id] = replace(
+            data.items[type_id],
+            group_id=group_id,
+            group_name=group_name,
+            category_id=6 if type_id == 100 else 7,
+            category_name="Ship <&>" if type_id == 100 else "Module",
+        )
+    report = build_report(data, product_ids=(100, 200, 300))
+    paths = write_reports(report, destination=tmp_path)
+    assert tmp_path / "industry-report.csv" in paths
+    assert not (tmp_path / "industry-report.html").exists()
+    assert not (tmp_path / "industry-report.md").exists()
+    expected = {
+        "index",
+        "profit-opportunities",
+        "assumptions",
+        "sources",
+        "group-25",
+        "group-53",
+    }
+
+    class Links(HTMLParser):
+        """Collect output navigation for local link verification."""
+
+        def __init__(self) -> None:
+            super().__init__()
+            self.ids: set[str] = set()
+            self.hrefs: list[str] = []
+
+        def handle_starttag(
+            self, tag: str, attrs: list[tuple[str, str | None]]
+        ) -> None:
+            for key, value in attrs:
+                if key == "id" and value is not None:
+                    assert value not in self.ids
+                    self.ids.add(value)
+                if key == "href" and value is not None:
+                    self.hrefs.append(value)
+
+    for folder, suffix in (("html", ".html"), ("markdown", ".md")):
+        pages = {p.stem: p.read_text() for p in (tmp_path / folder).glob(f"*{suffix}")}
+        assert set(pages) == expected
+        assert f"group-25{suffix}#item-100" in pages["index"]
+        assert f"index{suffix}#index-item-100" in pages["group-25"]
+        assert f"group-53{suffix}#production-200-" in pages["profit-opportunities"]
+        assert 'id="item-200"' not in pages["group-25"]
+        assert 'id="item-100"' not in pages["group-53"]
+        assert "Strategy Summaries" not in pages["index"]
+        anchors: dict[str, set[str]] = {}
+        hrefs: dict[str, list[str]] = {}
+        for stem, text in pages.items():
+            if folder == "html":
+                top_nav = text.split('<nav aria-label="Report contents">')[1].split(
+                    "</nav>"
+                )[0]
+                assert f'href="{stem}.html"' not in top_nav
+                assert 'href="#' not in top_nav
+                parser = Links()
+                parser.feed(text)
+                anchors[stem] = parser.ids
+                hrefs[stem] = parser.hrefs
+            else:
+                anchors[stem] = set(re.findall(r'<a id="([^"]+)"', text))
+                hrefs[stem] = re.findall(r"\]\(([^)]+)\)", text)
+                assert format_markdown(text) == text
+        for stem, links in hrefs.items():
+            for link in links:
+                filename, _, anchor = link.partition("#")
+                target = Path(filename).stem if filename else stem
+                assert target in pages, link
+                if anchor:
+                    assert anchor in anchors[target], link
+    assert (
+        "Frigate &lt;&amp;&gt; / group" in (tmp_path / "html/group-25.html").read_text()
+    )
+    index = (tmp_path / "html/index.html").read_text()
+    sidebar = re.search(
+        r'<nav class="group-sidebar" aria-label="Product groups">(.*?)</nav>',
+        index,
+        re.DOTALL,
+    )
+    assert sidebar is not None
+    assert 'href="#index-group-25"' in sidebar[1]
+    assert 'href="#index-group-53"' in sidebar[1]
+    for folder, suffix in (("html", "html"), ("markdown", "md")):
+        text = (tmp_path / folder / f"index.{suffix}").read_text()
+        assert 'id="index-group-25"' in text
+        assert 'id="index-group-53"' in text
+        assert (
+            text.count("<table>") == 2
+            if folder == "html"
+            else text.count("| Product") == 2
+        )
+    assert "profit-opportunities.html" not in sidebar[1]
+    assert sidebar[1].index("Module") < sidebar[1].index("Ship &lt;&amp;&gt;")
+    assert re.search(
+        r"Module</h3>\s*<ul>.*?href=\"#index-group-53\".*?</ul>",
+        sidebar[1],
+        re.DOTALL,
+    )
+    assert re.search(
+        r"Ship &lt;&amp;&gt;</h3>\s*<ul>.*?href=\"#index-group-25\".*?</ul>",
+        sidebar[1],
+        re.DOTALL,
+    )
+    top_navigation = index.split('<nav aria-label="Report contents">')[1].split(
+        "</nav>"
+    )[0]
+    assert "profit-opportunities.html" in top_navigation
+    assert "group-25.html" not in top_navigation
+    assert (
+        'aria-label="Product groups"'
+        not in (tmp_path / "html/group-25.html").read_text()
+    )
+    detail = (tmp_path / "html/group-53.html").read_text()
+    detail_nav = detail.split('<nav aria-label="Report contents">')[1].split("</nav>")[
+        0
+    ]
+    assert 'href="group-' not in detail_nav
+    assert 'href="index.html"' in detail_nav
+    product_sidebar = re.search(
+        r'<nav class="group-sidebar" aria-label="Products on this page">(.*?)</nav>',
+        detail,
+        re.DOTALL,
+    )
+    assert product_sidebar is not None
+    assert 'href="#item-200"' in product_sidebar[1]
+    assert 'href="#item-300"' in product_sidebar[1]
+    assert 'href="#item-100"' not in product_sidebar[1]
+    assert 'href="#item-200"' not in detail_nav
+    opportunities = (tmp_path / "html/profit-opportunities.html").read_text()
+    opportunity_nav = opportunities.split('<nav aria-label="Report contents">')[
+        1
+    ].split("</nav>")[0]
+    assert 'href="index.html"' in opportunity_nav
+    assert 'href="assumptions.html"' in opportunity_nav
+    assert 'href="sources.html"' in opportunity_nav
+    assert 'href="group-' not in opportunity_nav
+    assert 'href="group-53.html#production-200-' in opportunities
+    for stem in ("assumptions", "sources"):
+        page = (tmp_path / f"html/{stem}.html").read_text()
+        top_nav = page.split('<nav aria-label="Report contents">')[1].split("</nav>")[0]
+        assert 'href="group-' not in top_nav
+        assert 'href="index.html"' in top_nav
+        assert 'href="profit-opportunities.html"' in top_nav
+
+
+def test_nested_output_collision_preflight(tmp_path: Path) -> None:
+    """A nested collision or non-directory stops before any report file writes."""
+    report = build_report(demo_inputs(), product_ids=(100,))
+    (tmp_path / "html").mkdir()
+    blocker = tmp_path / "html/index.html"
+    blocker.write_text("preserve")
+    with pytest.raises(FileExistsError):
+        write_reports(report, destination=tmp_path)
+    assert blocker.read_text() == "preserve"
+    assert not (tmp_path / "industry-report.csv").exists()
+    assert not (tmp_path / "markdown").exists()
+    blocked = tmp_path / "blocked"
+    blocked.mkdir()
+    (blocked / "markdown").write_text("not a directory")
+    with pytest.raises(ValueError, match="not a directory"):
+        write_reports(report, destination=blocked, overwrite=True)
+    assert not (blocked / "industry-report.csv").exists()
+
+
+@pytest.mark.parametrize("empty", (False, True))
+def test_opportunities_by_hub(tmp_path: Path, empty: bool) -> None:
+    """Keep every opportunity once, remove Hub, and link each hub table locally."""
+    report = build_report(demo_inputs(), product_ids=(100,))
+    if empty:
+        for plan in report.plans:
+            plan.outcomes = [replace(o, return_pct=None) for o in plan.outcomes]
+    original = profit_opportunities(report).tables[0]
+    page = report_pages(report)["profit-opportunities"]
+    hub_sections = page[1:]
+    assert [s.title for s in hub_sections] == [
+        "Jita",
+        "Amarr",
+        "Dodixie",
+        "Hek",
+        "Rens",
+    ]
+    expected_headings = original.headings[:2] + original.headings[3:]
+    for section in hub_sections:
+        entry = section.tables[0]
+        assert entry.headings == expected_headings
+        indices = [i for i, row in enumerate(original.rows) if row[2] == section.title]
+        assert entry.rows == tuple(
+            original.rows[i][:2] + original.rows[i][3:] for i in indices
+        )
+        for row, source_row in enumerate(indices):
+            for col in (0, 1):
+                assert (
+                    entry.cell_links[row, col] == original.cell_links[source_row, col]
+                )
+        if not indices:
+            assert section.paragraphs
+    write_reports(report, destination=tmp_path)
+    html = (tmp_path / "html/profit-opportunities.html").read_text()
+    sidebar = re.search(
+        r'<nav class="group-sidebar" aria-label="Market hubs">(.*?)</nav>',
+        html,
+        re.DOTALL,
+    )
+    assert sidebar is not None
+    assert html.count("<table>") == 5
+    assert ">Hub</th>" not in html
+    for section in hub_sections:
+        assert f'href="#{section.anchor}"' in sidebar[1]
+        assert f'id="{section.anchor}"' in html
+
+
+def test_page_rendering_rejects_broken_links_and_duplicate_anchors() -> None:
+    """Broken navigation fails rendering rather than silently exporting bad links."""
+    with pytest.raises(ValueError, match="Unknown report link"):
+        render_pages(
+            {"index": [Section(title="Index", anchor="index", index_anchor="missing")]},
+            extension="html",
+        )
+    with pytest.raises(ValueError, match="Duplicate report anchor"):
+        render_pages(
+            {
+                "index": [Section(title="Index", anchor="same")],
+                "other": [Section(title="Other", anchor="same")],
+            },
+            extension="md",
+        )
+
+
 def test_known_invention_cost_and_multiple_bpcs() -> None:
     """Cost all three attempts per BPC, even when source copies must split."""
     data = demo_inputs()
@@ -965,8 +1319,49 @@ def test_cli_help_demo_and_errors(
     assert result.value.code == 0
     destination = tmp_path / "report"
     assert main(["--demo", "--to", str(destination)]) == 0
-    assert len(list(destination.iterdir())) == 3
+    assert {p.name for p in destination.iterdir()} == {
+        "industry-report.csv",
+        "markdown",
+        "html",
+    }
     assert "0 incomplete" in capsys.readouterr().err
     assert main(["--demo", "--to", str(destination)]) == 1
-    assert main(["--demo", "--type-id", "-1", "--to", str(tmp_path / "invalid")]) == 1
+    with pytest.raises(SystemExit) as result:
+        main(["--demo", "--type-id", "-1", "--to", str(tmp_path / "invalid")])
+    assert result.value.code == 2
     assert not (tmp_path / "invalid").exists()
+
+
+@pytest.mark.parametrize(
+    "flags",
+    (
+        ("--owned", "--not-owned"),
+        ("--sample", "--owned"),
+        ("--sample", "--type-id", "100"),
+        ("--not-owned", "--type-id", "100"),
+        ("--me", "-1"),
+        ("--me", "11"),
+        ("--te", "21"),
+        ("--type-id", "0"),
+        ("--corporation-id", "0"),
+    ),
+)
+def test_cli_selection_validation(tmp_path: Path, flags: tuple[str, ...]) -> None:
+    """Reject mixed selections and out-of-range values before writing files."""
+    destination = tmp_path / "invalid"
+    with pytest.raises(SystemExit) as result:
+        main(["--demo", "--to", str(destination), *flags])
+    assert result.value.code == 2
+    assert not destination.exists()
+
+
+@pytest.mark.parametrize("selection", ("--owned", "--sample"))
+def test_cli_demo_selection(tmp_path: Path, selection: str) -> None:
+    """Explicit selection flags reach the collector and write all exports."""
+    destination = tmp_path / "report"
+    assert main(["--demo", selection, "--to", str(destination)]) == 0
+    with (destination / "industry-report.csv").open(newline="") as stream:
+        ids = {int(row["type_id"]) for row in csv.DictReader(stream)}
+    assert {100, 200, 300} <= ids
+    if selection == "--owned":
+        assert 10 in ids

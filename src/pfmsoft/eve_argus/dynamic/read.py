@@ -21,6 +21,8 @@ logger = logging.getLogger(__name__)
 
 _timing_log_level = logging.INFO
 
+# FIXME add an optional count argument to response queries with a default value of 1, since getting the most recent response is the most common operation. The return should be a tuple over a list.
+
 
 @deprecated("Use calculate_market_order_summary() instead.")
 @log_timing(logger=logger, level=_timing_log_level)

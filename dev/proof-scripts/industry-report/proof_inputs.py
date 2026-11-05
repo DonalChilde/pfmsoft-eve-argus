@@ -6,6 +6,7 @@ from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from decimal import Decimal
 from pathlib import Path
+from typing import Literal
 
 from industry_proof import (
     Blueprint,
@@ -232,6 +233,74 @@ def select_sample(data: Inputs) -> tuple[int, ...]:
     return tuple(sorted(selected))
 
 
+def select_bpo_products(
+    data: Inputs,
+    *,
+    published_blueprint_ids: set[int],
+    owned: bool,
+    me: int = 10,
+    te: int = 20,
+) -> tuple[int, ...]:
+    """Select published source BPO products and every supported invention result.
+
+    Not-owned selection adds explicitly hypothetical access to missing published
+    BPOs, including component sources, without changing actual owned research.
+    """
+    if not 0 <= me <= 10 or not 0 <= te <= 20:
+        raise ValueError("Unowned BPO ME must be 0-10 and TE must be 0-20.")
+    owned_ids = {o.blueprint_id for o in data.originals}
+    invented_ids = {route.target_blueprint_id for route in data.inventions}
+    sources = {
+        bp.blueprint_id: bp
+        for bp in data.blueprints.values()
+        if bp.blueprint_id in published_blueprint_ids
+        and bp.blueprint_id not in invented_ids
+        and bp.copying_seconds is not None
+        and data.items[bp.product_id].family == "ordinary"
+        and bp.product_id not in data.reaction_products
+    }
+    if not owned:
+        for bp_id, bp in tuple(sources.items()):
+            if bp.copying_seconds is not None and bp.copying_seconds <= 0:
+                item = data.items.get(bp_id)
+                name = item.name if item is not None else "UNKNOWN"
+                data.warnings.append(
+                    f"Excluded hypothetical BPO {name} ({bp_id}): "
+                    f"invalid copying duration {bp.copying_seconds}; "
+                    "a copying activity with positive duration is required."
+                )
+                del sources[bp_id]
+    selected_sources = {bp_id for bp_id in sources if (bp_id in owned_ids) == owned}
+    products = {sources[bp_id].product_id for bp_id in selected_sources}
+    for route in data.inventions:
+        target = data.blueprints.get(route.target_blueprint_id)
+        if (
+            route.source_blueprint_id in selected_sources
+            and target is not None
+            and target.blueprint_id in published_blueprint_ids
+            and data.items[target.product_id].family in ("t2", "t2-ship-rig")
+            and target.product_id not in data.reaction_products
+        ):
+            products.add(target.product_id)
+    if not products:
+        raise ValueError(
+            f"No supported published {'owned' if owned else 'not-owned'} BPOs found."
+        )
+    if not owned:
+        hypothetical = tuple(
+            Original(blueprint_id=bp_id, item_id=None, me=me, te=te)
+            for bp_id in sorted(sources.keys() - owned_ids)
+        )
+        data.originals += hypothetical
+        data.warnings.append(
+            f"Not-owned selection: hypothetical access to {len(hypothetical)} "
+            f"unowned published BPO types at ME{me}/TE{te}, including component "
+            "BPOs. Actual owned ME/TE is preserved. BPO acquisition and research "
+            "costs/time are excluded; invented BPCs remain ME2/TE4."
+        )
+    return tuple(sorted(products))
+
+
 @dataclass(slots=True, kw_only=True, frozen=True)
 class DatabasePaths:
     """Explicit source paths; adapters never initialize application settings."""
@@ -246,10 +315,21 @@ def read_inputs(
     *,
     corporation_id: int,
     product_ids: tuple[int, ...] = (),
+    selection: Literal["sample", "owned", "not-owned"] = "sample",
+    me: int = 10,
+    te: int = 20,
 ) -> tuple[Inputs, tuple[int, ...]]:
     """Read only selected snapshots; never fetch, migrate, or initialize schemas."""
     if corporation_id < 1:
         raise ValueError("Corporation ID must be positive.")
+    if selection not in ("sample", "owned", "not-owned"):
+        raise ValueError("Unknown blueprint selection.")
+    if product_ids and selection != "sample":
+        raise ValueError("Product IDs cannot be combined with a BPO selection.")
+    if any(t < 1 for t in product_ids):
+        raise ValueError("Product IDs must be positive.")
+    if not 0 <= me <= 10 or not 0 <= te <= 20:
+        raise ValueError("Unowned BPO ME must be 0-10 and TE must be 0-20.")
     with ExitStack() as stack:
         connections: list[sqlite3.Connection] = []
         for path in (paths.static, paths.dynamic, paths.history):
@@ -262,6 +342,7 @@ def read_inputs(
         static, dynamic, history = connections
         types = static_read.types(static, only_published=False)
         groups = static_read.groups(static)
+        categories = static_read.categories(static, only_published=False)
         market_groups = static_read.market_groups(static)
         raw_bps = static_read.blueprints(static)
         systems = static_read.map_solar_systems(static)
@@ -321,6 +402,18 @@ def read_inputs(
                 family=family,
                 market_path=path.str_path_str() if path is not None else None,
                 volume=None if volume is None else D(str(volume)),
+                group_id=t.group_id,
+                category_id=t.category_id,
+                category_name=(
+                    categories[t.category_id].name or f"UNKNOWN {t.category_id}"
+                    if t.category_id in categories
+                    else f"UNKNOWN {t.category_id}"
+                ),
+                group_name=(
+                    groups[t.group_id].name or f"UNKNOWN {t.group_id}"
+                    if t.group_id in groups
+                    else f"UNKNOWN {t.group_id}"
+                ),
             )
         bps: dict[int, Blueprint] = {}
         inventions: list[Invention] = []
@@ -332,7 +425,11 @@ def read_inputs(
                 if len(products) != 1:
                     continue
                 if raw.max_production_limit is None:
-                    raise ValueError(f"Missing copy limit for {raw.blueprint_type_id}.")
+                    identity = items.get(raw.blueprint_type_id)
+                    name = identity.name if identity is not None else "UNKNOWN"
+                    raise ValueError(
+                        f"Missing copy limit for {name} ({raw.blueprint_type_id})."
+                    )
                 science_skills = sum(
                     groups[types[s.type_id].group_id].name == "Science"
                     and types[s.type_id].name != "Science"
@@ -427,7 +524,26 @@ def read_inputs(
                 "Whole-ISK client fee rounding and material rounding retain reference caveats.",
             ],
         )
-        selected = product_ids or select_sample(data)
+        if product_ids:
+            selected = tuple(sorted(set(product_ids)))
+        elif selection == "sample":
+            selected = select_sample(data)
+        else:
+            selected = select_bpo_products(
+                data,
+                published_blueprint_ids={
+                    bp.blueprint_id
+                    for bp in bps.values()
+                    if types[bp.blueprint_id].published
+                    and types[bp.product_id].published
+                },
+                owned=selection == "owned",
+                me=me,
+                te=te,
+            )
+        data.scope += (
+            f"; selection: {'explicit products' if product_ids else selection}"
+        )
         if any(t not in items for t in selected):
             raise ValueError("Requested product type not found in static data.")
         # Bound price lookups to the selected dependency closure, including source EIV.

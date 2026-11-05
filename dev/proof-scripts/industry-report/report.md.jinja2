@@ -1,4 +1,8 @@
-# Industry report — proof
+# {{ page_title | default("Industry report — proof") | md }}
+
+{% for title, href in navigation | default(()) %}
+- [{{ title | md }}]({{ href }})
+{% endfor %}
 
 {% for section in sections %}
 <a id="{{ section.anchor }}"></a>
@@ -6,11 +10,11 @@
 {{ "#" * section.level }} {{ section.title | md }}
 
 {% if section.index_anchor %}
-[Back to item index](#{{ section.index_anchor }})
+[Back to item index]({{ section.index_anchor | href }})
 
 {% endif %}
 {% if section.summary_anchor %}
-[Back to Strategy Summaries](#{{ section.summary_anchor }})
+[Back to Strategy Summaries]({{ section.summary_anchor | href }})
 
 {% endif %}
 {% for paragraph in section.paragraphs %}
@@ -32,7 +36,7 @@
 | {{ (['---'] * (table.headings | length)) | join(' | ') }} |
 {% for row in table.rows %}
 {% set row_index = loop.index0 %}
-| {% for cell in row %}{% set key = (row_index, loop.index0) %}{% if key in table.cell_anchors %}<a id="{{ table.cell_anchors[key] }}"></a>{% endif %}{% if key in table.cell_links %}[{{ cell | md }}](#{{ table.cell_links[key] }}){% else %}{{ cell | md }}{% endif %} | {% endfor %}
+| {% for cell in row %}{% set key = (row_index, loop.index0) %}{% if key in table.cell_anchors %}<a id="{{ table.cell_anchors[key] }}"></a>{% endif %}{% if key in table.cell_links %}[{{ cell | md }}]({{ table.cell_links[key] | href }}){% else %}{{ cell | md }}{% endif %} | {% endfor %}
 
 {% endfor %}
 

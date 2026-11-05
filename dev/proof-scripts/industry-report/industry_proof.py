@@ -32,6 +32,10 @@ class Item:
     family: Literal["ordinary", "t2", "t2-ship-rig", "unsupported"] = "ordinary"
     market_path: str | None = None
     volume: Decimal | None = None
+    group_id: int | None = None
+    group_name: str = "Unknown group"
+    category_id: int | None = None
+    category_name: str = "Unknown category"
 
 
 @dataclass(slots=True, kw_only=True, frozen=True)
@@ -71,10 +75,10 @@ class Invention:
 
 @dataclass(slots=True, kw_only=True, frozen=True)
 class Original:
-    """One real BPO instance; preserve its ME/TE pair."""
+    """Real or hypothetical BPO access; hypothetical access has no item ID."""
 
     blueprint_id: int
-    item_id: int
+    item_id: int | None
     me: int
     te: int
 
@@ -306,23 +310,34 @@ class Planner:
         self.routes: dict[int, list[Blueprint]] = defaultdict(list)
         for bp in data.blueprints.values():
             if bp.output < 1 or bp.max_runs < 1:
-                raise ValueError(f"Invalid recipe output/copy limit: {bp.blueprint_id}")
+                raise ValueError(
+                    f"Invalid recipe output/copy limit: {self.identity(bp.blueprint_id)}"
+                )
             self.routes[bp.product_id].append(bp)
         self.originals: dict[int, Original] = {}
-        for original in sorted(data.originals, key=lambda o: (-o.me, -o.te, o.item_id)):
+        for original in sorted(
+            data.originals, key=lambda o: (-o.me, -o.te, o.item_id or 0)
+        ):
             self.originals.setdefault(original.blueprint_id, original)
+
+    def identity(self, type_id: int) -> str:
+        """Label diagnostic identities with both name and ID, even if unknown."""
+        item = self.data.items.get(type_id)
+        return f"{item.name if item is not None else 'UNKNOWN'} ({type_id})"
 
     def route(self, type_id: int) -> Blueprint:
         """Require one supported manufacturing route instead of guessing."""
         item = self.data.items.get(type_id)
         if item is None:
-            raise Unavailable(f"Missing static type {type_id}.")
+            raise Unavailable(f"Missing static type {self.identity(type_id)}.")
         if item.family == "unsupported" or type_id in self.data.reaction_products:
-            raise Unavailable(f"Unsupported manufacturing family for {type_id}.")
+            raise Unavailable(
+                f"Unsupported manufacturing family for {self.identity(type_id)}."
+            )
         candidates = self.routes.get(type_id, [])
         if len(candidates) != 1:
             raise Unavailable(
-                f"Missing or ambiguous manufacturing route for {type_id}."
+                f"Missing or ambiguous manufacturing route for {self.identity(type_id)}."
             )
         return candidates[0]
 
@@ -340,19 +355,18 @@ class Planner:
             ]
             if len(routes) != 1:
                 raise Unavailable(
-                    f"Missing BPO or ambiguous invention route for {bp.product_id}."
+                    f"Missing BPO or ambiguous invention route for {self.identity(bp.product_id)}."
                 )
             route = routes[0]
-            expected_runs = 1 if item.family == "t2-ship-rig" else 10
-            if route.licensed_runs != expected_runs:
+            if route.licensed_runs < 1:
                 raise Unavailable(
-                    f"Unexpected invented BPC runs for {bp.product_id}: "
-                    f"{route.licensed_runs}, expected {expected_runs}."
+                    f"Invalid invented BPC runs for {self.identity(bp.product_id)}: "
+                    f"{route.licensed_runs}; invention product quantity must be positive."
                 )
             return self.originals[route.source_blueprint_id], route, 2, 4
         original = self.originals.get(bp.blueprint_id)
         if original is None:
-            raise Unavailable(f"Missing owned BPO for {bp.product_id}.")
+            raise Unavailable(f"Missing owned BPO for {self.identity(bp.product_id)}.")
         return original, None, original.me, original.te
 
     def charges(
@@ -364,7 +378,8 @@ class Planner:
             adjusted = self.data.adjusted_prices.get(material.type_id)
             if adjusted is None:
                 plan.warnings.append(
-                    f"Missing adjusted price for {material.type_id} (EIV {bp.blueprint_id})."
+                    f"Missing adjusted price for {self.identity(material.type_id)} "
+                    f"(EIV {self.identity(bp.blueprint_id)})."
                 )
             else:
                 components.append(adjusted * material.quantity)
@@ -393,7 +408,14 @@ class Planner:
     ) -> list[Job]:
         """Size copies and consume copying materials per licensed BPC run."""
         if bp.copying_seconds is None:
-            raise Unavailable(f"No copying activity for BPO {bp.blueprint_id}.")
+            raise Unavailable(
+                f"No copying activity for BPO {self.identity(bp.blueprint_id)}."
+            )
+        if bp.copying_seconds <= 0:
+            raise Unavailable(
+                f"Invalid copying duration for {self.identity(bp.blueprint_id)}: "
+                f"{bp.copying_seconds}; base seconds must be positive."
+            )
         jobs: list[Job] = []
         for i, count in enumerate(split_runs(runs=runs, limit=bp.max_runs), 1):
             job = Job(
@@ -433,6 +455,11 @@ class Planner:
     ) -> tuple[Node, list[Job], dict[int, int]]:
         """Size one aggregated product demand and all BPC preparation."""
         bp = self.route(type_id)
+        if bp.manufacturing_seconds <= 0:
+            raise Unavailable(
+                f"Invalid manufacturing duration for {self.identity(bp.blueprint_id)}: "
+                f"{bp.manufacturing_seconds}; base seconds must be positive."
+            )
         original, invention, me, te = self.blueprint_access(bp)
         runs = (required + bp.output - 1) // bp.output
         limit = min(bp.max_runs, invention.licensed_runs) if invention else bp.max_runs
@@ -442,10 +469,18 @@ class Planner:
         probability: Decimal | None = None
         attempts_per_bpc = 0
         if invention:
+            if invention.seconds <= 0:
+                raise Unavailable(
+                    f"Invalid invention duration for "
+                    f"{self.identity(invention.source_blueprint_id)}: "
+                    f"{invention.seconds}; base seconds must be positive."
+                )
             if not invention.base_probability.is_finite() or not (
                 0 < invention.base_probability <= 1
             ):
-                raise Unavailable(f"Unavailable invention probability for {type_id}.")
+                raise Unavailable(
+                    f"Unavailable invention probability for {self.identity(type_id)}."
+                )
             # Exact rational skill multiplier avoids ceil errors near integer ratios.
             chance = min(
                 Fraction(1), Fraction(invention.base_probability) * Fraction(35, 24)
@@ -455,7 +490,9 @@ class Planner:
             attempts = len(batches) * attempts_per_bpc
             source = self.data.blueprints.get(invention.source_blueprint_id)
             if source is None:
-                raise Unavailable(f"No source manufacturing recipe for {type_id}.")
+                raise Unavailable(
+                    f"No source manufacturing recipe for {self.identity(type_id)}."
+                )
             copies = self.copy_jobs(
                 source,
                 original=original,
@@ -628,7 +665,9 @@ class Planner:
 
         def visit(type_id: int) -> None:
             if type_id in active:
-                raise Unavailable(f"Production dependency cycle at type {type_id}.")
+                raise Unavailable(
+                    f"Production dependency cycle at type {self.identity(type_id)}."
+                )
             if type_id in visited:
                 return
             active.add(type_id)
@@ -648,12 +687,18 @@ class Planner:
     def plan(self, type_id: int, *, strategy: Strategy) -> Plan:
         """Plan a reference batch; preserve known-data failures as incomplete."""
         item = self.data.items[type_id]
-        reference_runs = 1 if item.family == "t2-ship-rig" else 10
-        plan = Plan(type_id=type_id, strategy=strategy, reference_runs=reference_runs)
+        plan = Plan(type_id=type_id, strategy=strategy, reference_runs=10)
         try:
+            if item.family == "t2-ship-rig":
+                _, invention, _, _ = self.blueprint_access(self.route(type_id))
+                if invention is None:
+                    raise Unavailable(
+                        f"Missing invention route for {self.identity(type_id)}."
+                    )
+                plan.reference_runs = invention.licensed_runs
             order = self.graph(type_id, strategy)
             required: dict[int, int] = defaultdict(int)
-            required[type_id] = reference_runs * self.route(type_id).output
+            required[type_id] = plan.reference_runs * self.route(type_id).output
             purchases: dict[tuple[int, str], int] = defaultdict(int)
             node_jobs: dict[int, list[Job]] = {}
             for product in order:
@@ -720,10 +765,12 @@ class Planner:
             for line in plan.shopping:
                 if line.type_id not in self.data.items:
                     plan.warnings.append(
-                        f"Missing static identity for input {line.type_id}; retained by ID."
+                        f"Missing static identity for input {self.identity(line.type_id)}; retained by ID."
                     )
                 if line.unit_price is None:
-                    plan.warnings.append(f"Missing Jita sell 5% price: {line.type_id}.")
+                    plan.warnings.append(
+                        f"Missing Jita sell 5% price: {self.identity(line.type_id)}."
+                    )
             plan.produced = plan.nodes[0].produced
             plan.total = known_sum(
                 [line.cost for line in plan.shopping]

@@ -14,14 +14,73 @@ uv run dev/proof-scripts/industry-report/run_report.py \
   --to dev/proof-scripts/proof-output/industry-report-demo
 ```
 
-Produces `industry-report.csv`, `industry-report.md`, and `industry-report.html`.
+Produces a CSV plus linked Markdown and HTML page sets:
+
+```text
+OUTPUT/
+  industry-report.csv
+  html/
+    index.html
+    profit-opportunities.html
+    assumptions.html
+    sources.html
+    group-GROUP_ID.html
+  markdown/
+    index.md
+    profit-opportunities.md
+    assumptions.md
+    sources.md
+    group-GROUP_ID.md
+```
+
+Open `html/index.html` (or `markdown/index.md`) for the Item Index table.
+Profit Opportunities has its own page. Detailed product stories are grouped by
+**static item group** (Frigate, Energy Weapon, etc.), not the broader category,
+market group, or manufacturing family. Page titles and navigation use group names.
+Stable numeric group filenames avoid name collisions and unsafe path characters;
+missing classification uses `group-unknown`.
+Navigation connects the index, opportunities, assumptions, provenance, and every
+group. Product/strategy links and index/summary return links work across files
+within each format. All pages remain usable locally, without external assets.
+HTML uses the full available viewport width with side padding, without a
+maximum-width cap; sidebar layouts give the remaining width to the content.
+The index has a separate Item Index table per static group, ordered by group
+name (unknown groups last), retaining market-path ordering within each group.
+The HTML index lists product-group links in a sticky, independently scrollable
+sidebar that jumps to these tables on the same page. Group links are listed under
+static category headings, with categories and groups ordered alphabetically
+(unknown categories last). Product links in each table
+open their detailed entries; detail return links target the matching index row.
+Main report links stay above the tables;
+on narrow screens the group navigation stacks above it.
+HTML group-detail pages use the same responsive sidebar layout, listing only
+the product entries on that page, with same-page anchor links. Product links
+move out of the top navigation; main report links and return links remain.
+Group-detail pages omit links to other product-group pages from top navigation.
+Profit Opportunities omits product-group page links from its top navigation;
+its table's product and strategy links still open the detailed entries.
+Assumptions and source provenance also omit product-group links from top
+navigation, retaining the main report-page links.
+Top navigation omits links to the current page and redundant page-heading
+anchors; sidebar links and detail return links remain available.
+The page has one table per hub in configured hub order, without a redundant Hub
+column. Each retains descending-return ordering and all opportunity values.
+The HTML sidebar links to each hub table; hubs with no qualifying scenarios show
+an explicit empty message. Markdown uses the same hub table split.
+CSV columns and calculations are unchanged. The in-memory single-document
+render helpers remain available for focused tests; the CLI writes only page sets.
+
 The demo has three **fictional** products covering T1, a component chain, a T2
 module, and a T2 rig. Its prices, type IDs, recipes, and indices are synthetic,
 not actual EVE quotes.
 
 Use `--overwrite` to replace existing artifacts. All formats render before
 writing, and existing paths are checked first. Writes are not an atomic
-three-file transaction: a filesystem failure can leave partial output.
+multi-file transaction: a filesystem failure can leave partial output.
+Nested file collisions and directory blockers are checked before writing.
+Overwrite replaces current generated paths but does not delete obsolete
+group/category files or older monolithic exports; the new index links only current
+pages. Use a fresh output directory when an exact current-file inventory matters.
 Fixed filenames deliberately simplify prototype iteration; source metadata and
 generation time are in the detailed companions rather than the filename.
 
@@ -115,17 +174,48 @@ uv run dev/proof-scripts/industry-report/run_report.py \
   --to dev/proof-scripts/proof-output/industry-report-stored
 ```
 
-Optionally repeat `--type-id PRODUCT_TYPE_ID`. These are product IDs, not
-blueprint IDs. Without explicit IDs, select at most four representatives:
-an ordinary product, a component chain, a T2 non-ship/non-rig product, and a T2
-ship/rig. Missing sample categories produce warnings; ambiguous routes are not
-chosen automatically.
+Choose one mutually exclusive selection:
+
+- `--owned`: all supported published BPO types in the corporation's latest stored
+  blueprint inventory, plus every supported published invention product reachable
+  from those source BPOs. Existing BPCs do not count as owned BPOs.
+- `--not-owned`: all supported published source BPO types absent from that
+  inventory, plus their supported published invention products. Assume access to
+  missing published BPOs (including component BPOs) at `--me 10 --te 20` by
+  default. Override with `--me 0..10` and `--te 0..20`; these values apply only
+  to hypothetical BPOs, not actual owned research or invented BPC ME2/TE4.
+  Acquisition and research costs/time are excluded. Hypothetical access is
+  explicitly warned in stderr and report assumptions; no fake owned item IDs
+  are generated.
+- `--sample`: at most four representatives: an ordinary product, a component
+  chain, a T2 non-ship/non-rig product, and a T2 ship/rig. This remains the default
+  when no selection flag is given. Missing categories produce warnings.
+- Repeat `--type-id PRODUCT_TYPE_ID` to select exact products, not blueprint IDs.
+  This does not automatically expand invention products.
+
+The BPO catalog uses published blueprint/product types with supported ordinary
+manufacturing and a copying activity; invention-result blueprints and reactions
+are not source BPOs. Selections are deduplicated and sorted by product type ID.
+Not-owned selection rejects zero/negative copying-time stubs with named warnings
+before granting hypothetical BPO access. This is a static-data eligibility
+heuristic, not proof that an original is available for purchase.
+Invalid copying, invention, or manufacturing durations encountered during planning
+produce named incomplete estimates rather than aborting the report.
+No matching BPOs is an explicit error. Ambiguous manufacturing/invention routes
+remain incomplete rather than being chosen arbitrarily.
+`--corporation-id` must be positive and is required with stored database paths;
+`--to` is the required output directory. Existing exports require `--overwrite`.
+
+For example, add `--owned` to the stored command above for all owned routes, or
+`--not-owned --me 8 --te 16` for hypothetical unowned routes. Both use only stored
+snapshots; a large selection may have many unavailable prices or histories.
 
 For an Atron invention example, add `--type-id 608`, `--type-id 11200`, and
-`--type-id 11202` to include Atron, Taranis, and Ares. The latter two products are resolved
-from the Atron Blueprint's static invention results (Taranis Blueprint and Ares
-Blueprint), with access verified against the owned source BPO. Selecting Atron
-alone does not automatically add its invention products to the report.
+`--type-id 11202` to include Atron, Taranis, and Ares. The latter two products are
+resolved from the Atron Blueprint's static invention results (Taranis Blueprint
+and Ares Blueprint), with access verified against the owned source BPO.
+Selecting Atron alone by `--type-id 608` does not automatically add its invention
+products; `--owned` includes all three when the Atron BPO is owned.
 
 All databases open with SQLite `mode=ro` and `query_only`. No settings
 initialization, migrations, data writes, ESI requests, or implicit refreshes occur.
@@ -139,21 +229,29 @@ snapshots fail with fetch hints. Missing hub orders/history retain unavailable
 outcomes; missing required material prices or blueprint access retain explicitly
 incomplete production estimates. Warnings appear on stderr. A successfully
 rendered report may contain incomplete rows; operational failures exit nonzero.
+Planner diagnostics identify products, blueprints, and materials by name and
+type ID (for example, `Missing Jita sell 5% price: Ion Thruster (11531).`).
+Unknown names are explicitly labeled `UNKNOWN` alongside the ID. The same
+warnings are retained in exported detail pages; CSV schema remains unchanged.
 
 ## Fixed proof assumptions
 
 - Osmeden high-sec NPC station, Omega, all relevant skills 5, no implants,
   structures/rig bonuses, or decryptors. Station service availability is not
   verified: this is an estimate, not an executable installation plan.
-- BPC-only manufacturing. Copies preserve the selected real BPO's ME/TE pair.
-  Invented T2 BPCs use ME2/TE4, one run for ships/rigs and ten otherwise.
+- BPC-only manufacturing. Copies preserve the selected real BPO's ME/TE pair,
+  or use the explicitly assumed unowned BPO ME/TE in `--not-owned` mode.
+  Invented T2 BPCs use ME2/TE4; licensed runs come from the static invention
+  product's `quantity` field, not hard-coded family defaults. Nonpositive
+  quantities leave estimates explicitly incomplete.
 - Copying consumables are fully consumed per licensed run of the copied BPC,
   without manufacturing ME reductions. Include them at Jita input prices in BPC
   preparation, rolled-up costs, per-job inputs, and the external shopping list.
   Copies used for invention include materials for all budgeted source-copy runs.
   Stored Jita price lookups include copying-only inputs as well as manufacturing
   and invention inputs.
-- Ten manufacturing runs for unit costs, except one for T2 ships/rigs. Actual
+- Ten manufacturing runs for unit costs, except T2 ships/rigs use the invention
+  product's licensed-run quantity. Actual
   output uses recipe output per run, separately from static portion size.
 - Invention budgets `ceil(1/p)` attempts **per required BPC**. All budgeted
   attempts incur datacores, source copying, job charges and job-hours. This
@@ -167,7 +265,8 @@ rendered report may contain incomplete rows; operational failures exit nonzero.
   purchased components and reaction products. Use the existing order summary
   with its default outlier factor 100. No other prices are substituted.
 - Make-all expands supported manufacturing dependencies; reaction products are
-  always purchased. Missing required BPOs leave make-all incomplete.
+  always purchased. Missing required BPOs leave make-all incomplete except for
+  hypothetical published BPO access in `--not-owned` mode.
   When a product has no supported manufacturing subassemblies, omit its redundant
   make-all estimate from CSV, Markdown, and HTML. Reaction-only inputs do not
   qualify; a missing subassembly BPO still retains an incomplete make-all estimate.
@@ -182,6 +281,8 @@ rendered report may contain incomplete rows; operational failures exit nonzero.
   Relisting fees are not modeled.
   Markdown/HTML sale outcome tables are labeled **Sales Data** and display sales
   tax and broker fee separately as batch totals.
+  Detail Sales Data tables include regional Avg traded units/day immediately
+  before Status for every sale basis; missing volume remains unavailable.
 - Sell all reference output. Return means profit divided by production cost,
   not profit divided by revenue. A zero cost has no defined percentage return.
 - History uses ten consecutive calendar days ending at each region/type's

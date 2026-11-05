@@ -3,9 +3,9 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Industry report — proof</title>
+<title>{{ page_title | default("Industry report — proof") }}</title>
 <style>
-body { font: 16px/1.5 system-ui, sans-serif; margin: 2rem auto; max-width: 100rem; padding: 0 1rem; color: #222; background: #fff; }
+body { font: 16px/1.5 system-ui, sans-serif; margin: 2rem 0; max-width: none; padding: 0 1rem; color: #222; background: #fff; }
 nav { padding: 1rem; background: #eef3f8; }
 a { color: #125396; }
 table { border-collapse: collapse; width: 100%; margin: 1rem 0 2rem; font-size: .9rem; }
@@ -15,21 +15,73 @@ tbody tr:nth-child(even) { background: #f7f7f7; }
 .table-wrap { overflow-x: auto; }
 pre { overflow-x: auto; padding: 1rem; background: #f3f3f3; }
 section { scroll-margin-top: 1rem; }
-@media print { nav { display: none; } body { margin: 0; } }
+.index-layout { display: grid; grid-template-columns: 16rem minmax(0, 1fr); gap: 1.5rem; margin-top: 1.5rem; align-items: start; }
+.group-sidebar { position: sticky; top: 1rem; max-height: calc(100vh - 2rem); overflow-y: auto; overflow-wrap: anywhere; }
+.group-sidebar h2 { margin-top: 0; font-size: 1.1rem; }
+.group-sidebar h3 { margin: 1rem 0 .25rem; font-size: 1rem; }
+.group-sidebar ul { padding-left: 1.25rem; margin-bottom: 0; }
+.group-sidebar li { margin: .4rem 0; }
+main { min-width: 0; }
+@media (max-width: 44rem) { .index-layout { grid-template-columns: minmax(0, 1fr); } .group-sidebar { position: static; max-height: 16rem; } }
+@media print { nav { display: none; } body { margin: 0; } .index-layout { display: block; } }
 </style>
 </head>
 <body>
-<h1>Industry report — proof</h1>
+<h1>{{ page_title | default("Industry report — proof") }}</h1>
 <nav aria-label="Report contents"><ul>
-{% for section in sections if section.level == 2 %}
-<li><a href="#{{ section.anchor }}">{{ section.title }}</a></li>
+{% for title, href in navigation | default(()) %}
+{% if not (index_sidebar | default(false)) or not href.startswith("group-") %}
+<li><a href="{{ href }}">{{ title }}</a></li>
+{% endif %}
 {% endfor %}
+{% if not (split_page | default(false)) %}
+{% for section in sections if section.level == 2 %}
+{% if not (product_sidebar | default(false)) or not section.index_anchor %}
+<li><a href="#{{ section.anchor }}">{{ section.title }}</a></li>
+{% endif %}
+{% endfor %}
+{% endif %}
 </ul></nav>
+{% if (index_sidebar | default(false)) or (product_sidebar | default(false)) or (hub_sidebar | default(false)) %}
+<div class="index-layout">
+{% if index_sidebar | default(false) %}
+<nav class="group-sidebar" aria-label="Product groups">
+<h2>Product groups</h2>
+{% for category, links in group_navigation %}
+<h3>{{ category }}</h3>
+<ul>
+{% for title, href in links %}
+<li><a href="{{ href }}">{{ title }}</a></li>
+{% endfor %}
+</ul>
+{% endfor %}
+</nav>
+{% elif hub_sidebar | default(false) %}
+<nav class="group-sidebar" aria-label="Market hubs">
+<h2>Market hubs</h2>
+<ul>
+{% for title, href in hub_navigation %}
+<li><a href="{{ href }}">{{ title }}</a></li>
+{% endfor %}
+</ul>
+</nav>
+{% else %}
+<nav class="group-sidebar" aria-label="Products on this page">
+<h2>Products on this page</h2>
+<ul>
+{% for title, href in product_navigation %}
+<li><a href="{{ href }}">{{ title }}</a></li>
+{% endfor %}
+</ul>
+</nav>
+{% endif %}
+{% endif %}
+<main>
 {% for section in sections %}
 <section id="{{ section.anchor }}">
 <h{{ section.level }}>{{ section.title }}</h{{ section.level }}>
-{% if section.index_anchor %}<p><a href="#{{ section.index_anchor }}">Back to item index</a></p>{% endif %}
-{% if section.summary_anchor %}<p><a href="#{{ section.summary_anchor }}">Back to Strategy Summaries</a></p>{% endif %}
+{% if section.index_anchor %}<p><a href="{{ section.index_anchor | href }}">Back to item index</a></p>{% endif %}
+{% if section.summary_anchor %}<p><a href="{{ section.summary_anchor | href }}">Back to Strategy Summaries</a></p>{% endif %}
 {% for paragraph in section.paragraphs %}<p>{{ paragraph }}</p>{% endfor %}
 {% if section.tree %}<pre>{{ section.tree }}</pre>{% endif %}
 {% for table in section.tables %}
@@ -38,7 +90,7 @@ section { scroll-margin-top: 1rem; }
 <caption>{% if table.caption %}{{ table.caption }}{% else %}{{ section.title }}{% if section.tables | length > 1 %} — {{ loop.index }}{% endif %}{% endif %}</caption>
 <thead><tr>{% for heading in table.headings %}<th scope="col">{{ heading }}</th>{% endfor %}</tr></thead>
 <tbody>
-{% for row in table.rows %}{% set row_index = loop.index0 %}<tr>{% for cell in row %}{% set key = (row_index, loop.index0) %}<td{% if key in table.cell_anchors %} id="{{ table.cell_anchors[key] }}"{% endif %}>{% if key in table.cell_links %}<a href="#{{ table.cell_links[key] }}">{{ cell }}</a>{% else %}{{ cell }}{% endif %}</td>{% endfor %}</tr>{% endfor %}
+{% for row in table.rows %}{% set row_index = loop.index0 %}<tr>{% for cell in row %}{% set key = (row_index, loop.index0) %}<td{% if key in table.cell_anchors %} id="{{ table.cell_anchors[key] }}"{% endif %}>{% if key in table.cell_links %}<a href="{{ table.cell_links[key] | href }}">{{ cell }}</a>{% else %}{{ cell }}{% endif %}</td>{% endfor %}</tr>{% endfor %}
 </tbody>
 </table>
 </div>
@@ -46,5 +98,7 @@ section { scroll-margin-top: 1rem; }
 {% if section.raw_text %}<pre>{{ section.raw_text }}</pre>{% endif %}
 </section>
 {% endfor %}
+</main>
+{% if (index_sidebar | default(false)) or (product_sidebar | default(false)) or (hub_sidebar | default(false)) %}</div>{% endif %}
 </body>
 </html>

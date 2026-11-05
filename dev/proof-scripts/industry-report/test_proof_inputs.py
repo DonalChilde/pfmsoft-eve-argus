@@ -2,15 +2,172 @@
 
 import hashlib
 import sqlite3
+from dataclasses import replace
 from decimal import Decimal
 from pathlib import Path
 
 import pytest
-from industry_proof import Source, build_report
-from proof_inputs import DatabasePaths, history_market, read_inputs
+from industry_proof import Planner, Source, build_report
+from proof_inputs import (
+    DatabasePaths,
+    demo_inputs,
+    history_market,
+    read_inputs,
+    select_bpo_products,
+)
+from run_report import main
 
 PROJECT = Path(__file__).resolve().parents[3]
 RECEIPT = "2020-01-11T00:00:00Z"
+
+
+def test_bpo_selection_includes_all_invention_results() -> None:
+    """Partition published BPOs by actual ownership and expand every target."""
+    data = demo_inputs()
+    data.items[201] = replace(data.items[200], type_id=201, name="Second invention")
+    data.blueprints[1201] = replace(
+        data.blueprints[1200], blueprint_id=1201, product_id=201
+    )
+    data.inventions += (replace(data.inventions[0], target_blueprint_id=1201),)
+    data.originals = tuple(o for o in data.originals if o.blueprint_id == 1100)
+    published = set(data.blueprints)
+    owned = select_bpo_products(data, published_blueprint_ids=published, owned=True)
+    assert owned == (100, 200, 201, 300)
+    assert len(data.originals) == 1
+    missing = select_bpo_products(
+        data, published_blueprint_ids=published, owned=False, me=8, te=16
+    )
+    assert missing == (10,)
+    hypothetical = Planner(data).originals[1010]
+    assert (hypothetical.item_id, hypothetical.me, hypothetical.te) == (None, 8, 16)
+    assert Planner(data).originals[1100].me == 10
+    assert any(
+        "hypothetical" in warning and "ME8/TE16" in warning for warning in data.warnings
+    )
+
+
+def test_bpo_selection_excludes_unpublished_and_reports_empty() -> None:
+    """Unpublished BPOs and BPC-only targets must not become hypothetical BPOs."""
+    data = demo_inputs()
+    with pytest.raises(ValueError, match="No .*BPO"):
+        select_bpo_products(data, published_blueprint_ids={1200}, owned=False)
+    assert all(o.item_id is not None for o in data.originals)
+
+
+def test_not_owned_excludes_zero_copying_time() -> None:
+    """A zero-time copying stub is not sufficient evidence for hypothetical BPO access."""
+    data = demo_inputs()
+    data.originals = ()
+    data.blueprints[1100] = replace(data.blueprints[1100], copying_seconds=0)
+    selected = select_bpo_products(
+        data, published_blueprint_ids=set(data.blueprints), owned=False
+    )
+    assert selected == (10,)
+    assert {o.blueprint_id for o in data.originals} == {1010}
+    assert any(
+        "Synthetic T1 assembly Blueprint (1100)" in w and "copying" in w
+        for w in data.warnings
+    )
+
+
+def test_not_owned_invention_and_component_access() -> None:
+    """Unowned source invention and component manufacturing use assumed research."""
+    data = demo_inputs()
+    data.originals = ()
+    selected = select_bpo_products(
+        data, published_blueprint_ids=set(data.blueprints), owned=False
+    )
+    assert selected == (10, 100, 200, 300)
+    assert {o.blueprint_id for o in data.originals} == {1010, 1100}
+    assert all((o.item_id, o.me, o.te) == (None, 10, 20) for o in data.originals)
+    report = build_report(data, product_ids=selected)
+    assert all(p.status == "complete" for p in report.plans)
+    original, invention, me, te = Planner(data).blueprint_access(data.blueprints[1200])
+    assert original.item_id is None and invention is not None
+    assert (me, te) == (2, 4)
+
+
+def test_stored_owned_selection(snapshot_paths: DatabasePaths) -> None:
+    """Stored owned selection uses the real inventory and loads market inputs."""
+    data, selected = read_inputs(snapshot_paths, corporation_id=7, selection="owned")
+    assert selected == (100,)
+    assert data.originals[0].item_id == 1000
+    assert data.input_prices[1] == 4
+    assert data.items[100].group_id == 1
+    assert data.items[100].group_name == "Fixture group"
+    assert data.items[100].category_id == 7
+    assert data.items[100].category_name == "UNKNOWN 7"
+
+
+@pytest.mark.parametrize("me,te", ((10, 20), (0, 0), (8, 16)))
+def test_stored_not_owned_selection(
+    snapshot_paths: DatabasePaths, tmp_path: Path, me: int, te: int
+) -> None:
+    """Only published missing BPOs qualify; owning a copy does not own its BPO."""
+    with sqlite3.connect(snapshot_paths.static) as db:
+        db.executescript("""
+            INSERT INTO types(type_id, group_id, name, portion_size, published)
+                VALUES (101, 1, 'Unowned product', 1, 1),
+                       (1101, 1, 'Unowned blueprint', 1, 1),
+                       (102, 1, 'Unpublished product', 1, 0),
+                       (1102, 1, 'Unpublished blueprint', 1, 0);
+            INSERT INTO blueprints VALUES (1101, 100), (1102, 100);
+            INSERT INTO blueprint_activities VALUES
+                (1101, 'manufacturing', 600), (1101, 'copying', 60),
+                (1102, 'manufacturing', 600), (1102, 'copying', 60);
+            INSERT INTO blueprint_activity_products
+                (blueprint_type_id, activity, product_type_id, quantity)
+                VALUES (1101, 'manufacturing', 101, 1),
+                       (1102, 'manufacturing', 102, 1);
+            INSERT INTO blueprint_activity_materials
+                VALUES (1101, 'manufacturing', 1, 2),
+                       (1102, 'manufacturing', 1, 2);
+        """)
+    with sqlite3.connect(snapshot_paths.dynamic) as db:
+        db.execute("""
+            INSERT INTO corporation_blueprints(corporation_id, item_id, type_id,
+                location_id, location_flag, quantity, time_efficiency,
+                material_efficiency, runs, response_metadata_id)
+                VALUES (7, 1001, 1101, 1, 'Hangar', -2, 20, 10, 10, 4)
+        """)
+    data, selected = read_inputs(
+        snapshot_paths, corporation_id=7, selection="not-owned", me=me, te=te
+    )
+    assert selected == (101,)
+    assert {o.blueprint_id for o in data.originals} == {1100, 1101}
+    original = Planner(data).originals[1101]
+    assert (original.item_id, original.me, original.te) == (None, me, te)
+    assert Planner(data).originals[1100].me == 10
+    assert data.input_prices[1] == 4
+    assert all(
+        p.status == "complete" for p in build_report(data, product_ids=selected).plans
+    )
+    destination = tmp_path / "not-owned"
+    assert (
+        main(
+            [
+                "--static-database",
+                str(snapshot_paths.static),
+                "--dynamic-database",
+                str(snapshot_paths.dynamic),
+                "--history-database",
+                str(snapshot_paths.history),
+                "--corporation-id",
+                "7",
+                "--not-owned",
+                "--me",
+                str(me),
+                "--te",
+                str(te),
+                "--to",
+                str(destination),
+            ]
+        )
+        == 0
+    )
+    text = "\n".join(p.read_text() for p in (destination / "markdown").glob("*.md"))
+    assert f"ME{me}/TE{te}" in text and "hypothetical" in text
+    assert "Unowned product" in text and "Unpublished product" not in text
 
 
 def create_database(path: Path, *, module: str) -> sqlite3.Connection:
