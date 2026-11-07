@@ -1,0 +1,675 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>EVE multi-buy helper - import preview</title>
+  <style>
+    :root { color-scheme: dark; font-family: system-ui, sans-serif; background: #111827; color: #e5e7eb; }
+    * { box-sizing: border-box; }
+    body { margin: 0; padding: 1.5rem; }
+    h1 { margin-top: 0; font-size: 1.6rem; }
+    h2 { margin-top: 0; font-size: 1.2rem; }
+    p { line-height: 1.5; }
+    .intro, .help { color: #b9c4d4; }
+    main, #workflow { display: grid; gap: .75rem; align-items: start; }
+    main { grid-template-columns: minmax(0, var(--pane-0, 1fr)) 12px minmax(0, var(--pane-1, 2fr)); }
+    #workflow { grid-template-columns: minmax(0, var(--pane-0, 1fr)) 12px minmax(0, var(--pane-1, 1fr)) 12px minmax(0, var(--pane-2, 1fr)); }
+    [role="separator"][aria-orientation="vertical"] { align-self: stretch; position: relative; cursor: col-resize; touch-action: none; user-select: none; border-radius: .25rem; }
+    [role="separator"][aria-orientation="vertical"]::before { content: ""; position: absolute; inset: 0 5px; background: #475569; border-radius: .25rem; }
+    [role="separator"][aria-orientation="vertical"]:hover::before, [role="separator"][aria-orientation="vertical"]:focus-visible::before, .dragging::before { background: #93c5fd; }
+    input { width: 100%; padding: .6rem; background: #0f172a; color: #f1f5f9; border: 1px solid #94a3b8; border-radius: .25rem; font: inherit; }
+    .validation-error { color: #fecaca; }
+    hr { margin: 1.5rem 0; border: 0; border-top: 1px solid #475569; }
+    section { min-width: 0; padding: 1.25rem; border: 1px solid #475569; border-radius: .5rem; background: #1e293b; }
+    .pane-heading { display: flex; justify-content: space-between; align-items: start; gap: .75rem; }
+    .pane-heading h2 { min-width: 0; }
+    .pane-heading button { flex-shrink: 0; }
+    label { display: block; margin-bottom: .5rem; font-weight: 600; }
+    textarea { width: 100%; min-height: 24rem; resize: vertical; padding: .75rem; border: 1px solid #94a3b8; border-radius: .25rem; background: #0f172a; color: #f1f5f9; font: .9rem/1.5 monospace; tab-size: 4; white-space: pre; }
+    button { padding: .65rem 1.25rem; border: 0; border-radius: .25rem; background: #93c5fd; color: #0f172a; font: inherit; font-weight: 600; cursor: pointer; }
+    button:disabled { opacity: .5; cursor: not-allowed; }
+    .export-actions { display: flex; flex-wrap: wrap; gap: .75rem; margin-top: 1rem; }
+    #export-status { min-height: 1.5rem; }
+    .copy-error { color: #fecaca; }
+    #export-text, #inventory-export-text, #materials-export-text, #multibuy-export-text { min-height: 8rem; }
+    :focus-visible { outline: 3px solid #fbbf24; outline-offset: 3px; }
+    .help { font-size: .9rem; }
+    #errors { margin-top: 1rem; padding: .75rem; border: 1px solid #fca5a5; color: #fecaca; background: #450a0a; overflow-wrap: anywhere; }
+    #errors ul { margin-bottom: 0; padding-left: 1.5rem; }
+    #status { min-height: 1.5rem; }
+    .table-scroll { overflow: auto; max-height: 70vh; }
+    table { border-collapse: collapse; width: 100%; font-size: .9rem; }
+    caption { text-align: left; padding-bottom: .75rem; color: #b9c4d4; line-height: 1.5; }
+    th, td { padding: .65rem; text-align: left; border: 1px solid #475569; white-space: nowrap; }
+    thead { position: sticky; top: 0; background: #0f172a; }
+    th { background: #0f172a; }
+    #materials-pane thead th { text-align: center; }
+    td.quantity { text-align: right; font-variant-numeric: tabular-nums; }
+    tbody tr:nth-child(even) { background: #253449; }
+    tfoot { font-weight: 600; background: #0f172a; }
+    tfoot td { text-align: right; }
+    [hidden] { display: none !important; }
+    @media (max-width: 900px) {
+      body { padding: 1rem; }
+      main, #workflow { grid-template-columns: minmax(0, 1fr); }
+      [role="separator"][aria-orientation="vertical"] { display: none; }
+      textarea { min-height: 15rem; }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>EVE multi-buy helper</h1>
+    <p class="intro">Import and inspect material lists. Data stays in this page's memory until you close or reload it.</p>
+  </header>
+  <main>
+    <section id="import-pane" aria-labelledby="import-heading">
+      <div class="pane-heading">
+        <h2 id="import-heading">Import</h2>
+        <button id="reset-import" type="button">Reset</button>
+      </div>
+      <form id="import-form">
+        <label for="import-text">Inventory or material list</label>
+        <textarea id="import-text" aria-describedby="input-help" spellcheck="false" placeholder="Paste an EVE inventory export or a Name / Quantity list here."></textarea>
+        <p id="input-help" class="help">Accepts ten-column, tab-delimited inventory rows, or Name / Quantity in either order, separated by tabs or spaces. Quantities must be non-negative integers; commas are supported and a dash (-) means zero. Blank lines and recognized column headers are ignored.</p>
+        <button type="submit">Parse</button>
+      </form>
+      <div id="errors" role="alert" hidden>
+        <strong>Import not applied. Previous data is unchanged.</strong>
+        <ul id="error-list"></ul>
+      </div>
+    </section>
+    <div id="pane-divider" role="separator" aria-label="Resize import and parsed data panes" aria-orientation="vertical" aria-controls="import-pane preview-pane" aria-valuemin="25" aria-valuemax="75" aria-valuenow="33" aria-valuetext="Import pane 33 percent" tabindex="0"></div>
+    <section id="preview-pane" aria-labelledby="preview-heading">
+      <h2 id="preview-heading">Parsed data</h2>
+      <p id="status" role="status" aria-live="polite">No data parsed yet.</p>
+      <p class="help">Each successful parse replaces the displayed quantities. Duplicate names are combined. Inventory metadata is retained for later short-form imports; the last inventory row for a name supplies its latest per-unit values, including Estimated Price.</p>
+      <p id="empty-state">Paste a list on the left, then select Parse.</p>
+      <div class="table-scroll" role="region" aria-label="Parsed inventory table" tabindex="0" hidden>
+        <table>
+          <caption>Volume and Estimated Price are calculated for the displayed quantity from cached per-unit values, rounded to two decimals. Estimated Price is an imported estimate, not a live quote. Empty cells indicate unavailable metadata; zero-quantity source stacks cannot establish unit values.</caption>
+          <thead>
+            <tr>
+              <th scope="col">Name</th>
+              <th scope="col">Quantity</th>
+              <th scope="col">Group</th>
+              <th scope="col">Category</th>
+              <th scope="col">Size</th>
+              <th scope="col">Slot</th>
+              <th scope="col">Volume</th>
+              <th scope="col">Meta Level</th>
+              <th scope="col">Tech Level</th>
+              <th scope="col">Estimated Price</th>
+            </tr>
+          </thead>
+          <tbody id="parsed-rows"></tbody>
+        </table>
+      </div>
+      <div class="export-actions">
+        <button id="export-long" type="button" disabled>Export Long</button>
+        <button id="export-short" type="button" disabled>Export Short</button>
+        <button id="assign-inventory" type="button" disabled>Send To Inventory</button>
+        <button id="assign-materials" type="button" disabled>Send To Material Set</button>
+      </div>
+      <p class="help">Long form includes all ten inventory columns with calculated stack volume and estimated price; short form includes Name and Quantity. Both use tabs, without headers, and preserve displayed row order.</p>
+      <p id="export-status" role="status" aria-live="polite"></p>
+      <div id="manual-copy" hidden>
+        <label for="export-text">Export text - select and copy manually</label>
+        <textarea id="export-text" readonly spellcheck="false"></textarea>
+      </div>
+    </section>
+  </main>
+  <hr>
+  <div id="workflow">
+    <section id="inventory-pane" aria-labelledby="inventory-heading">
+      <div class="pane-heading">
+        <h2 id="inventory-heading">Inventory On Hand</h2>
+        <button id="reset-inventory" type="button">Reset</button>
+      </div>
+      <p class="help">Send parsed data above to add to this inventory list. Existing inventory requires confirmation; matching item quantities are summed.</p>
+      <p id="inventory-status" role="status">No inventory assigned. Unlisted items count as zero on hand.</p>
+      <div class="table-scroll" role="region" aria-label="Inventory on hand table" tabindex="0">
+        <table>
+          <caption>Volume uses on-hand quantity times cached unit volume, rounded to two decimals (m3). Missing volume is blank; totals with missing values are labelled partial.</caption>
+          <thead><tr><th scope="col">Name</th><th scope="col">Quantity</th><th scope="col">Volume</th></tr></thead>
+          <tbody id="inventory-rows"></tbody>
+          <tfoot><tr><th scope="row" colspan="2">Total volume</th><td id="inventory-volume-total">0.00 m3</td></tr></tfoot>
+        </table>
+      </div>
+      <div class="export-actions">
+        <button id="inventory-long" type="button" disabled>Export Long</button>
+        <button id="inventory-short" type="button" disabled>Export Short</button>
+      </div>
+      <p class="help">Exports on-hand quantities. Long form calculates volume and estimated price for those quantities using cached per-unit values.</p>
+      <p id="inventory-export-status" role="status" aria-live="polite"></p>
+      <div id="inventory-manual-copy" hidden>
+        <label for="inventory-export-text">Inventory export text - select and copy manually</label>
+        <textarea id="inventory-export-text" readonly spellcheck="false"></textarea>
+      </div>
+    </section>
+    <div id="inventory-divider" role="separator" aria-label="Resize inventory and material set panes" aria-orientation="vertical" aria-controls="inventory-pane materials-pane" tabindex="0"></div>
+    <section id="materials-pane" aria-labelledby="materials-heading">
+      <div class="pane-heading">
+        <h2 id="materials-heading">Material Set</h2>
+        <button id="reset-materials" type="button">Reset</button>
+      </div>
+      <p class="help">Send parsed data above to add to the base quantities for one set. Existing materials require confirmation; matching quantities are summed. Changing the multiplier never changes the base set.</p>
+      <label for="set-count">Number of sets</label>
+      <input id="set-count" type="text" inputmode="numeric" value="1" aria-describedby="multiplier-help multiplier-error">
+      <p id="multiplier-help" class="help">Non-negative whole number. Zero produces no requirements.</p>
+      <p id="multiplier-error" class="validation-error" role="alert" hidden></p>
+      <p id="materials-status" role="status">No material set assigned.</p>
+      <div class="table-scroll" role="region" aria-label="Material set table" tabindex="0">
+        <table>
+          <caption>Volumes use cached source volume divided by source quantity, then multiplied by the per-set or required quantity. Values are rounded to two decimal places (m3); unavailable unit volumes are blank.</caption>
+          <thead>
+            <tr>
+              <th scope="col" rowspan="2">Name</th>
+              <th scope="colgroup" colspan="2">Per Set</th>
+              <th scope="colgroup" colspan="2">Required</th>
+            </tr>
+            <tr>
+              <th scope="col">Quantity</th><th scope="col">Volume</th>
+              <th scope="col">Quantity</th><th scope="col">Volume</th>
+            </tr>
+          </thead>
+          <tbody id="materials-rows"></tbody>
+          <tfoot><tr><th scope="row">Total volume</th><td></td><td id="per-set-volume-total">0.00 m3</td><td></td><td id="required-volume-total">0.00 m3</td></tr></tfoot>
+        </table>
+      </div>
+      <div class="export-actions">
+        <button id="materials-long" type="button" disabled>Export Long</button>
+        <button id="materials-short" type="button" disabled>Export Short</button>
+      </div>
+      <p class="help">Exports Required quantities, including the multiplier, not the base set or shortfalls. Long form calculates volume and estimated price for those quantities.</p>
+      <p id="materials-export-status" role="status" aria-live="polite"></p>
+      <div id="materials-manual-copy" hidden>
+        <label for="materials-export-text">Required materials export text - select and copy manually</label>
+        <textarea id="materials-export-text" readonly spellcheck="false"></textarea>
+      </div>
+    </section>
+    <div id="materials-divider" role="separator" aria-label="Resize material set and multi-buy panes" aria-orientation="vertical" aria-controls="materials-pane multibuy-pane" tabindex="0"></div>
+    <section id="multibuy-pane" aria-labelledby="multibuy-heading">
+      <h2 id="multibuy-heading">Multi-buy</h2>
+      <p class="help">Buy quantity = required minus on hand, with a minimum of zero. Only positive shortfalls are listed, in material-set order.</p>
+      <p id="multibuy-status" role="status">Assign a material set to calculate a shopping list.</p>
+      <div class="table-scroll" role="region" aria-label="Multi-buy table" tabindex="0">
+        <table>
+          <caption>Quantity is the amount to buy. Volume uses cached unit volume, rounded to two decimals (m3). Totals sum displayed volumes; missing values make totals partial.</caption>
+          <thead><tr><th scope="col">Name</th><th scope="col">Quantity</th><th scope="col">Volume</th></tr></thead>
+          <tbody id="multibuy-rows"></tbody>
+          <tfoot><tr><th scope="row" colspan="2">Total volume</th><td id="multibuy-volume-total">0.00 m3</td></tr></tfoot>
+        </table>
+      </div>
+      <div class="export-actions">
+        <button id="multibuy-long" type="button" disabled>Export Long</button>
+        <button id="multibuy-short" type="button" disabled>Export Short</button>
+      </div>
+      <p class="help">Long form calculates stack volume and estimated price for the buy quantities using cached per-unit values.</p>
+      <p id="multibuy-export-status" role="status" aria-live="polite"></p>
+      <div id="multibuy-manual-copy" hidden>
+        <label for="multibuy-export-text">Multi-buy export text - select and copy manually</label>
+        <textarea id="multibuy-export-text" readonly spellcheck="false"></textarea>
+      </div>
+    </section>
+  </div>
+  <script>
+    "use strict";
+
+    function initializePaneDivider(layout, divider, shares, index, minimum, paneLabel) {
+      const stacked = matchMedia("(max-width: 900px)");
+      let drag = null;
+
+      function updateAccessibility() {
+        divider.setAttribute("aria-valuemin", String(minimum));
+        divider.setAttribute("aria-valuemax", String(Math.round(shares[index] + shares[index + 1] - minimum)));
+        divider.setAttribute("aria-valuenow", String(Math.round(shares[index])));
+        divider.setAttribute("aria-valuetext", `${paneLabel} ${Math.round(shares[index])} percent`);
+      }
+
+      function setShare(value) {
+        const total = shares[index] + shares[index + 1];
+        shares[index] = Math.max(minimum, Math.min(total - minimum, value));
+        shares[index + 1] = total - shares[index];
+        shares.forEach((share, paneIndex) => layout.style.setProperty(`--pane-${paneIndex}`, `${share}fr`));
+        layout.dispatchEvent(new Event("paneresize"));
+      }
+
+      function stopDrag() {
+        if (!drag) return;
+        const pointerId = drag.pointerId;
+        drag = null;
+        divider.classList.remove("dragging");
+        if (divider.hasPointerCapture(pointerId)) divider.releasePointerCapture(pointerId);
+      }
+
+      divider.addEventListener("pointerdown", (event) => {
+        if (stacked.matches || event.button !== 0 || drag) return;
+        event.preventDefault();
+        divider.focus();
+        drag = {
+          pointerId: event.pointerId, startX: event.clientX, startShare: shares[index],
+          pairShare: shares[index] + shares[index + 1],
+        };
+        divider.setPointerCapture(event.pointerId);
+        divider.classList.add("dragging");
+      });
+      divider.addEventListener("pointermove", (event) => {
+        if (!drag || event.pointerId !== drag.pointerId) return;
+        const panes = layout.querySelectorAll(":scope > section");
+        const availableWidth = panes[index].getBoundingClientRect().width +
+          panes[index + 1].getBoundingClientRect().width;
+        setShare(drag.startShare + (event.clientX - drag.startX) / availableWidth * drag.pairShare);
+      });
+      for (const eventName of ["pointerup", "pointercancel", "lostpointercapture"]) {
+        divider.addEventListener(eventName, stopDrag);
+      }
+      stacked.addEventListener("change", stopDrag);
+      divider.addEventListener("keydown", (event) => {
+        if (stacked.matches) return;
+        switch (event.key) {
+          case "ArrowLeft": setShare(shares[index] - (event.shiftKey ? 10 : 2)); break;
+          case "ArrowRight": setShare(shares[index] + (event.shiftKey ? 10 : 2)); break;
+          case "Home": setShare(minimum); break;
+          case "End": setShare(shares[index] + shares[index + 1] - minimum); break;
+          default: return;
+        }
+        event.preventDefault();
+      });
+      layout.addEventListener("paneresize", updateAccessibility);
+      updateAccessibility();
+    }
+
+    initializePaneDivider(document.querySelector("main"), document.getElementById("pane-divider"), [100 / 3, 200 / 3], 0, 25, "Import pane");
+    const workflow = document.getElementById("workflow");
+    const workflowShares = [100 / 3, 100 / 3, 100 / 3];
+    initializePaneDivider(workflow, document.getElementById("inventory-divider"), workflowShares, 0, 20, "Inventory pane");
+    initializePaneDivider(workflow, document.getElementById("materials-divider"), workflowShares, 1, 20, "Material set pane");
+
+    const inventoryColumns = [
+      "Name", "Quantity", "Group", "Category", "Size", "Slot",
+      "Volume", "Meta Level", "Tech Level", "Estimated Price",
+    ];
+    const quantityPattern = /^(?:-|\d+|\d{1,3}(?:,\d{3})+)$/;
+    let metadataCache = new Map();
+    let parsedItems = new Map();
+    let inventoryItems = new Map();
+    let materialItems = new Map();
+    let requiredItems = new Map();
+    let multiBuyItems = new Map();
+    let setCount = 1n;
+    let hasMaterialSet = false;
+    class InputError extends Error {}
+
+    function parseQuantity(value) {
+      if (!quantityPattern.test(value)) {
+        throw new InputError(`Invalid quantity "${value}". Use a non-negative integer or "-".`);
+      }
+      return value === "-" ? 0n : BigInt(value.replaceAll(",", ""));
+    }
+
+    function isHeader(fields) {
+      const normalized = fields.map((field) => field.toLowerCase());
+      if (fields.length === 10) {
+        return inventoryColumns.every((column, index) => column.toLowerCase() === normalized[index]);
+      }
+      return fields.length === 2 && (
+        (normalized[0] === "name" && normalized[1] === "quantity") ||
+        (normalized[0] === "quantity" && normalized[1] === "name")
+      );
+    }
+
+    function parseStackDecimal(value, unit) {
+      if (!value) return null;
+      const pattern = unit === "m3"
+        ? /^(\d+|\d{1,3}(?:,\d{3})+)(?:\.(\d+))?\s+m(?:3|\u00b3)$/
+        : /^(\d+|\d{1,3}(?:,\d{3})+)(?:\.(\d+))?\s+ISK$/;
+      const match = value.match(pattern);
+      if (!match) {
+        throw new InputError(`Invalid ${unit === "m3" ? "volume" : "estimated price"} "${value}". Use a non-negative decimal followed by "${unit}".`);
+      }
+      const fraction = match[2] ?? "";
+      return {
+        numerator: BigInt(match[1].replaceAll(",", "") + fraction),
+        denominator: 10n ** BigInt(fraction.length),
+      };
+    }
+
+    function perUnit(value, quantity) {
+      if (value === null || quantity === 0n) return null;
+      return { numerator: value.numerator, denominator: value.denominator * quantity };
+    }
+
+    function stackCents(unitValue, quantity) {
+      if (!unitValue) return null;
+      const numerator = unitValue.numerator * quantity * 100n;
+      const denominator = unitValue.denominator;
+      return numerator / denominator + (numerator % denominator * 2n >= denominator ? 1n : 0n);
+    }
+
+    function volumeCents(source, quantity) {
+      return stackCents(source?.unitVolume, quantity);
+    }
+
+    function formatStackValue(cents, unit) {
+      if (cents === null) return "";
+      return `${(cents / 100n).toLocaleString("en-US")}.${String(cents % 100n).padStart(2, "0")} ${unit}`;
+    }
+
+    function formatVolume(cents) {
+      return formatStackValue(cents, "m3");
+    }
+
+    function materialVolume(source, quantity) {
+      return formatVolume(volumeCents(source, quantity));
+    }
+
+    function updateVolumeTotal(id, items) {
+      let total = 0n;
+      let missing = 0;
+      for (const [name, quantity] of items) {
+        const cents = volumeCents(metadataCache.get(name), quantity);
+        if (cents === null) missing += 1;
+        else total += cents;
+      }
+      document.getElementById(id).textContent = missing
+        ? `${formatVolume(total)} (partial; ${missing} unknown)`
+        : formatVolume(total);
+    }
+
+    function parseLine(line) {
+      if (line.includes("\t")) {
+        const fields = line.split("\t").map((field) => field.trim());
+        if (isHeader(fields)) return null;
+        if (fields.length === 10) {
+          if (!fields[0]) throw new InputError("Item name is missing.");
+          const quantity = parseQuantity(fields[1]);
+          return {
+            name: fields[0],
+            quantity,
+            metadata: {
+              fields: [fields[2], fields[3], fields[4], fields[5], "", fields[7], fields[8], ""],
+              sourceQuantity: quantity,
+              unitVolume: perUnit(parseStackDecimal(fields[6], "m3"), quantity),
+              unitEstimatedPrice: perUnit(parseStackDecimal(fields[9], "ISK"), quantity),
+            },
+          };
+        }
+        if (fields.length !== 2) {
+          throw new InputError(`Expected 2 or 10 tab-delimited columns; found ${fields.length}.`);
+        }
+        if (!fields[0] || !fields[1]) throw new InputError("Item name or quantity is missing.");
+        if (quantityPattern.test(fields[1])) {
+          return { name: fields[0], quantity: parseQuantity(fields[1]), metadata: null };
+        }
+        if (quantityPattern.test(fields[0])) {
+          return { name: fields[1], quantity: parseQuantity(fields[0]), metadata: null };
+        }
+        throw new InputError('Neither column contains a valid quantity. Use a non-negative integer or "-".');
+      }
+
+      const trimmed = line.trim();
+      if (/^(?:name\s+quantity|quantity\s+name)$/i.test(trimmed)) return null;
+      const quantityFirst = trimmed.match(/^(-|\d[\d,]*)\s+(.+)$/);
+      if (quantityFirst) {
+        return { name: quantityFirst[2].trim(), quantity: parseQuantity(quantityFirst[1]), metadata: null };
+      }
+      const quantityLast = trimmed.match(/^(.+?)\s+(-|\d[\d,]*)$/);
+      if (quantityLast) {
+        return { name: quantityLast[1].trim(), quantity: parseQuantity(quantityLast[2]), metadata: null };
+      }
+      throw new InputError('Expected an item name and a non-negative integer quantity (or "-"), separated by tabs or spaces.');
+    }
+
+    function parseInput(text, previousMetadata) {
+      const metadata = new Map(previousMetadata);
+      const items = new Map();
+      const errors = [];
+      let rowCount = 0;
+      text.split(/\r\n|\n|\r/).forEach((line, index) => {
+        if (!line.trim()) return;
+        let row;
+        try {
+          row = parseLine(line);
+        } catch (error) {
+          if (!(error instanceof InputError)) throw error;
+          errors.push(`Line ${index + 1}: ${error.message}`);
+          return;
+        }
+        if (!row) return;
+        rowCount += 1;
+        items.set(row.name, (items.get(row.name) ?? 0n) + row.quantity);
+        if (row.metadata) metadata.set(row.name, row.metadata);
+      });
+      if (rowCount === 0 && errors.length === 0) {
+        errors.push("No material rows found. Paste at least one item name and quantity.");
+      }
+      return { items, metadata, errors, rowCount };
+    }
+
+    function itemValues(name, quantity, metadata) {
+      const source = metadata.get(name);
+      const values = [name, quantity.toLocaleString("en-US"), ...(source?.fields ?? Array(8).fill(""))];
+      values[6] = materialVolume(source, quantity);
+      values[9] = formatStackValue(stackCents(source?.unitEstimatedPrice, quantity), "ISK");
+      return values;
+    }
+
+    function exportText(items, metadata, longForm) {
+      return Array.from(items, ([name, quantity]) => {
+        const values = itemValues(name, quantity, metadata);
+        return (longForm ? values : values.slice(0, 2)).join("\t");
+      }).join("\n");
+    }
+
+    function showManualCopy(message, text, prefix) {
+      const status = document.getElementById(`${prefix}export-status`);
+      status.textContent = message;
+      status.className = "copy-error";
+      document.getElementById(`${prefix}manual-copy`).hidden = false;
+      const output = document.getElementById(`${prefix}export-text`);
+      output.value = text;
+      output.focus();
+      output.select();
+    }
+
+    async function copyExport(longForm, items = parsedItems, prefix = "") {
+      const text = exportText(items, metadataCache, longForm);
+      if (!navigator.clipboard?.writeText) {
+        showManualCopy("Clipboard access is unavailable. Copy the selected export text manually.", text, prefix);
+        return;
+      }
+      try {
+        await navigator.clipboard.writeText(text);
+      } catch (error) {
+        if (!(error instanceof DOMException)) throw error;
+        showManualCopy(`Clipboard copy failed (${error.name}). Copy the selected export text manually.`, text, prefix);
+        return;
+      }
+      const status = document.getElementById(`${prefix}export-status`);
+      status.className = "";
+      status.textContent = `${longForm ? "Long" : "Short"} form copied to clipboard.`;
+      document.getElementById(`${prefix}manual-copy`).hidden = true;
+      document.getElementById(`${prefix}export-text`).value = "";
+    }
+
+    document.getElementById("export-long").addEventListener("click", () => copyExport(true));
+    document.getElementById("export-short").addEventListener("click", () => copyExport(false));
+    document.getElementById("multibuy-long").addEventListener("click", () => copyExport(true, multiBuyItems, "multibuy-"));
+    document.getElementById("multibuy-short").addEventListener("click", () => copyExport(false, multiBuyItems, "multibuy-"));
+    document.getElementById("inventory-long").addEventListener("click", () => copyExport(true, inventoryItems, "inventory-"));
+    document.getElementById("inventory-short").addEventListener("click", () => copyExport(false, inventoryItems, "inventory-"));
+    document.getElementById("materials-long").addEventListener("click", () => copyExport(true, requiredItems, "materials-"));
+    document.getElementById("materials-short").addEventListener("click", () => copyExport(false, requiredItems, "materials-"));
+
+    function updateExportControls(prefix, disabled) {
+      document.getElementById(`${prefix}long`).disabled = disabled;
+      document.getElementById(`${prefix}short`).disabled = disabled;
+      document.getElementById(`${prefix}export-status`).textContent = "";
+      document.getElementById(`${prefix}export-status`).className = "";
+      document.getElementById(`${prefix}manual-copy`).hidden = true;
+      document.getElementById(`${prefix}export-text`).value = "";
+    }
+
+    function buildQuantityRows(rows) {
+      const fragment = document.createDocumentFragment();
+      for (const values of rows) {
+        const row = document.createElement("tr");
+        values.forEach((value, index) => {
+          const cell = document.createElement("td");
+          cell.textContent = typeof value === "bigint" ? value.toLocaleString("en-US") : value;
+          if (index > 0) cell.className = "quantity";
+          row.append(cell);
+        });
+        fragment.append(row);
+      }
+      return fragment;
+    }
+
+    function updateWorkflow() {
+      const requiredRows = [];
+      requiredItems = new Map();
+      const shoppingRows = [];
+      multiBuyItems = new Map();
+      for (const [name, base] of materialItems) {
+        const required = base * setCount;
+        requiredItems.set(name, required);
+        const available = inventoryItems.get(name) ?? 0n;
+        const shortfall = required > available ? required - available : 0n;
+        const source = metadataCache.get(name);
+        requiredRows.push([name, base, materialVolume(source, base), required, materialVolume(source, required)]);
+        if (shortfall > 0n) {
+          multiBuyItems.set(name, shortfall);
+          shoppingRows.push([name, shortfall, materialVolume(source, shortfall)]);
+        }
+      }
+      const inventoryRows = Array.from(inventoryItems, ([name, quantity]) => [
+        name, quantity, materialVolume(metadataCache.get(name), quantity),
+      ]);
+      document.getElementById("inventory-rows").replaceChildren(buildQuantityRows(inventoryRows));
+      document.getElementById("materials-rows").replaceChildren(buildQuantityRows(requiredRows));
+      document.getElementById("multibuy-rows").replaceChildren(buildQuantityRows(shoppingRows));
+      updateVolumeTotal("inventory-volume-total", inventoryItems);
+      updateVolumeTotal("per-set-volume-total", materialItems);
+      updateVolumeTotal("required-volume-total", requiredItems);
+      updateVolumeTotal("multibuy-volume-total", multiBuyItems);
+      document.getElementById("materials-status").textContent = hasMaterialSet
+        ? `${materialItems.size} materials per set; showing requirements for ${setCount.toLocaleString("en-US")} sets.`
+        : "No material set assigned.";
+      document.getElementById("multibuy-status").textContent = !hasMaterialSet
+        ? "Assign a material set to calculate a shopping list."
+        : multiBuyItems.size ? `${multiBuyItems.size} items to buy.` : "No purchases required.";
+      const invalidMultiplier = !document.getElementById("multiplier-error").hidden;
+      updateExportControls("inventory-", inventoryItems.size === 0);
+      updateExportControls("materials-", invalidMultiplier || requiredItems.size === 0);
+      updateExportControls("multibuy-", invalidMultiplier || multiBuyItems.size === 0);
+    }
+
+    document.getElementById("assign-inventory").addEventListener("click", () => {
+      if (inventoryItems.size > 0 && !confirm("Combine the parsed data with Inventory On Hand? Matching item quantities will be added. Sending the same list again will add its quantities again.")) return;
+      for (const [name, quantity] of parsedItems) {
+        inventoryItems.set(name, (inventoryItems.get(name) ?? 0n) + quantity);
+      }
+      document.getElementById("inventory-status").textContent = `${inventoryItems.size} inventory items on hand. Unlisted items count as zero on hand.`;
+      updateWorkflow();
+    });
+    document.getElementById("assign-materials").addEventListener("click", () => {
+      if (materialItems.size > 0 && !confirm("Combine the parsed data with Material Set? Matching base quantities will be added. Sending the same list again will add its quantities again.")) return;
+      for (const [name, quantity] of parsedItems) {
+        materialItems.set(name, (materialItems.get(name) ?? 0n) + quantity);
+      }
+      hasMaterialSet = true;
+      updateWorkflow();
+    });
+    document.getElementById("reset-inventory").addEventListener("click", () => {
+      inventoryItems = new Map();
+      document.getElementById("inventory-status").textContent = "No inventory assigned. Unlisted items count as zero on hand.";
+      updateWorkflow();
+    });
+    document.getElementById("reset-materials").addEventListener("click", () => {
+      materialItems = new Map();
+      hasMaterialSet = false;
+      setCount = 1n;
+      const input = document.getElementById("set-count");
+      input.value = "1";
+      input.removeAttribute("aria-invalid");
+      document.getElementById("multiplier-error").hidden = true;
+      document.getElementById("multiplier-error").textContent = "";
+      updateWorkflow();
+    });
+    document.getElementById("set-count").addEventListener("input", (event) => {
+      const input = event.target;
+      const error = document.getElementById("multiplier-error");
+      const valid = /^\d+$/.test(input.value.trim());
+      error.hidden = valid;
+      input.setAttribute("aria-invalid", String(!valid));
+      error.textContent = valid ? "" : "Enter a non-negative whole number. Tables retain the last valid multiplier; Multi-buy export is disabled.";
+      if (valid) setCount = BigInt(input.value.trim());
+      updateWorkflow();
+    });
+
+    function buildTableRows(items, metadata) {
+      const fragment = document.createDocumentFragment();
+      for (const [name, quantity] of items) {
+        const source = metadata.get(name);
+        const values = itemValues(name, quantity, metadata);
+        const row = document.createElement("tr");
+        values.forEach((value, index) => {
+          const cell = document.createElement("td");
+          cell.textContent = value;
+          if (index === 1) cell.className = "quantity";
+          if (source && (index === 6 || index === 9)) {
+            cell.title = `Source stack quantity: ${source.sourceQuantity.toLocaleString("en-US")}`;
+          }
+          row.append(cell);
+        });
+        fragment.append(row);
+      }
+      return fragment;
+    }
+
+    document.getElementById("reset-import").addEventListener("click", () => {
+      document.getElementById("import-text").value = "";
+      document.getElementById("errors").hidden = true;
+      document.getElementById("error-list").replaceChildren();
+      document.getElementById("import-text").focus();
+    });
+
+    document.getElementById("import-form").addEventListener("submit", (event) => {
+      event.preventDefault();
+      const result = parseInput(document.getElementById("import-text").value, metadataCache);
+      const errorPanel = document.getElementById("errors");
+      const errorList = document.getElementById("error-list");
+      errorList.replaceChildren();
+      errorPanel.hidden = result.errors.length === 0;
+      if (result.errors.length) {
+        for (const message of result.errors) {
+          const item = document.createElement("li");
+          item.textContent = message;
+          errorList.append(item);
+        }
+        return;
+      }
+      const rows = buildTableRows(result.items, result.metadata);
+      document.getElementById("parsed-rows").replaceChildren(rows);
+      metadataCache = result.metadata;
+      parsedItems = result.items;
+      document.getElementById("export-long").disabled = false;
+      document.getElementById("export-short").disabled = false;
+      document.getElementById("assign-inventory").disabled = false;
+      document.getElementById("assign-materials").disabled = false;
+      document.getElementById("export-status").textContent = "";
+      document.getElementById("export-status").className = "";
+      document.getElementById("manual-copy").hidden = true;
+      document.getElementById("export-text").value = "";
+      updateWorkflow();
+      document.getElementById("empty-state").hidden = true;
+      document.querySelector(".table-scroll").hidden = false;
+      document.getElementById("status").textContent =
+        `Parsed ${result.rowCount.toLocaleString("en-US")} source rows into ${result.items.size.toLocaleString("en-US")} unique items. ` +
+        `Inventory metadata cached for ${metadataCache.size.toLocaleString("en-US")} items.`;
+    });
+  </script>
+</body>
+</html>
