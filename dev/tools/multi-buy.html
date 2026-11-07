@@ -1,4 +1,87 @@
 <!doctype html>
+<!--
+EVE multi-buy helper: standalone, local-first material-list calculator.
+
+USAGE
+  Open this file directly in a modern browser with BigInt and Pointer Events.
+  No build, server, external assets, ESI access, disk storage, or JavaScript test
+  dependencies are required. All state is lost when this document reloads.
+  1. Paste inventory or a short material list in Import and select Parse.
+  2. Send parsed quantities to Inventory On Hand or Material Set. A nonempty
+     destination asks for confirmation, then ADDS quantities rather than replacing
+     them. Reset that destination first if replacement is intended.
+  3. Set Number of sets. Required = base * count; Multi-buy contains only positive
+     max(required - on_hand, 0) quantities. Unlisted inventory counts as zero.
+  4. Export Long copies ten inventory columns; Export Short copies Name/Quantity.
+     Material Set exports Required quantities, not its base set or shortfalls.
+     Clipboard access may be blocked for local files; selected manual-copy text
+     is provided on failure. Buttons do not import from the clipboard.
+
+DATA CONTRACT
+  Names are trimmed, case-sensitive keys; internal spaces are preserved. Duplicate
+  quantities sum, and Map insertion order determines display/export order.
+  Inventory input has exactly ten tab-separated columns, including empty cells.
+  Short input has Name/Quantity in either order, separated by tabs or spaces.
+  Quantities are non-negative whole numbers, optionally comma-grouped; "-" is zero.
+  Blank lines and recognized headers are ignored. Empty/malformed imports fail
+  without changing the last successful preview, metadata cache, or assigned lists.
+
+  Only full inventory rows update metadata. Short rows carry metadata: null and
+  MUST NOT erase or create cached metadata. The last full row for a name wins,
+  including its price estimate; estimates from separate stacks are not averaged.
+  Full-row Volume and Estimated Price are STACK TOTALS: parse decimal strings
+  exactly, divide by source quantity once, and store per-unit rational values.
+  Never convert these values or quantities to Number for business calculations.
+  Missing numeric fields or zero source quantity produce unknown unit values.
+  Unknown differs from known zero; a later full row can replace known with unknown.
+  Estimated Price is an imported estimate, not a current market quote.
+
+  Display/export stack totals multiply exact unit values by the selected quantity,
+  then round half up to two decimals. Volume footers sum rounded row values so
+  they match the visible table; unknown rows make totals explicitly partial.
+  Long exports use original column order and calculated stack totals. All exports
+  are headerless TSV with LF-separated rows, no padding, and no footer rows.
+  Zero rows are retained except in Multi-buy, which contains positive buys only.
+  Reimporting rounded long exports can lose sub-hundredth precision; the live
+  in-memory cache retains its exact ratios until a new full row replaces them.
+
+MAINTENANCE MAP
+  Embedded CSS controls presentation; the 900px breakpoint must agree with
+  initializePaneDivider's matchMedia query. Dividers resize adjacent pane shares,
+  not application data, and support pointer capture and keyboard adjustment.
+  JavaScript proceeds through divider setup, state, parsing/numeric helpers,
+  exports/rendering, derived workflow calculation, and UI event handlers.
+  parseInput builds candidate Maps; only the successful submit handler commits.
+  itemValues is the shared ten-column projection for preview and long exports.
+  updateWorkflow rebuilds Required/Multi-buy and all lower tables/totals from
+  assigned quantities, then clears stale lower export feedback/manual-copy text.
+  Export UI prefixes ("", "inventory-", "materials-", "multibuy-") must match the
+  element IDs consumed by copyExport, showManualCopy, and updateExportControls.
+  Render imported values with textContent/value, never innerHTML.
+
+  Reset ownership: Import clears input/errors only; Inventory clears its assigned
+  quantities; Material Set clears its base and resets count/validation. None of
+  these resets clears the shared metadata cache or Parsed Data.
+  Invalid multipliers retain the last valid calculations and disable Material Set
+  and Multi-buy exports, but do not disable independent Inventory exports.
+
+MANUAL REGRESSION CHECKS (no installed JavaScript test framework)
+  See ../prompts/multi-buy-tool.md for supported samples and detailed checks.
+  Verify every short input orientation, commas/dashes, duplicate ordering, full
+  input empty columns, safe literal markup, line-numbered errors, and rollback.
+  Cache 100 units / 2.50 m3 / 21,377.00 ISK, then short-import 200 units:
+  expect 5.00 m3 and 42,754.00 ISK, with descriptive metadata unchanged.
+  With inventory 200, base 320, count 3: Required 960 / 24.00 m3 /
+  205,219.20 ISK; buy 760 / 19.00 m3 / 162,465.20 ISK.
+  Check missing and zero-source metadata, known zero, half-up rounding, large
+  integers, partial totals, and no intermediate per-unit/per-set rounding.
+  Check empty/nonempty sends, native confirmation accept/cancel, repeated sends,
+  independent resets, invalid counts, and cache updates after quantities are sent.
+  Check all four export sources in both formats, denied/unavailable clipboard,
+  manual selection, and disabled/cleared feedback after state changes.
+  Check both layouts, each divider's pointer/keyboard limits, horizontal table
+  scrolling, two-tier sticky headers, and reload clearing all state.
+-->
 <html lang="en">
 <head>
   <meta charset="utf-8">
@@ -217,6 +300,12 @@
   <script>
     "use strict";
 
+    /**
+     * Bind one separator to adjacent entries in a shared pane-percentage array.
+     * Shares exclude divider widths/gaps and total 100; the third pane stays fixed.
+     * Each lower divider observes paneresize to refresh its bounds when its neighbor
+     * changes the shared middle pane.
+     */
     function initializePaneDivider(layout, divider, shares, index, minimum, paneLabel) {
       const stacked = matchMedia("(max-width: 900px)");
       let drag = null;
@@ -292,11 +381,29 @@
       "Volume", "Meta Level", "Tech Level", "Estimated Price",
     ];
     const quantityPattern = /^(?:-|\d+|\d{1,3}(?:,\d{3})+)$/;
+    /**
+     * @typedef {{numerator: bigint, denominator: bigint}} ExactRatio
+     * Non-negative value with a strictly positive denominator; not necessarily reduced.
+     */
+    /**
+     * @typedef {Object} ItemMetadata
+     * @property {string[]} fields Eight inventory metadata slots (Group through
+     * Estimated Price). Volume/price slots are empty: itemValues calculates them.
+     * @property {bigint} sourceQuantity Latest full row's quantity, for provenance.
+     * @property {ExactRatio|null} unitVolume Exact m3 per unit, or unknown.
+     * @property {ExactRatio|null} unitEstimatedPrice Exact ISK per unit, or unknown.
+     */
+    /** @type {Map<string, ItemMetadata>} Shared across all panes; full rows only. */
     let metadataCache = new Map();
+    /** @type {Map<string, bigint>} Last successful parse; independent of sent lists. */
     let parsedItems = new Map();
+    /** @type {Map<string, bigint>} Accumulated on-hand quantities. */
     let inventoryItems = new Map();
+    /** @type {Map<string, bigint>} Accumulated base quantities for ONE set. */
     let materialItems = new Map();
+    /** @type {Map<string, bigint>} Derived base * last valid count; never a base input. */
     let requiredItems = new Map();
+    /** @type {Map<string, bigint>} Derived positive shortfalls only. */
     let multiBuyItems = new Map();
     let setCount = 1n;
     let hasMaterialSet = false;
@@ -320,6 +427,13 @@
       );
     }
 
+    /**
+     * Parse a stack total without binary floating-point conversion.
+     * @param {string} value Trimmed decimal text with its unit, or empty.
+     * @param {"m3"|"ISK"} unit Expected suffix; volume also accepts superscript 3.
+     * @returns {ExactRatio|null} Exact stack value; empty is unknown.
+     * @throws {InputError} Nonempty malformed value.
+     */
     function parseStackDecimal(value, unit) {
       if (!value) return null;
       const pattern = unit === "m3"
@@ -336,11 +450,24 @@
       };
     }
 
+    /**
+     * Convert a stack ratio to a unit ratio once, when metadata is imported.
+     * @param {ExactRatio|null} value Stack total.
+     * @param {bigint} quantity Source stack quantity.
+     * @returns {ExactRatio|null} Zero source quantity cannot establish a unit value.
+     */
     function perUnit(value, quantity) {
       if (value === null || quantity === 0n) return null;
       return { numerator: value.numerator, denominator: value.denominator * quantity };
     }
 
+    /**
+     * Scale an exact unit ratio and round half up to hundredths only at output.
+     * "Cents" means hundredths of either m3 or ISK, not exclusively currency.
+     * @param {ExactRatio|null|undefined} unitValue Cached unit ratio.
+     * @param {bigint} quantity Target stack quantity.
+     * @returns {bigint|null} Rounded stack hundredths; null stays unknown.
+     */
     function stackCents(unitValue, quantity) {
       if (!unitValue) return null;
       const numerator = unitValue.numerator * quantity * 100n;
@@ -422,6 +549,12 @@
       throw new InputError('Expected an item name and a non-negative integer quantity (or "-"), separated by tabs or spaces.');
     }
 
+    /**
+     * Build a candidate parse without mutating committed application state.
+     * Metadata objects are shared safely: full rows replace objects, never mutate
+     * them; short rows have no metadata. Any InputError blocks the entire commit.
+     * Unexpected exceptions propagate rather than being treated as bad input.
+     */
     function parseInput(text, previousMetadata) {
       const metadata = new Map(previousMetadata);
       const items = new Map();
@@ -448,6 +581,7 @@
       return { items, metadata, errors, rowCount };
     }
 
+    /** Project one quantity into inventory column order without modifying the cache. */
     function itemValues(name, quantity, metadata) {
       const source = metadata.get(name);
       const values = [name, quantity.toLocaleString("en-US"), ...(source?.fields ?? Array(8).fill(""))];
@@ -474,6 +608,12 @@
       output.select();
     }
 
+    /**
+     * Snapshot export text before the asynchronous clipboard write.
+     * The prefix selects pane-local feedback/fallback IDs, not the exported data.
+     * Only clipboard DOMExceptions become manual-copy errors; programming errors
+     * propagate. Keep this shared path consistent for all four export sources.
+     */
     async function copyExport(longForm, items = parsedItems, prefix = "") {
       const text = exportText(items, metadataCache, longForm);
       if (!navigator.clipboard?.writeText) {
@@ -527,6 +667,11 @@
       return fragment;
     }
 
+    /**
+     * Recompute derived lists and lower presentation from current committed state.
+     * Never mutate base or on-hand quantities here. Metadata refreshes call this
+     * too, so unit values learned later update already-assigned quantities.
+     */
     function updateWorkflow() {
       const requiredRows = [];
       requiredItems = new Map();
