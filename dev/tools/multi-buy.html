@@ -12,7 +12,7 @@ USAGE
      them. Reset that destination first if replacement is intended.
   3. Set Number of sets. Required = base * count; Multi-buy contains only positive
      max(required - on_hand, 0) quantities. Unlisted inventory counts as zero.
-  4. Export Long copies ten inventory columns; Export Short copies Name/Quantity.
+  4. In each Export group, Long copies ten columns; Short copies Name/Quantity.
      Material Set exports Required quantities, not its base set or shortfalls.
      Clipboard access may be blocked for local files; selected manual-copy text
      is provided on failure. Buttons do not import from the clipboard.
@@ -29,21 +29,41 @@ DATA CONTRACT
   Only full inventory rows update metadata. Short rows carry metadata: null and
   MUST NOT erase or create cached metadata. The last full row for a name wins,
   including its price estimate; estimates from separate stacks are not averaged.
-  Full-row Volume and Estimated Price are STACK TOTALS: parse decimal strings
-  exactly, divide by source quantity once, and store per-unit rational values.
-  Never convert these values or quantities to Number for business calculations.
+  Full-row Volume and Estimated Price are STACK TOTALS: parse as finite Numbers,
+  divide by source quantity once, and store approximate per-unit Numbers without
+  intermediate rounding. Quantities remain BigInt; unit inference converts the
+  source quantity to Number and rejects overflow/underflow rather than hiding it.
+  Inventory displays round to two decimals while the game uses three internally:
+  inferred unit values and calculated totals cannot recover that lost precision.
   Missing numeric fields or zero source quantity produce unknown unit values.
   Unknown differs from known zero; a later full row can replace known with unknown.
+  Import's Locked checkbox (initially off) preserves unit volume/price, including
+  unknowns, for names cached BEFORE the parse. Descriptive fields still update.
+  New names receive full metadata; duplicate new rows keep normal last-row wins.
+  Source quantity is retained with protected values for tooltip provenance.
+  Parsing/validation remains transactional even for protected numeric fields.
+  Full-row unit volumes are compared to currently staged cache values, ignoring
+  binary floating-point noise within four relative machine epsilons. Known
+  unequal values produce non-blocking, line-numbered warnings showing two-decimal
+  values and the lock outcome. Compared before display rounding, different values
+  may display alike. Unknown values do not imply disagreement. Duplicate full rows
+  can warn within the same import.
+  Warnings are displayed only for successful imports and clear on Parse/Reset.
   Estimated Price is an imported estimate, not a current market quote.
 
-  Display/export stack totals multiply exact unit values by the selected quantity,
-  then round half up to two decimals. Volume footers sum rounded row values so
-  they match the visible table; unknown rows make totals explicitly partial.
+  Display/export stack totals multiply the decimal representation of approximate
+  unit Numbers by BigInt quantities, then round half up to two decimals. This
+  avoids further floating-point multiplication errors and quantity overflow, but
+  does not restore source precision. Volume/price footers sum rounded row values
+  so they match the visible table; unknown rows make each total explicitly partial.
   Long exports use original column order and calculated stack totals. All exports
-  are headerless TSV with LF-separated rows, no padding, and no footer rows.
+  use LF-separated rows and omit footer rows. TSV is headerless without padding;
+  Markdown has headers, a delimiter row, and padded columns for human reading.
+  Markdown supports the same two/ten columns, optional outer pipes, alignment
+  markers, trimmed cells, escaped punctuation, and HTML entities for literal text.
   Zero rows are retained except in Multi-buy, which contains positive buys only.
   Reimporting rounded long exports can lose sub-hundredth precision; the live
-  in-memory cache retains its exact ratios until a new full row replaces them.
+  in-memory cache retains its approximate unit Numbers until replaced.
 
 MAINTENANCE MAP
   Embedded CSS controls presentation; the 900px breakpoint must agree with
@@ -64,6 +84,16 @@ MAINTENANCE MAP
   these resets clears the shared metadata cache or Parsed Data.
   Invalid multipliers retain the last valid calculations and disable Material Set
   and Multi-buy exports, but do not disable independent Inventory exports.
+  The result panel's Display radio buttons switch between Multi-buy shortfalls and
+  positive Inventory Remaining = max(on_hand - required, 0). Remaining includes
+  inventory-only names in inventory order; with no material set it shows all
+  positive inventory. It never consumes inventory. Table, totals, all four export
+  buttons, and empty-state/disabled behavior follow the selected view.
+  The upper panel's Display radios select Parsed Data or all Cached Metadata.
+  Metadata is projected as Quantity 1 with per-unit volume/price, using the same
+  ten/two-column TSV/Markdown exports. Send To buttons disable in metadata view.
+  Two-decimal projection may round small unit values to zero; only the displayed
+  or exported text is rounded, never the cache. Switching does not mutate lists.
 
 MANUAL REGRESSION CHECKS (no installed JavaScript test framework)
   See ../prompts/multi-buy-tool.md for supported samples and detailed checks.
@@ -77,10 +107,13 @@ MANUAL REGRESSION CHECKS (no installed JavaScript test framework)
   integers, partial totals, and no intermediate per-unit/per-set rounding.
   Check empty/nonempty sends, native confirmation accept/cancel, repeated sends,
   independent resets, invalid counts, and cache updates after quantities are sent.
-  Check all four export sources in both formats, denied/unavailable clipboard,
+  Check all four export sources in TSV/Markdown and long/short forms, denied/unavailable clipboard,
   manual selection, and disabled/cleared feedback after state changes.
   Check both layouts, each divider's pointer/keyboard limits, horizontal table
   scrolling, two-tier sticky headers, and reload clearing all state.
+  Markdown checks: padded two/ten-column tables, alignment delimiter rows,
+  optional outer pipes, empty metadata cells, escaped pipes/backslashes/markup,
+  trimmed cells, short-import metadata retention, and invalid-row rollback.
 -->
 <html lang="en">
 <head>
@@ -102,6 +135,13 @@ MANUAL REGRESSION CHECKS (no installed JavaScript test framework)
     [role="separator"][aria-orientation="vertical"]::before { content: ""; position: absolute; inset: 0 5px; background: #475569; border-radius: .25rem; }
     [role="separator"][aria-orientation="vertical"]:hover::before, [role="separator"][aria-orientation="vertical"]:focus-visible::before, .dragging::before { background: #93c5fd; }
     input { width: 100%; padding: .6rem; background: #0f172a; color: #f1f5f9; border: 1px solid #94a3b8; border-radius: .25rem; font: inherit; }
+    .view-options { display: flex; flex-wrap: wrap; gap: .75rem; margin: 0; padding: .75rem; border: 1px solid #475569; }
+    .view-options label { display: flex; align-items: center; gap: .4rem; margin: 0; }
+    .view-options input { width: auto; margin: 0; }
+    .checkbox-label { display: flex; align-items: center; gap: .4rem; }
+    .checkbox-label input { width: auto; margin: 0; }
+    .lock-options { margin-bottom: 1rem; padding: .75rem; border: 1px solid #475569; border-radius: .25rem; }
+    .lock-options .help { margin-bottom: 0; }
     .validation-error { color: #fecaca; }
     hr { margin: 1.5rem 0; border: 0; border-top: 1px solid #475569; }
     section { min-width: 0; padding: 1.25rem; border: 1px solid #475569; border-radius: .5rem; background: #1e293b; }
@@ -113,6 +153,8 @@ MANUAL REGRESSION CHECKS (no installed JavaScript test framework)
     button { padding: .65rem 1.25rem; border: 0; border-radius: .25rem; background: #93c5fd; color: #0f172a; font: inherit; font-weight: 600; cursor: pointer; }
     button:disabled { opacity: .5; cursor: not-allowed; }
     .export-actions { display: flex; flex-wrap: wrap; gap: .75rem; margin-top: 1rem; }
+    .export-group { min-width: 0; margin: 0; padding: .75rem; border: 1px solid #475569; }
+    .export-group .export-actions { margin-top: 0; }
     #export-status { min-height: 1.5rem; }
     .copy-error { color: #fecaca; }
     #export-text, #inventory-export-text, #materials-export-text, #multibuy-export-text { min-height: 8rem; }
@@ -120,6 +162,8 @@ MANUAL REGRESSION CHECKS (no installed JavaScript test framework)
     .help { font-size: .9rem; }
     #errors { margin-top: 1rem; padding: .75rem; border: 1px solid #fca5a5; color: #fecaca; background: #450a0a; overflow-wrap: anywhere; }
     #errors ul { margin-bottom: 0; padding-left: 1.5rem; }
+    #warnings { margin-top: 1rem; padding: .75rem; border: 1px solid #fbbf24; color: #fde68a; background: #422006; overflow-wrap: anywhere; }
+    #warnings ul { margin-bottom: 0; padding-left: 1.5rem; }
     #status { min-height: 1.5rem; }
     .table-scroll { overflow: auto; max-height: 70vh; }
     table { border-collapse: collapse; width: 100%; font-size: .9rem; }
@@ -145,6 +189,7 @@ MANUAL REGRESSION CHECKS (no installed JavaScript test framework)
   <header>
     <h1>EVE multi-buy helper</h1>
     <p class="intro">Import and inspect material lists. Data stays in this page's memory until you close or reload it.</p>
+    <p id="precision-note" class="help">Volume and Est. Price calculations are approximate. EVE uses three decimal places internally, but inventory exports display only two with rounding. Per-unit values inferred from these rounded stack totals, and later totals and exports, may differ from the game. Results display two decimal places; extra calculation digits do not restore the missing precision.</p>
   </header>
   <main>
     <section id="import-pane" aria-labelledby="import-heading">
@@ -153,19 +198,33 @@ MANUAL REGRESSION CHECKS (no installed JavaScript test framework)
         <button id="reset-import" type="button">Reset</button>
       </div>
       <form id="import-form">
+        <div class="lock-options">
+          <label class="checkbox-label"><input id="metadata-locked" type="checkbox" aria-describedby="lock-help"> Locked</label>
+          <p id="lock-help" class="help">Preserve existing per-unit Volume and Est. Price when importing. New items still receive metadata; quantities and descriptive fields still update. Applies when Parse is selected.</p>
+        </div>
         <label for="import-text">Inventory or material list</label>
         <textarea id="import-text" aria-describedby="input-help" spellcheck="false" placeholder="Paste an EVE inventory export or a Name / Quantity list here."></textarea>
-        <p id="input-help" class="help">Accepts ten-column, tab-delimited inventory rows, or Name / Quantity in either order, separated by tabs or spaces. Quantities must be non-negative integers; commas are supported and a dash (-) means zero. Blank lines and recognized column headers are ignored.</p>
+        <p id="input-help" class="help">Accepts ten-column inventory or two-column Name / Quantity Markdown tables, tab-delimited inventory, or Name / Quantity in either order separated by tabs or spaces. Markdown cell whitespace is trimmed. Quantities must be non-negative integers; commas are supported and a dash (-) means zero. Blank lines, recognized headers, and Markdown delimiter rows are ignored.</p>
         <button type="submit">Parse</button>
       </form>
       <div id="errors" role="alert" hidden>
         <strong>Import not applied. Previous data is unchanged.</strong>
         <ul id="error-list"></ul>
       </div>
+      <div id="warnings" role="status" aria-live="polite" hidden>
+        <strong>Import applied with volume warnings.</strong>
+        <ul id="warning-list"></ul>
+      </div>
     </section>
     <div id="pane-divider" role="separator" aria-label="Resize import and parsed data panes" aria-orientation="vertical" aria-controls="import-pane preview-pane" aria-valuemin="25" aria-valuemax="75" aria-valuenow="33" aria-valuetext="Import pane 33 percent" tabindex="0"></div>
     <section id="preview-pane" aria-labelledby="preview-heading">
       <h2 id="preview-heading">Parsed data</h2>
+      <fieldset id="preview-view" class="view-options">
+        <legend>Display</legend>
+        <label><input type="radio" name="preview-view" value="parsed" checked> Parsed Data</label>
+        <label><input type="radio" name="preview-view" value="metadata"> Cached Metadata</label>
+      </fieldset>
+      <p id="metadata-help" class="help" hidden>All cached inventory metadata, including items absent from the latest import. Quantity is 1; Volume and Est. Price are per-unit values. Display and exports round to two decimals, so small values may appear as zero and reimporting can lose precision. Send To actions are unavailable in this view.</p>
       <p id="status" role="status" aria-live="polite">No data parsed yet.</p>
       <p class="help">Each successful parse replaces the displayed quantities. Duplicate names are combined. Inventory metadata is retained for later short-form imports; the last inventory row for a name supplies its latest per-unit values, including Estimated Price.</p>
       <p id="empty-state">Paste a list on the left, then select Parse.</p>
@@ -183,19 +242,31 @@ MANUAL REGRESSION CHECKS (no installed JavaScript test framework)
               <th scope="col">Volume</th>
               <th scope="col">Meta Level</th>
               <th scope="col">Tech Level</th>
-              <th scope="col">Estimated Price</th>
+              <th scope="col">Est. Price</th>
             </tr>
           </thead>
           <tbody id="parsed-rows"></tbody>
         </table>
       </div>
       <div class="export-actions">
-        <button id="export-long" type="button" disabled>Export Long</button>
-        <button id="export-short" type="button" disabled>Export Short</button>
-        <button id="assign-inventory" type="button" disabled>Send To Inventory</button>
-        <button id="assign-materials" type="button" disabled>Send To Material Set</button>
+        <fieldset class="export-group">
+          <legend>Export</legend>
+          <div class="export-actions">
+            <button id="export-long" type="button" disabled>Long</button>
+            <button id="export-short" type="button" disabled>Short</button>
+            <button id="export-long-markdown" type="button" disabled>Long Markdown</button>
+            <button id="export-short-markdown" type="button" disabled>Short Markdown</button>
+          </div>
+        </fieldset>
+        <fieldset class="export-group">
+          <legend>Send To</legend>
+          <div class="export-actions">
+            <button id="assign-inventory" type="button" disabled>Inventory</button>
+            <button id="assign-materials" type="button" disabled>Material Set</button>
+          </div>
+        </fieldset>
       </div>
-      <p class="help">Long form includes all ten inventory columns with calculated stack volume and estimated price; short form includes Name and Quantity. Both use tabs, without headers, and preserve displayed row order.</p>
+      <p class="help">Exports follow this panel's selected display. Long form includes all ten inventory columns with calculated volume and estimated price; short form includes Name and Quantity. Long/Short copy headerless tabs; Markdown buttons copy aligned tables with headers. Both preserve displayed row order.</p>
       <p id="export-status" role="status" aria-live="polite"></p>
       <div id="manual-copy" hidden>
         <label for="export-text">Export text - select and copy manually</label>
@@ -214,16 +285,21 @@ MANUAL REGRESSION CHECKS (no installed JavaScript test framework)
       <p id="inventory-status" role="status">No inventory assigned. Unlisted items count as zero on hand.</p>
       <div class="table-scroll" role="region" aria-label="Inventory on hand table" tabindex="0">
         <table>
-          <caption>Volume uses on-hand quantity times cached unit volume, rounded to two decimals (m3). Missing volume is blank; totals with missing values are labelled partial.</caption>
-          <thead><tr><th scope="col">Name</th><th scope="col">Quantity</th><th scope="col">Volume</th></tr></thead>
+          <caption>Volume and Est. Price use on-hand quantity times cached unit values, rounded to two decimals. Missing values are blank; totals with missing values are labelled partial. Prices are imported estimates, not live quotes.</caption>
+          <thead><tr><th scope="col">Name</th><th scope="col">Quantity</th><th scope="col">Volume</th><th scope="col">Est. Price</th></tr></thead>
           <tbody id="inventory-rows"></tbody>
-          <tfoot><tr><th scope="row" colspan="2">Total volume</th><td id="inventory-volume-total">0.00 m3</td></tr></tfoot>
+          <tfoot><tr><th scope="row" colspan="2">Total</th><td id="inventory-volume-total">0.00 m3</td><td id="inventory-price-total">0.00 ISK</td></tr></tfoot>
         </table>
       </div>
-      <div class="export-actions">
-        <button id="inventory-long" type="button" disabled>Export Long</button>
-        <button id="inventory-short" type="button" disabled>Export Short</button>
-      </div>
+      <fieldset class="export-group">
+        <legend>Export</legend>
+        <div class="export-actions">
+          <button id="inventory-long" type="button" disabled>Long</button>
+          <button id="inventory-short" type="button" disabled>Short</button>
+          <button id="inventory-long-markdown" type="button" disabled>Long Markdown</button>
+          <button id="inventory-short-markdown" type="button" disabled>Short Markdown</button>
+        </div>
+      </fieldset>
       <p class="help">Exports on-hand quantities. Long form calculates volume and estimated price for those quantities using cached per-unit values.</p>
       <p id="inventory-export-status" role="status" aria-live="polite"></p>
       <div id="inventory-manual-copy" hidden>
@@ -245,26 +321,31 @@ MANUAL REGRESSION CHECKS (no installed JavaScript test framework)
       <p id="materials-status" role="status">No material set assigned.</p>
       <div class="table-scroll" role="region" aria-label="Material set table" tabindex="0">
         <table>
-          <caption>Volumes use cached source volume divided by source quantity, then multiplied by the per-set or required quantity. Values are rounded to two decimal places (m3); unavailable unit volumes are blank.</caption>
+          <caption>Volume and Est. Price use cached unit values times the per-set or required quantity, rounded to two decimals. Missing values are blank and make their respective totals partial. Prices are imported estimates, not live quotes.</caption>
           <thead>
             <tr>
               <th scope="col" rowspan="2">Name</th>
-              <th scope="colgroup" colspan="2">Per Set</th>
-              <th scope="colgroup" colspan="2">Required</th>
+              <th scope="colgroup" colspan="3">Per Set</th>
+              <th scope="colgroup" colspan="3">Required</th>
             </tr>
             <tr>
-              <th scope="col">Quantity</th><th scope="col">Volume</th>
-              <th scope="col">Quantity</th><th scope="col">Volume</th>
+              <th scope="col">Quantity</th><th scope="col">Volume</th><th scope="col">Est. Price</th>
+              <th scope="col">Quantity</th><th scope="col">Volume</th><th scope="col">Est. Price</th>
             </tr>
           </thead>
           <tbody id="materials-rows"></tbody>
-          <tfoot><tr><th scope="row">Total volume</th><td></td><td id="per-set-volume-total">0.00 m3</td><td></td><td id="required-volume-total">0.00 m3</td></tr></tfoot>
+          <tfoot><tr><th scope="row">Total</th><td></td><td id="per-set-volume-total">0.00 m3</td><td id="per-set-price-total">0.00 ISK</td><td></td><td id="required-volume-total">0.00 m3</td><td id="required-price-total">0.00 ISK</td></tr></tfoot>
         </table>
       </div>
-      <div class="export-actions">
-        <button id="materials-long" type="button" disabled>Export Long</button>
-        <button id="materials-short" type="button" disabled>Export Short</button>
-      </div>
+      <fieldset class="export-group">
+        <legend>Export</legend>
+        <div class="export-actions">
+          <button id="materials-long" type="button" disabled>Long</button>
+          <button id="materials-short" type="button" disabled>Short</button>
+          <button id="materials-long-markdown" type="button" disabled>Long Markdown</button>
+          <button id="materials-short-markdown" type="button" disabled>Short Markdown</button>
+        </div>
+      </fieldset>
       <p class="help">Exports Required quantities, including the multiplier, not the base set or shortfalls. Long form calculates volume and estimated price for those quantities.</p>
       <p id="materials-export-status" role="status" aria-live="polite"></p>
       <div id="materials-manual-copy" hidden>
@@ -275,24 +356,34 @@ MANUAL REGRESSION CHECKS (no installed JavaScript test framework)
     <div id="materials-divider" role="separator" aria-label="Resize material set and multi-buy panes" aria-orientation="vertical" aria-controls="materials-pane multibuy-pane" tabindex="0"></div>
     <section id="multibuy-pane" aria-labelledby="multibuy-heading">
       <h2 id="multibuy-heading">Multi-buy</h2>
-      <p class="help">Buy quantity = required minus on hand, with a minimum of zero. Only positive shortfalls are listed, in material-set order.</p>
+      <fieldset id="result-view" class="view-options">
+        <legend>Display</legend>
+        <label><input type="radio" name="result-view" value="multibuy" checked> Multi-buy</label>
+        <label><input type="radio" name="result-view" value="remaining"> Inventory Remaining</label>
+      </fieldset>
+      <p id="result-help" class="help">Buy quantity = required minus on hand, with a minimum of zero. Only positive shortfalls are listed, in material-set order.</p>
       <p id="multibuy-status" role="status">Assign a material set to calculate a shopping list.</p>
       <div class="table-scroll" role="region" aria-label="Multi-buy table" tabindex="0">
         <table>
-          <caption>Quantity is the amount to buy. Volume uses cached unit volume, rounded to two decimals (m3). Totals sum displayed volumes; missing values make totals partial.</caption>
-          <thead><tr><th scope="col">Name</th><th scope="col">Quantity</th><th scope="col">Volume</th></tr></thead>
+          <caption>Quantity follows the selected display. Volume and Est. Price use cached unit values, rounded to two decimals. Totals sum displayed values; missing values make their respective totals partial. Prices are imported estimates, not live quotes.</caption>
+          <thead><tr><th scope="col">Name</th><th scope="col">Quantity</th><th scope="col">Volume</th><th scope="col">Est. Price</th></tr></thead>
           <tbody id="multibuy-rows"></tbody>
-          <tfoot><tr><th scope="row" colspan="2">Total volume</th><td id="multibuy-volume-total">0.00 m3</td></tr></tfoot>
+          <tfoot><tr><th scope="row" colspan="2">Total</th><td id="multibuy-volume-total">0.00 m3</td><td id="multibuy-price-total">0.00 ISK</td></tr></tfoot>
         </table>
       </div>
-      <div class="export-actions">
-        <button id="multibuy-long" type="button" disabled>Export Long</button>
-        <button id="multibuy-short" type="button" disabled>Export Short</button>
-      </div>
-      <p class="help">Long form calculates stack volume and estimated price for the buy quantities using cached per-unit values.</p>
+      <fieldset class="export-group">
+        <legend>Export</legend>
+        <div class="export-actions">
+          <button id="multibuy-long" type="button" disabled>Long</button>
+          <button id="multibuy-short" type="button" disabled>Short</button>
+          <button id="multibuy-long-markdown" type="button" disabled>Long Markdown</button>
+          <button id="multibuy-short-markdown" type="button" disabled>Short Markdown</button>
+        </div>
+      </fieldset>
+      <p class="help">Exports follow the selected display. Long form calculates stack volume and estimated price using cached per-unit values.</p>
       <p id="multibuy-export-status" role="status" aria-live="polite"></p>
       <div id="multibuy-manual-copy" hidden>
-        <label for="multibuy-export-text">Multi-buy export text - select and copy manually</label>
+        <label for="multibuy-export-text">Selected display export text - select and copy manually</label>
         <textarea id="multibuy-export-text" readonly spellcheck="false"></textarea>
       </div>
     </section>
@@ -378,25 +469,22 @@ MANUAL REGRESSION CHECKS (no installed JavaScript test framework)
 
     const inventoryColumns = [
       "Name", "Quantity", "Group", "Category", "Size", "Slot",
-      "Volume", "Meta Level", "Tech Level", "Estimated Price",
+      "Volume", "Meta Level", "Tech Level", "Est. Price",
     ];
     const quantityPattern = /^(?:-|\d+|\d{1,3}(?:,\d{3})+)$/;
-    /**
-     * @typedef {{numerator: bigint, denominator: bigint}} ExactRatio
-     * Non-negative value with a strictly positive denominator; not necessarily reduced.
-     */
     /**
      * @typedef {Object} ItemMetadata
      * @property {string[]} fields Eight inventory metadata slots (Group through
      * Estimated Price). Volume/price slots are empty: itemValues calculates them.
      * @property {bigint} sourceQuantity Latest full row's quantity, for provenance.
-     * @property {ExactRatio|null} unitVolume Exact m3 per unit, or unknown.
-     * @property {ExactRatio|null} unitEstimatedPrice Exact ISK per unit, or unknown.
+     * @property {number|null} unitVolume Approximate m3 per unit, or unknown.
+     * @property {number|null} unitEstimatedPrice Approximate ISK per unit, or unknown.
      */
     /** @type {Map<string, ItemMetadata>} Shared across all panes; full rows only. */
     let metadataCache = new Map();
     /** @type {Map<string, bigint>} Last successful parse; independent of sent lists. */
     let parsedItems = new Map();
+    let parsedRowCount = 0;
     /** @type {Map<string, bigint>} Accumulated on-hand quantities. */
     let inventoryItems = new Map();
     /** @type {Map<string, bigint>} Accumulated base quantities for ONE set. */
@@ -405,6 +493,8 @@ MANUAL REGRESSION CHECKS (no installed JavaScript test framework)
     let requiredItems = new Map();
     /** @type {Map<string, bigint>} Derived positive shortfalls only. */
     let multiBuyItems = new Map();
+    /** @type {Map<string, bigint>} On-hand leftovers, including inventory-only names. */
+    let remainingItems = new Map();
     let setCount = 1n;
     let hasMaterialSet = false;
     class InputError extends Error {}
@@ -419,6 +509,7 @@ MANUAL REGRESSION CHECKS (no installed JavaScript test framework)
     function isHeader(fields) {
       const normalized = fields.map((field) => field.toLowerCase());
       if (fields.length === 10) {
+        if (normalized[9] === "estimated price") normalized[9] = "est. price";
         return inventoryColumns.every((column, index) => column.toLowerCase() === normalized[index]);
       }
       return fields.length === 2 && (
@@ -428,10 +519,10 @@ MANUAL REGRESSION CHECKS (no installed JavaScript test framework)
     }
 
     /**
-     * Parse a stack total without binary floating-point conversion.
+     * Parse an approximate stack total; rounded source data cannot be recovered.
      * @param {string} value Trimmed decimal text with its unit, or empty.
      * @param {"m3"|"ISK"} unit Expected suffix; volume also accepts superscript 3.
-     * @returns {ExactRatio|null} Exact stack value; empty is unknown.
+     * @returns {number|null} Finite stack value; empty is unknown.
      * @throws {InputError} Nonempty malformed value.
      */
     function parseStackDecimal(value, unit) {
@@ -443,35 +534,47 @@ MANUAL REGRESSION CHECKS (no installed JavaScript test framework)
       if (!match) {
         throw new InputError(`Invalid ${unit === "m3" ? "volume" : "estimated price"} "${value}". Use a non-negative decimal followed by "${unit}".`);
       }
-      const fraction = match[2] ?? "";
-      return {
-        numerator: BigInt(match[1].replaceAll(",", "") + fraction),
-        denominator: 10n ** BigInt(fraction.length),
-      };
+      const decimal = `${match[1].replaceAll(",", "")}.${match[2] ?? "0"}`;
+      const result = Number(decimal);
+      if (!Number.isFinite(result) || (result === 0 && /[1-9]/.test(decimal))) {
+        throw new InputError(`The ${unit === "m3" ? "volume" : "estimated price"} is outside the supported numeric range.`);
+      }
+      return result;
     }
 
     /**
-     * Convert a stack ratio to a unit ratio once, when metadata is imported.
-     * @param {ExactRatio|null} value Stack total.
+     * Infer an approximate unit value once, without rounding it to two decimals.
+     * @param {number|null} value Stack total.
      * @param {bigint} quantity Source stack quantity.
-     * @returns {ExactRatio|null} Zero source quantity cannot establish a unit value.
+     * @returns {number|null} Zero source quantity cannot establish a unit value.
      */
     function perUnit(value, quantity) {
       if (value === null || quantity === 0n) return null;
-      return { numerator: value.numerator, denominator: value.denominator * quantity };
+      const sourceQuantity = Number(quantity);
+      const result = value / sourceQuantity;
+      if (!Number.isFinite(sourceQuantity) || (value > 0 && result === 0)) {
+        throw new InputError("Cannot infer per-unit metadata: source quantity or unit value is outside the supported numeric range.");
+      }
+      return result;
     }
 
     /**
-     * Scale an exact unit ratio and round half up to hundredths only at output.
+     * Scale the cached float's decimal representation, rounding half up at output.
+     * BigInt arithmetic preserves large quantities and exact sums of displayed
+     * hundredths; it does not make the inferred unit metadata accurate.
      * "Cents" means hundredths of either m3 or ISK, not exclusively currency.
-     * @param {ExactRatio|null|undefined} unitValue Cached unit ratio.
+     * @param {number|null|undefined} unitValue Approximate cached unit value.
      * @param {bigint} quantity Target stack quantity.
      * @returns {bigint|null} Rounded stack hundredths; null stays unknown.
      */
     function stackCents(unitValue, quantity) {
-      if (!unitValue) return null;
-      const numerator = unitValue.numerator * quantity * 100n;
-      const denominator = unitValue.denominator;
+      if (unitValue === null || unitValue === undefined) return null;
+      const [coefficient, exponent = "0"] = String(unitValue).split("e");
+      const [whole, fraction = ""] = coefficient.split(".");
+      const scale = fraction.length - Number(exponent);
+      const numerator = BigInt(whole + fraction) * quantity * 100n *
+        (scale < 0 ? 10n ** BigInt(-scale) : 1n);
+      const denominator = scale > 0 ? 10n ** BigInt(scale) : 1n;
       return numerator / denominator + (numerator % denominator * 2n >= denominator ? 1n : 0n);
     }
 
@@ -492,48 +595,94 @@ MANUAL REGRESSION CHECKS (no installed JavaScript test framework)
       return formatVolume(volumeCents(source, quantity));
     }
 
-    function updateVolumeTotal(id, items) {
+    function materialPrice(source, quantity) {
+      return formatStackValue(stackCents(source?.unitEstimatedPrice, quantity), "ISK");
+    }
+
+    function updateStackTotal(id, items, field, unit) {
       let total = 0n;
       let missing = 0;
       for (const [name, quantity] of items) {
-        const cents = volumeCents(metadataCache.get(name), quantity);
+        const cents = stackCents(metadataCache.get(name)?.[field], quantity);
         if (cents === null) missing += 1;
         else total += cents;
       }
       document.getElementById(id).textContent = missing
-        ? `${formatVolume(total)} (partial; ${missing} unknown)`
-        : formatVolume(total);
+        ? `${formatStackValue(total, unit)} (partial; ${missing} unknown)`
+        : formatStackValue(total, unit);
+    }
+
+    function parseFields(fields) {
+      if (isHeader(fields)) return null;
+      if (fields.length === 10) {
+        if (!fields[0]) throw new InputError("Item name is missing.");
+        const quantity = parseQuantity(fields[1]);
+        return {
+          name: fields[0],
+          quantity,
+          metadata: {
+            fields: [fields[2], fields[3], fields[4], fields[5], "", fields[7], fields[8], ""],
+            sourceQuantity: quantity,
+            unitVolume: perUnit(parseStackDecimal(fields[6], "m3"), quantity),
+            unitEstimatedPrice: perUnit(parseStackDecimal(fields[9], "ISK"), quantity),
+          },
+        };
+      }
+      if (fields.length !== 2) {
+        throw new InputError(`Expected 2 or 10 columns; found ${fields.length}.`);
+      }
+      if (!fields[0] || !fields[1]) throw new InputError("Item name or quantity is missing.");
+      if (quantityPattern.test(fields[1])) {
+        return { name: fields[0], quantity: parseQuantity(fields[1]), metadata: null };
+      }
+      if (quantityPattern.test(fields[0])) {
+        return { name: fields[1], quantity: parseQuantity(fields[0]), metadata: null };
+      }
+      throw new InputError('Neither column contains a valid quantity. Use a non-negative integer or "-".');
+    }
+
+    /**
+     * Split Markdown before unescaping, so escaped pipes stay inside cells.
+     * Decode entities once as text; never interpret imported cells as HTML.
+     */
+    function markdownFields(line) {
+      const fields = [""];
+      const text = line.trim();
+      for (let index = 0; index < text.length; index += 1) {
+        const char = text[index];
+        if (char === "\\" && /[\\`*_[\]{}()#+.!|<>~-]/.test(text[index + 1] ?? "")) {
+          fields[fields.length - 1] += text[++index];
+        } else if (char === "|") {
+          fields.push("");
+        } else {
+          fields[fields.length - 1] += char;
+        }
+      }
+      if (text.startsWith("|")) fields.shift();
+      if (fields.length > 1 && fields[fields.length - 1] === "") fields.pop();
+      return fields.map((field) => field.trim().replace(
+        /&(?:amp|lt|gt|quot|apos|#\d+|#x[\da-f]+);/gi,
+        (entity) => {
+          const named = { "&amp;": "&", "&lt;": "<", "&gt;": ">", "&quot;": '"', "&apos;": "'" };
+          if (named[entity.toLowerCase()] !== undefined) return named[entity.toLowerCase()];
+          const hex = entity[2].toLowerCase() === "x";
+          const code = parseInt(entity.slice(hex ? 3 : 2, -1), hex ? 16 : 10);
+          return code > 0 && code <= 0x10ffff && !(code >= 0xd800 && code <= 0xdfff)
+            ? String.fromCodePoint(code) : entity;
+        },
+      ).trim());
     }
 
     function parseLine(line) {
-      if (line.includes("\t")) {
-        const fields = line.split("\t").map((field) => field.trim());
-        if (isHeader(fields)) return null;
-        if (fields.length === 10) {
-          if (!fields[0]) throw new InputError("Item name is missing.");
-          const quantity = parseQuantity(fields[1]);
-          return {
-            name: fields[0],
-            quantity,
-            metadata: {
-              fields: [fields[2], fields[3], fields[4], fields[5], "", fields[7], fields[8], ""],
-              sourceQuantity: quantity,
-              unitVolume: perUnit(parseStackDecimal(fields[6], "m3"), quantity),
-              unitEstimatedPrice: perUnit(parseStackDecimal(fields[9], "ISK"), quantity),
-            },
-          };
+      if (line.includes("\t") && !line.trimStart().startsWith("|")) {
+        return parseFields(line.split("\t").map((field) => field.trim()));
+      }
+      if (line.includes("|")) {
+        const fields = markdownFields(line);
+        if (fields.length > 1) {
+          if (fields.every((field) => /^:?-{3,}:?$/.test(field))) return null;
+          return parseFields(fields);
         }
-        if (fields.length !== 2) {
-          throw new InputError(`Expected 2 or 10 tab-delimited columns; found ${fields.length}.`);
-        }
-        if (!fields[0] || !fields[1]) throw new InputError("Item name or quantity is missing.");
-        if (quantityPattern.test(fields[1])) {
-          return { name: fields[0], quantity: parseQuantity(fields[1]), metadata: null };
-        }
-        if (quantityPattern.test(fields[0])) {
-          return { name: fields[1], quantity: parseQuantity(fields[0]), metadata: null };
-        }
-        throw new InputError('Neither column contains a valid quantity. Use a non-negative integer or "-".');
       }
 
       const trimmed = line.trim();
@@ -554,11 +703,14 @@ MANUAL REGRESSION CHECKS (no installed JavaScript test framework)
      * Metadata objects are shared safely: full rows replace objects, never mutate
      * them; short rows have no metadata. Any InputError blocks the entire commit.
      * Unexpected exceptions propagate rather than being treated as bad input.
+     * Locked protects pre-import unit values without mutating their objects;
+     * newly encountered names still use ordinary last-full-row metadata.
      */
-    function parseInput(text, previousMetadata) {
+    function parseInput(text, previousMetadata, locked = false) {
       const metadata = new Map(previousMetadata);
       const items = new Map();
       const errors = [];
+      const warnings = [];
       let rowCount = 0;
       text.split(/\r\n|\n|\r/).forEach((line, index) => {
         if (!line.trim()) return;
@@ -573,12 +725,33 @@ MANUAL REGRESSION CHECKS (no installed JavaScript test framework)
         if (!row) return;
         rowCount += 1;
         items.set(row.name, (items.get(row.name) ?? 0n) + row.quantity);
-        if (row.metadata) metadata.set(row.name, row.metadata);
+        if (row.metadata) {
+          const existing = previousMetadata.get(row.name);
+          const storedVolume = metadata.get(row.name)?.unitVolume;
+          const importedVolume = row.metadata.unitVolume;
+          if (storedVolume !== undefined && storedVolume !== null && importedVolume !== null &&
+              Math.abs(storedVolume - importedVolume) >
+              4 * Number.EPSILON * Math.max(storedVolume, importedVolume)) {
+            const describe = (value) => `${formatVolume(stackCents(value, 1n))} per unit`;
+            warnings.push(
+              `Line ${index + 1}: ${row.name}: imported volume ${describe(importedVolume)} ` +
+              `differs from stored volume ${describe(storedVolume)} ` +
+              `(approximate values compared before display rounding). ` +
+              (locked && existing ? "Locked: stored per-unit value retained." : "Imported per-unit value accepted."),
+            );
+          }
+          metadata.set(row.name, locked && existing ? {
+            ...row.metadata,
+            sourceQuantity: existing.sourceQuantity,
+            unitVolume: existing.unitVolume,
+            unitEstimatedPrice: existing.unitEstimatedPrice,
+          } : row.metadata);
+        }
       });
       if (rowCount === 0 && errors.length === 0) {
         errors.push("No material rows found. Paste at least one item name and quantity.");
       }
-      return { items, metadata, errors, rowCount };
+      return { items, metadata, errors, warnings, rowCount };
     }
 
     /** Project one quantity into inventory column order without modifying the cache. */
@@ -586,15 +759,30 @@ MANUAL REGRESSION CHECKS (no installed JavaScript test framework)
       const source = metadata.get(name);
       const values = [name, quantity.toLocaleString("en-US"), ...(source?.fields ?? Array(8).fill(""))];
       values[6] = materialVolume(source, quantity);
-      values[9] = formatStackValue(stackCents(source?.unitEstimatedPrice, quantity), "ISK");
+      values[9] = materialPrice(source, quantity);
       return values;
     }
 
-    function exportText(items, metadata, longForm) {
-      return Array.from(items, ([name, quantity]) => {
+    function exportText(items, metadata, longForm, markdown = false) {
+      const rows = Array.from(items, ([name, quantity]) => {
         const values = itemValues(name, quantity, metadata);
-        return (longForm ? values : values.slice(0, 2)).join("\t");
-      }).join("\n");
+        return longForm ? values : values.slice(0, 2);
+      });
+      if (!markdown) return rows.map((row) => row.join("\t")).join("\n");
+      const escapeCell = (value) => value.replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;").replaceAll(">", "&gt;")
+        .replace(/[\\`*_[\]|]/g, "\\$&");
+      const headers = longForm ? inventoryColumns : inventoryColumns.slice(0, 2);
+      const escapedRows = [headers, ...rows].map((row) => row.map(escapeCell));
+      const widths = headers.map((_, index) => escapedRows.reduce(
+        (width, row) => Math.max(width, row[index].length), 3,
+      ));
+      const formatRow = (row) => `| ${row.map((cell, index) => cell.padEnd(widths[index])).join(" | ")} |`;
+      return [
+        formatRow(escapedRows[0]),
+        formatRow(widths.map((width) => "-".repeat(width))),
+        ...escapedRows.slice(1).map(formatRow),
+      ].join("\n");
     }
 
     function showManualCopy(message, text, prefix) {
@@ -614,8 +802,8 @@ MANUAL REGRESSION CHECKS (no installed JavaScript test framework)
      * Only clipboard DOMExceptions become manual-copy errors; programming errors
      * propagate. Keep this shared path consistent for all four export sources.
      */
-    async function copyExport(longForm, items = parsedItems, prefix = "") {
-      const text = exportText(items, metadataCache, longForm);
+    async function copyExport(longForm, items = selectedPreviewItems(), prefix = "", markdown = false) {
+      const text = exportText(items, metadataCache, longForm, markdown);
       if (!navigator.clipboard?.writeText) {
         showManualCopy("Clipboard access is unavailable. Copy the selected export text manually.", text, prefix);
         return;
@@ -629,23 +817,41 @@ MANUAL REGRESSION CHECKS (no installed JavaScript test framework)
       }
       const status = document.getElementById(`${prefix}export-status`);
       status.className = "";
-      status.textContent = `${longForm ? "Long" : "Short"} form copied to clipboard.`;
+      status.textContent = `${longForm ? "Long" : "Short"}${markdown ? " Markdown" : ""} form copied to clipboard.`;
       document.getElementById(`${prefix}manual-copy`).hidden = true;
       document.getElementById(`${prefix}export-text`).value = "";
     }
 
     document.getElementById("export-long").addEventListener("click", () => copyExport(true));
     document.getElementById("export-short").addEventListener("click", () => copyExport(false));
-    document.getElementById("multibuy-long").addEventListener("click", () => copyExport(true, multiBuyItems, "multibuy-"));
-    document.getElementById("multibuy-short").addEventListener("click", () => copyExport(false, multiBuyItems, "multibuy-"));
+    function selectedResultItems() {
+      return document.querySelector('input[name="result-view"]:checked').value === "remaining" ? remainingItems : multiBuyItems;
+    }
+
+    document.getElementById("multibuy-long").addEventListener("click", () => copyExport(true, selectedResultItems(), "multibuy-"));
+    document.getElementById("multibuy-short").addEventListener("click", () => copyExport(false, selectedResultItems(), "multibuy-"));
+    document.getElementById("result-view").addEventListener("change", () => updateWorkflow());
     document.getElementById("inventory-long").addEventListener("click", () => copyExport(true, inventoryItems, "inventory-"));
     document.getElementById("inventory-short").addEventListener("click", () => copyExport(false, inventoryItems, "inventory-"));
     document.getElementById("materials-long").addEventListener("click", () => copyExport(true, requiredItems, "materials-"));
     document.getElementById("materials-short").addEventListener("click", () => copyExport(false, requiredItems, "materials-"));
+    for (const [prefix, getItems] of [
+      ["", selectedPreviewItems], ["inventory-", () => inventoryItems],
+      ["materials-", () => requiredItems], ["multibuy-", selectedResultItems],
+    ]) {
+      for (const [suffix, longForm] of [["long", true], ["short", false]]) {
+        const idPrefix = prefix || "export-";
+        document.getElementById(`${idPrefix}${suffix}-markdown`).addEventListener(
+          "click", () => copyExport(longForm, getItems(), prefix, true),
+        );
+      }
+    }
 
     function updateExportControls(prefix, disabled) {
       document.getElementById(`${prefix}long`).disabled = disabled;
       document.getElementById(`${prefix}short`).disabled = disabled;
+      document.getElementById(`${prefix}long-markdown`).disabled = disabled;
+      document.getElementById(`${prefix}short-markdown`).disabled = disabled;
       document.getElementById(`${prefix}export-status`).textContent = "";
       document.getElementById(`${prefix}export-status`).className = "";
       document.getElementById(`${prefix}manual-copy`).hidden = true;
@@ -675,7 +881,6 @@ MANUAL REGRESSION CHECKS (no installed JavaScript test framework)
     function updateWorkflow() {
       const requiredRows = [];
       requiredItems = new Map();
-      const shoppingRows = [];
       multiBuyItems = new Map();
       for (const [name, base] of materialItems) {
         const required = base * setCount;
@@ -683,32 +888,55 @@ MANUAL REGRESSION CHECKS (no installed JavaScript test framework)
         const available = inventoryItems.get(name) ?? 0n;
         const shortfall = required > available ? required - available : 0n;
         const source = metadataCache.get(name);
-        requiredRows.push([name, base, materialVolume(source, base), required, materialVolume(source, required)]);
+        requiredRows.push([
+          name, base, materialVolume(source, base), materialPrice(source, base),
+          required, materialVolume(source, required), materialPrice(source, required),
+        ]);
         if (shortfall > 0n) {
           multiBuyItems.set(name, shortfall);
-          shoppingRows.push([name, shortfall, materialVolume(source, shortfall)]);
         }
       }
+      remainingItems = new Map();
+      for (const [name, available] of inventoryItems) {
+        const remaining = available - (requiredItems.get(name) ?? 0n);
+        if (remaining > 0n) remainingItems.set(name, remaining);
+      }
+      const showingRemaining = document.querySelector('input[name="result-view"]:checked').value === "remaining";
+      const resultItems = selectedResultItems();
+      const resultRows = Array.from(resultItems, ([name, quantity]) => [
+        name, quantity, materialVolume(metadataCache.get(name), quantity), materialPrice(metadataCache.get(name), quantity),
+      ]);
       const inventoryRows = Array.from(inventoryItems, ([name, quantity]) => [
-        name, quantity, materialVolume(metadataCache.get(name), quantity),
+        name, quantity, materialVolume(metadataCache.get(name), quantity), materialPrice(metadataCache.get(name), quantity),
       ]);
       document.getElementById("inventory-rows").replaceChildren(buildQuantityRows(inventoryRows));
       document.getElementById("materials-rows").replaceChildren(buildQuantityRows(requiredRows));
-      document.getElementById("multibuy-rows").replaceChildren(buildQuantityRows(shoppingRows));
-      updateVolumeTotal("inventory-volume-total", inventoryItems);
-      updateVolumeTotal("per-set-volume-total", materialItems);
-      updateVolumeTotal("required-volume-total", requiredItems);
-      updateVolumeTotal("multibuy-volume-total", multiBuyItems);
+      document.getElementById("multibuy-rows").replaceChildren(buildQuantityRows(resultRows));
+      document.getElementById("multibuy-heading").textContent = showingRemaining ? "Inventory Remaining" : "Multi-buy";
+      document.querySelector("#multibuy-pane .table-scroll").setAttribute(
+        "aria-label", showingRemaining ? "Inventory remaining table" : "Multi-buy table",
+      );
+      document.getElementById("result-help").textContent = showingRemaining
+        ? "Remaining quantity = on hand minus required, with a minimum of zero. Positive leftovers include inventory-only items, in inventory order. Inventory On Hand is not modified."
+        : "Buy quantity = required minus on hand, with a minimum of zero. Only positive shortfalls are listed, in material-set order.";
+      for (const [prefix, items] of [
+        ["inventory", inventoryItems], ["per-set", materialItems],
+        ["required", requiredItems], ["multibuy", resultItems],
+      ]) {
+        updateStackTotal(`${prefix}-volume-total`, items, "unitVolume", "m3");
+        updateStackTotal(`${prefix}-price-total`, items, "unitEstimatedPrice", "ISK");
+      }
       document.getElementById("materials-status").textContent = hasMaterialSet
         ? `${materialItems.size} materials per set; showing requirements for ${setCount.toLocaleString("en-US")} sets.`
         : "No material set assigned.";
-      document.getElementById("multibuy-status").textContent = !hasMaterialSet
-        ? "Assign a material set to calculate a shopping list."
-        : multiBuyItems.size ? `${multiBuyItems.size} items to buy.` : "No purchases required.";
+      document.getElementById("multibuy-status").textContent = showingRemaining
+        ? remainingItems.size ? `${remainingItems.size} items remaining.` : "No inventory remaining."
+        : !hasMaterialSet ? "Assign a material set to calculate a shopping list."
+          : multiBuyItems.size ? `${multiBuyItems.size} items to buy.` : "No purchases required.";
       const invalidMultiplier = !document.getElementById("multiplier-error").hidden;
       updateExportControls("inventory-", inventoryItems.size === 0);
       updateExportControls("materials-", invalidMultiplier || requiredItems.size === 0);
-      updateExportControls("multibuy-", invalidMultiplier || multiBuyItems.size === 0);
+      updateExportControls("multibuy-", invalidMultiplier || resultItems.size === 0);
     }
 
     document.getElementById("assign-inventory").addEventListener("click", () => {
@@ -774,18 +1002,66 @@ MANUAL REGRESSION CHECKS (no installed JavaScript test framework)
       return fragment;
     }
 
+    function showingMetadata() {
+      return document.querySelector('input[name="preview-view"]:checked').value === "metadata";
+    }
+
+    /** Metadata exports reuse inventory schemas with one unit per cached name. */
+    function selectedPreviewItems() {
+      return showingMetadata() ? new Map(Array.from(metadataCache.keys(), (name) => [name, 1n])) : parsedItems;
+    }
+
+    function updatePreview() {
+      const metadataView = showingMetadata();
+      const items = selectedPreviewItems();
+      document.getElementById("parsed-rows").replaceChildren(buildTableRows(items, metadataCache));
+      document.getElementById("preview-heading").textContent = metadataView ? "Cached Metadata" : "Parsed data";
+      document.getElementById("metadata-help").hidden = !metadataView;
+      document.getElementById("empty-state").hidden = items.size > 0;
+      document.getElementById("empty-state").textContent = metadataView
+        ? "No inventory metadata cached. Parse a full inventory list first."
+        : "Paste a list on the left, then select Parse.";
+      const table = document.querySelector("#preview-pane .table-scroll");
+      table.hidden = items.size === 0;
+      table.setAttribute("aria-label", metadataView ? "Cached metadata table" : "Parsed inventory table");
+      for (const suffix of ["long", "short", "long-markdown", "short-markdown"]) {
+        document.getElementById(`export-${suffix}`).disabled = items.size === 0;
+      }
+      document.getElementById("assign-inventory").disabled = metadataView || parsedItems.size === 0;
+      document.getElementById("assign-materials").disabled = metadataView || parsedItems.size === 0;
+      document.getElementById("export-status").textContent = "";
+      document.getElementById("export-status").className = "";
+      document.getElementById("manual-copy").hidden = true;
+      document.getElementById("export-text").value = "";
+      document.getElementById("status").textContent = metadataView
+        ? `Inventory metadata cached for ${metadataCache.size.toLocaleString("en-US")} items. Showing one unit per item.`
+        : parsedItems.size === 0 ? "No data parsed yet."
+          : `Parsed ${parsedRowCount.toLocaleString("en-US")} source rows into ${parsedItems.size.toLocaleString("en-US")} unique items. ` +
+            `Inventory metadata cached for ${metadataCache.size.toLocaleString("en-US")} items.`;
+    }
+
+    document.getElementById("preview-view").addEventListener("change", updatePreview);
+
     document.getElementById("reset-import").addEventListener("click", () => {
       document.getElementById("import-text").value = "";
       document.getElementById("errors").hidden = true;
       document.getElementById("error-list").replaceChildren();
+      document.getElementById("warnings").hidden = true;
+      document.getElementById("warning-list").replaceChildren();
       document.getElementById("import-text").focus();
     });
 
     document.getElementById("import-form").addEventListener("submit", (event) => {
       event.preventDefault();
-      const result = parseInput(document.getElementById("import-text").value, metadataCache);
+      const result = parseInput(
+        document.getElementById("import-text").value, metadataCache,
+        document.getElementById("metadata-locked").checked,
+      );
       const errorPanel = document.getElementById("errors");
       const errorList = document.getElementById("error-list");
+      document.getElementById("warnings").hidden = true;
+      const warningList = document.getElementById("warning-list");
+      warningList.replaceChildren();
       errorList.replaceChildren();
       errorPanel.hidden = result.errors.length === 0;
       if (result.errors.length) {
@@ -796,24 +1072,17 @@ MANUAL REGRESSION CHECKS (no installed JavaScript test framework)
         }
         return;
       }
-      const rows = buildTableRows(result.items, result.metadata);
-      document.getElementById("parsed-rows").replaceChildren(rows);
       metadataCache = result.metadata;
       parsedItems = result.items;
-      document.getElementById("export-long").disabled = false;
-      document.getElementById("export-short").disabled = false;
-      document.getElementById("assign-inventory").disabled = false;
-      document.getElementById("assign-materials").disabled = false;
-      document.getElementById("export-status").textContent = "";
-      document.getElementById("export-status").className = "";
-      document.getElementById("manual-copy").hidden = true;
-      document.getElementById("export-text").value = "";
+      parsedRowCount = result.rowCount;
+      for (const message of result.warnings) {
+        const item = document.createElement("li");
+        item.textContent = message;
+        warningList.append(item);
+      }
+      document.getElementById("warnings").hidden = result.warnings.length === 0;
+      updatePreview();
       updateWorkflow();
-      document.getElementById("empty-state").hidden = true;
-      document.querySelector(".table-scroll").hidden = false;
-      document.getElementById("status").textContent =
-        `Parsed ${result.rowCount.toLocaleString("en-US")} source rows into ${result.items.size.toLocaleString("en-US")} unique items. ` +
-        `Inventory metadata cached for ${metadataCache.size.toLocaleString("en-US")} items.`;
     });
   </script>
 </body>
