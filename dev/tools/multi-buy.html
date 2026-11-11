@@ -57,8 +57,9 @@ DATA CONTRACT
   avoids further floating-point multiplication errors and quantity overflow, but
   does not restore source precision. Volume/price footers sum rounded row values
   so they match the visible table; unknown rows make each total explicitly partial.
-  Long exports use original column order and calculated stack totals. All exports
-  use LF-separated rows and omit footer rows. TSV is headerless without padding;
+  Long exports use original column order and calculated stack totals. Long Markdown
+  appends a Total row with displayed-row Volume and Est. Price sums. Other exports
+  omit footer rows. TSV is headerless without padding;
   Markdown has headers, a delimiter row, and padded columns for human reading.
   Markdown supports the same two/ten columns, optional outer pipes, alignment
   markers, trimmed cells, escaped punctuation, and HTML entities for literal text.
@@ -110,8 +111,9 @@ MANUAL REGRESSION CHECKS (no installed JavaScript test framework)
   integers, partial totals, and no intermediate per-unit/per-set rounding.
   Check empty/nonempty sends, native confirmation accept/cancel, repeated sends,
   independent resets, invalid counts, and cache updates after quantities are sent.
-  Check all four export sources in TSV/Markdown and long/short forms, denied/unavailable clipboard,
-  manual selection, and disabled/cleared feedback after state changes.
+  Check all four export sources in TSV/Markdown and long/short forms; only long
+  Markdown has a total row for Volume and Est. Price. Check denied/unavailable
+  clipboard, manual selection, and disabled/cleared feedback after state changes.
   Check both layouts, each divider's pointer/keyboard limits, horizontal table
   scrolling, two-tier sticky headers, and reload clearing all state.
   Markdown checks: padded two/ten-column tables, alignment delimiter rows,
@@ -269,7 +271,7 @@ MANUAL REGRESSION CHECKS (no installed JavaScript test framework)
           </div>
         </fieldset>
       </div>
-      <p class="help">Exports follow this panel's selected display. Long form includes all ten inventory columns with calculated volume and estimated price; short form includes Name and Quantity. Long/Short copy headerless tabs; Markdown buttons copy aligned tables with headers. Both preserve displayed row order.</p>
+      <p class="help">Exports follow this panel's selected display. Long form includes all ten inventory columns with calculated volume and estimated price; short form includes Name and Quantity. Long/Short copy headerless tabs; Markdown buttons copy aligned tables with headers. Long Markdown adds Volume and Est. Price totals; other formats do not. All preserve displayed row order.</p>
       <p id="export-status" role="status" aria-live="polite"></p>
       <div id="manual-copy" hidden>
         <label for="export-text">Export text - select and copy manually</label>
@@ -303,7 +305,7 @@ MANUAL REGRESSION CHECKS (no installed JavaScript test framework)
           <button id="inventory-short-markdown" type="button" disabled>Short Markdown</button>
         </div>
       </fieldset>
-      <p class="help">Exports on-hand quantities. Long form calculates volume and estimated price for those quantities using cached per-unit values.</p>
+      <p class="help">Exports on-hand quantities. Long form calculates volume and estimated price for those quantities using cached per-unit values. Long Markdown includes Volume and Est. Price totals.</p>
       <p id="inventory-export-status" role="status" aria-live="polite"></p>
       <div id="inventory-manual-copy" hidden>
         <label for="inventory-export-text">Inventory export text - select and copy manually</label>
@@ -349,7 +351,7 @@ MANUAL REGRESSION CHECKS (no installed JavaScript test framework)
           <button id="materials-short-markdown" type="button" disabled>Short Markdown</button>
         </div>
       </fieldset>
-      <p class="help">Exports Required quantities, including the multiplier, not the base set or shortfalls. Long form calculates volume and estimated price for those quantities.</p>
+      <p class="help">Exports Required quantities, including the multiplier, not the base set or shortfalls. Long form calculates volume and estimated price for those quantities. Long Markdown includes Volume and Est. Price totals.</p>
       <p id="materials-export-status" role="status" aria-live="polite"></p>
       <div id="materials-manual-copy" hidden>
         <label for="materials-export-text">Required materials export text - select and copy manually</label>
@@ -383,7 +385,7 @@ MANUAL REGRESSION CHECKS (no installed JavaScript test framework)
           <button id="multibuy-short-markdown" type="button" disabled>Short Markdown</button>
         </div>
       </fieldset>
-      <p class="help">Exports follow the selected display. Long form calculates stack volume and estimated price using cached per-unit values.</p>
+      <p class="help">Exports follow the selected display. Long form calculates stack volume and estimated price using cached per-unit values. Long Markdown includes Volume and Est. Price totals.</p>
       <p id="multibuy-export-status" role="status" aria-live="polite"></p>
       <div id="multibuy-manual-copy" hidden>
         <label for="multibuy-export-text">Selected display export text - select and copy manually</label>
@@ -590,6 +592,19 @@ MANUAL REGRESSION CHECKS (no installed JavaScript test framework)
       return `${(cents / 100n).toLocaleString("en-US")}.${String(cents % 100n).padStart(2, "0")} ${unit}`;
     }
 
+    function stackTotal(items, metadata, field, unit) {
+      let total = 0n;
+      let missing = 0;
+      for (const [name, quantity] of items) {
+        const cents = stackCents(metadata.get(name)?.[field], quantity);
+        if (cents === null) missing += 1;
+        else total += cents;
+      }
+      return missing
+        ? `${formatStackValue(total, unit)} (partial; ${missing} unknown)`
+        : formatStackValue(total, unit);
+    }
+
     function formatVolume(cents) {
       return formatStackValue(cents, "m3");
     }
@@ -603,16 +618,7 @@ MANUAL REGRESSION CHECKS (no installed JavaScript test framework)
     }
 
     function updateStackTotal(id, items, field, unit) {
-      let total = 0n;
-      let missing = 0;
-      for (const [name, quantity] of items) {
-        const cents = stackCents(metadataCache.get(name)?.[field], quantity);
-        if (cents === null) missing += 1;
-        else total += cents;
-      }
-      document.getElementById(id).textContent = missing
-        ? `${formatStackValue(total, unit)} (partial; ${missing} unknown)`
-        : formatStackValue(total, unit);
+      document.getElementById(id).textContent = stackTotal(items, metadataCache, field, unit);
     }
 
     function parseFields(fields) {
@@ -684,6 +690,9 @@ MANUAL REGRESSION CHECKS (no installed JavaScript test framework)
         const fields = markdownFields(line);
         if (fields.length > 1) {
           if (fields.every((field) => /^:?-{3,}:?$/.test(field))) return null;
+          if (fields.length === 10 && fields[0].toLowerCase() === "total" && !fields[1] &&
+              fields.slice(2, 6).every((field) => !field) &&
+              fields.slice(7, 9).every((field) => !field)) return null;
           return parseFields(fields);
         }
       }
@@ -778,7 +787,12 @@ MANUAL REGRESSION CHECKS (no installed JavaScript test framework)
         .replaceAll("<", "&lt;").replaceAll(">", "&gt;")
         .replace(/[\\`*_[\]|]/g, "\\$&");
       const headers = longForm ? inventoryColumns : inventoryColumns.slice(0, 2);
-      const escapedRows = [headers, ...rows].map((row) => row.map(escapeCell));
+      const totalRow = longForm ? [[
+        "Total", "", "", "", "", "",
+        stackTotal(items, metadata, "unitVolume", "m3"), "",
+        "", stackTotal(items, metadata, "unitEstimatedPrice", "ISK"),
+      ]] : [];
+      const escapedRows = [headers, ...rows, ...totalRow].map((row) => row.map(escapeCell));
       const widths = headers.map((_, index) => escapedRows.reduce(
         (width, row) => Math.max(width, row[index].length), 3,
       ));

@@ -201,10 +201,14 @@ recognize the previous **Estimated Price** header for backward compatibility.
 
 All four panels have an **Export** group containing **Long**, **Short**, **Long
 Markdown**, and **Short Markdown**, using the same quantity lists and clipboard/manual-copy behavior as
-their TSV buttons. Long Markdown includes all ten inventory columns; short
-Markdown includes Name and Quantity. Tables include headers and delimiter rows,
-with padded columns and consistent pipe positions for monospace reading. They
-omit totals, retain empty metadata cells, and escape literal Markdown characters.
+their TSV buttons. Long Markdown includes all ten inventory columns and appends
+a **Total** row with Volume and Est. Price totals; short Markdown includes Name
+and Quantity only. Totals sum displayed two-decimal row values using the same
+partial-total convention as the HTML tables. Only long Markdown has totals; TSV
+and short Markdown exports do not. Tables include headers and delimiter rows,
+with padded columns and consistent pipe positions for monospace reading. Both
+formats retain empty metadata cells and escape literal Markdown characters.
+The Markdown importer skips the generated long-form Total row.
 
 Import accepts these Markdown tables, with optional outer pipes and delimiter
 alignment markers. Cell whitespace is trimmed before the existing column/quantity
@@ -212,7 +216,8 @@ validation and name matching. Full rows populate per-unit metadata; short rows
 never replace cached metadata. Markdown import is a table-text parser, not a
 general Markdown renderer: surrounding prose and code fences are not supported.
 
-Check long/short Markdown round trips, column alignment, zero/empty cells,
+Check long/short Markdown round trips, including skipping the long-form totals
+row, column alignment, zero/empty cells,
 quantity-first short tables, escaped pipes/backslashes/HTML-like text, whitespace
 trimming, and line-numbered errors without committing invalid imports. Verify
 all eight new buttons use the correct pane quantities, disable with their TSV
