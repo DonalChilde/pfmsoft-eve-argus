@@ -23,7 +23,8 @@ DATA CONTRACT
   Inventory input has exactly ten tab-separated columns, including empty cells.
   Short input has Name/Quantity in either order, separated by tabs or spaces.
   Quantities are non-negative whole numbers, optionally comma-grouped; "-" is zero.
-  Blank lines and recognized headers are ignored. Empty/malformed imports fail
+  Zero-quantity rows are ignored completely and do not update metadata. Blank lines
+  and recognized headers are ignored. Empty/malformed imports fail
   without changing the last successful preview, metadata cache, or assigned lists.
 
   Only full inventory rows update metadata. Short rows carry metadata: null and
@@ -35,8 +36,8 @@ DATA CONTRACT
   source quantity to Number and rejects overflow/underflow rather than hiding it.
   Inventory displays round to two decimals while the game uses three internally:
   inferred unit values and calculated totals cannot recover that lost precision.
-  Missing numeric fields or zero source quantity produce unknown unit values.
-  Unknown differs from known zero; a later full row can replace known with unknown.
+  Missing numeric fields produce unknown unit values. Unknown differs from known
+  zero; a later full row can replace known with unknown.
   Import's Locked checkbox (initially off) preserves unit volume/price, including
   unknowns, for names cached BEFORE the parse. Descriptive fields still update.
   New names receive full metadata; duplicate new rows keep normal last-row wins.
@@ -61,7 +62,9 @@ DATA CONTRACT
   Markdown has headers, a delimiter row, and padded columns for human reading.
   Markdown supports the same two/ten columns, optional outer pipes, alignment
   markers, trimmed cells, escaped punctuation, and HTML entities for literal text.
-  Zero rows are retained except in Multi-buy, which contains positive buys only.
+  Zero-quantity source rows are omitted from Parsed Data and Send To lists.
+  Downstream views may still contain zero rows when a multiplier is zero; Multi-buy
+  itself contains positive buys only.
   Reimporting rounded long exports can lose sub-hundredth precision; the live
   in-memory cache retains its approximate unit Numbers until replaced.
 
@@ -103,7 +106,7 @@ MANUAL REGRESSION CHECKS (no installed JavaScript test framework)
   expect 5.00 m3 and 42,754.00 ISK, with descriptive metadata unchanged.
   With inventory 200, base 320, count 3: Required 960 / 24.00 m3 /
   205,219.20 ISK; buy 760 / 19.00 m3 / 162,465.20 ISK.
-  Check missing and zero-source metadata, known zero, half-up rounding, large
+  Check missing metadata, ignored zero-quantity rows, known zero, half-up rounding, large
   integers, partial totals, and no intermediate per-unit/per-set rounding.
   Check empty/nonempty sends, native confirmation accept/cancel, repeated sends,
   independent resets, invalid counts, and cache updates after quantities are sent.
@@ -204,7 +207,7 @@ MANUAL REGRESSION CHECKS (no installed JavaScript test framework)
         </div>
         <label for="import-text">Inventory or material list</label>
         <textarea id="import-text" aria-describedby="input-help" spellcheck="false" placeholder="Paste an EVE inventory export or a Name / Quantity list here."></textarea>
-        <p id="input-help" class="help">Accepts ten-column inventory or two-column Name / Quantity Markdown tables, tab-delimited inventory, or Name / Quantity in either order separated by tabs or spaces. Markdown cell whitespace is trimmed. Quantities must be non-negative integers; commas are supported and a dash (-) means zero. Blank lines, recognized headers, and Markdown delimiter rows are ignored.</p>
+        <p id="input-help" class="help">Accepts ten-column inventory or two-column Name / Quantity Markdown tables, tab-delimited inventory, or Name / Quantity in either order separated by tabs or spaces. Markdown cell whitespace is trimmed. Quantities must be non-negative integers; commas are supported and a dash (-) means zero. Zero-quantity rows are ignored and do not update metadata. Blank lines, recognized headers, and Markdown delimiter rows are ignored.</p>
         <button type="submit">Parse</button>
       </form>
       <div id="errors" role="alert" hidden>
@@ -230,7 +233,7 @@ MANUAL REGRESSION CHECKS (no installed JavaScript test framework)
       <p id="empty-state">Paste a list on the left, then select Parse.</p>
       <div class="table-scroll" role="region" aria-label="Parsed inventory table" tabindex="0" hidden>
         <table>
-          <caption>Volume and Estimated Price are calculated for the displayed quantity from cached per-unit values, rounded to two decimals. Estimated Price is an imported estimate, not a live quote. Empty cells indicate unavailable metadata; zero-quantity source stacks cannot establish unit values.</caption>
+          <caption>Volume and Estimated Price are calculated for the displayed quantity from cached per-unit values, rounded to two decimals. Estimated Price is an imported estimate, not a live quote. Empty cells indicate unavailable metadata.</caption>
           <thead>
             <tr>
               <th scope="col">Name</th>
@@ -702,6 +705,7 @@ MANUAL REGRESSION CHECKS (no installed JavaScript test framework)
      * Build a candidate parse without mutating committed application state.
      * Metadata objects are shared safely: full rows replace objects, never mutate
      * them; short rows have no metadata. Any InputError blocks the entire commit.
+     * Zero-quantity rows are omitted entirely, including metadata updates.
      * Unexpected exceptions propagate rather than being treated as bad input.
      * Locked protects pre-import unit values without mutating their objects;
      * newly encountered names still use ordinary last-full-row metadata.
@@ -724,6 +728,7 @@ MANUAL REGRESSION CHECKS (no installed JavaScript test framework)
         }
         if (!row) return;
         rowCount += 1;
+        if (row.quantity === 0n) return;
         items.set(row.name, (items.get(row.name) ?? 0n) + row.quantity);
         if (row.metadata) {
           const existing = previousMetadata.get(row.name);
@@ -1035,7 +1040,9 @@ MANUAL REGRESSION CHECKS (no installed JavaScript test framework)
       document.getElementById("export-text").value = "";
       document.getElementById("status").textContent = metadataView
         ? `Inventory metadata cached for ${metadataCache.size.toLocaleString("en-US")} items. Showing one unit per item.`
-        : parsedItems.size === 0 ? "No data parsed yet."
+        : parsedItems.size === 0 ? parsedRowCount > 0
+          ? `Parsed ${parsedRowCount.toLocaleString("en-US")} source rows; no positive-quantity items. Zero-quantity rows were ignored.`
+          : "No data parsed yet."
           : `Parsed ${parsedRowCount.toLocaleString("en-US")} source rows into ${parsedItems.size.toLocaleString("en-US")} unique items. ` +
             `Inventory metadata cached for ${metadataCache.size.toLocaleString("en-US")} items.`;
     }

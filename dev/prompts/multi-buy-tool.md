@@ -127,7 +127,7 @@ cannot recover the missing source precision. Show this limitation above the pane
   within four relative machine epsilons as floating-point noise. Values in warnings
   display two decimals and may look identical despite differing before rounding.
   Duplicate full rows are compared against the cache staged so far within
-  that import. Missing values and zero-source unknowns are not disagreements.
+  that import. Missing values are not disagreements.
   Short imports never trigger volume warnings. Parse and Import Reset clear old
   warnings; a failed import shows errors only and does not commit its warnings.
 - Drag the vertical divider to resize the panes on wide screens. The import pane
@@ -137,9 +137,13 @@ cannot recover the missing source precision. Show this limitation above the pane
   the selected proportions are retained until reload.
 - Accept the examples above, including comma-separated quantities and `-` as zero.
   Short-form rows accept tabs or spaces and either column order. Recognized
-  headers and blank lines are ignored.
-- Combine duplicate, case-sensitive item names by summing quantities. Names are
-  trimmed, but internal spaces are preserved. Rows retain first-occurrence order.
+  headers and blank lines are ignored. Rows whose parsed quantity is zero,
+  including `-`, are dropped completely: they do not appear in Parsed Data or
+  update cached metadata. An all-zero input is still a successful parse and
+  produces an empty Parsed Data view.
+- Combine duplicate, case-sensitive item names by summing positive quantities.
+  Names are trimmed, but internal spaces are preserved. Rows retain first-
+  occurrence order.
 - Each successful parse replaces the displayed quantities, while inventory
   metadata stays cached by Name until the page closes or reloads. Later short-form
   inputs reuse that metadata; missing metadata produces empty cells.
@@ -148,8 +152,8 @@ cannot recover the missing source precision. Show this limitation above the pane
   without intermediate rounding. The last inventory row
   for a Name supplies the latest unit estimate; short-form imports do not replace
   it. Descriptive fields and source quantity remain cached, but original numeric
-  stack totals are not used as metadata. Zero-quantity sources and empty numeric
-  fields yield unknown unit values, replacing previous values for that Name.
+  stack totals are not used as metadata. Empty numeric fields yield unknown unit
+  values, replacing previous values for that Name.
   Parsed Data and every long export multiply cached unit values by their own
   quantities, rounding half up to two decimal places in m3 or ISK. Scaling uses
   the cached number's decimal representation and BigInt arithmetic to preserve
@@ -164,8 +168,9 @@ cannot recover the missing source precision. Show this limitation above the pane
   table or metadata cache. Invalid rows identify their original line numbers.
 - Below the table, the **Export** group contains **Long**, which copies all ten
   inventory columns to the clipboard, and **Short**, which copies Name and Quantity. Both
-  produce tab-delimited text without headers, in displayed row order, retaining
-  zero quantities and comma-grouped quantities. Long form preserves empty fields
+  produce tab-delimited text without headers, in displayed row order, with
+  comma-grouped quantities. Parsed imports omit zero rows; downstream sources
+  such as Required at zero sets can still export zero quantities. Long form preserves empty fields
   and descriptive metadata, recalculating volume and estimated price for each
   exported quantity.
   Buttons are disabled until the first successful parse. If clipboard access is
@@ -218,7 +223,8 @@ counterparts, and provide selected Markdown text on clipboard denial.
 No JavaScript testing framework or dependencies are required.
 
 1. Parse each example above and inspect names, quantities, and empty metadata
-   cells. Check that both dash formats produce zero quantities.
+   cells. Confirm dash/zero-quantity rows are omitted. An all-zero list should
+   parse successfully to an empty preview without updating cached metadata.
 2. Parse the inventory example. Confirm that `Antimatter Charge L` has quantity
    `9,000`, with calculated `225.00 m3` and `1,923,930.00 ISK` using the latest
    stack's per-unit values.
@@ -265,8 +271,9 @@ headers, each with Quantity, Volume, and Est. Price columns. Unit volume is cach
 volume divided by its source quantity. Per-set and required volumes multiply that
 unrounded approximate unit value by their respective quantities, then round half up
 to two decimal places in m3. Integer arithmetic preserves quantity scaling and
-displayed totals, not the original game's precision. Missing volume or a zero source
-quantity leaves both volume cells blank. Valid zero volume displays `0.00 m3`.
+displayed totals, not the original game's precision. Missing volume leaves both
+volume cells blank. Valid zero volume displays `0.00 m3`; zero-quantity input rows
+are ignored before metadata is cached.
 Malformed nonempty inventory volume rejects the import with a line-numbered error;
 decimal volumes with optional comma grouping and `m3` or `m³` units are supported.
 
@@ -357,23 +364,22 @@ cache. Both clear any outdated Multi-buy export feedback and manual-copy text.
 - Send to empty inventory without a confirmation dialog. Then send overlapping
   and new names: cancel first and confirm nothing changes, then accept and verify
   exact summed quantities, preserved existing-only items, appended new names, and
-  recalculated shortfalls. A nonempty list of zero-quantity items still requires
-  confirmation. Parsed quantities and the base material set must remain unchanged.
-- Repeat the confirmation, cancellation, overlap, new-name, and zero-quantity
+  recalculated shortfalls. Parsed quantities and the base material set must remain unchanged.
+- Repeat the confirmation, cancellation, overlap, and new-name
   checks for **Send To Material Set**. Verify that quantities combine before
   multiplication, the multiplier and inventory remain unchanged, and required
   quantities and Multi-buy shortfalls recalculate only after confirmation.
 - Cache `2.50 m3` for a source quantity of `100`. Assign a base quantity of `320`
   and select three sets: per-set volume must be `8.00 m3`, required volume
-  `24.00 m3`. Check grouped headers, missing/zero-source volumes, zero sets,
+  `24.00 m3`. Check grouped headers, missing volumes, zero sets,
   half-up rounding, and that required volume uses unrounded unit volume rather
   than multiplying the rounded per-set display.
 - Cache `21,377.00 ISK` for a source quantity of `100`: a short-form quantity of
   `200` must display/export `42,754.00 ISK`. With inventory `200`, base `320`,
   and three sets, Required exports `960`, `24.00 m3`, `205,219.20 ISK`; Multi-buy
   exports `760`, `19.00 m3`, `162,465.20 ISK`. Verify the most recent unit estimate
-  wins, malformed prices leave the cache unchanged, and zero-source unit values
-  remain unknown. Full exports round stack totals to two decimals; reimporting
+  wins, malformed prices leave the cache unchanged. Full exports round stack
+  totals to two decimals; reimporting
   rounded totals can lose sub-cent/sub-hundredth precision, unlike the in-memory
   approximate unit cache.
 - Verify the visible precision note, floating-point unit metadata (100 units /
@@ -382,3 +388,8 @@ cache. Both clear any outdated Multi-buy export feedback and manual-copy text.
   known-zero versus nonzero volume does warn, and Locked preserves cached numbers.
   Check scientific-notation unit values, very large quantities, and numeric
   overflow/underflow errors without partial commits.
+- Parse a full inventory row with quantity `0` and distinctive metadata between
+  positive rows. Confirm it is absent from the preview and cache and does not
+  replace earlier cached metadata; a zero-only import succeeds with an empty
+  preview. Confirm duplicate positive rows still sum and zero rows do not alter
+  their total or ordering.
