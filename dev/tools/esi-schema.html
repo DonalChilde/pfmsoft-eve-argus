@@ -1,0 +1,509 @@
+<!doctype html>
+<!--
+  ESI schema browser. Open directly in a modern browser; no server or build is
+  required. ESI downloads require network access and browser CORS permission.
+  Loaded data stays in memory until the page is reloaded.
+-->
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>EVE ESI schema browser</title>
+  <style>
+    :root { color-scheme: dark; font-family: system-ui, sans-serif; background: #111827; color: #e5e7eb; }
+    * { box-sizing: border-box; }
+    body { margin: 0; padding: 1.5rem; }
+    h1 { margin-top: 0; font-size: 1.6rem; }
+    h2 { margin-top: 0; font-size: 1.2rem; }
+    p { line-height: 1.5; }
+    .intro, .help { color: #b9c4d4; }
+    .help { font-size: .9rem; }
+    main { display: grid; grid-template-columns: minmax(16rem, 1fr) minmax(0, 3fr); grid-template-areas: "dates changelog" "sources file" "operations schema"; gap: .75rem; align-items: start; }
+    #sources-pane { grid-area: sources; }
+    #file-pane { grid-area: file; }
+    #operations-pane { grid-area: operations; }
+    #schema-pane { grid-area: schema; }
+    #dates-pane { grid-area: dates; }
+    #changelog-pane { grid-area: changelog; }
+    section { min-width: 0; padding: 1.25rem; border: 1px solid #475569; border-radius: .5rem; background: #1e293b; }
+    label { display: block; margin: .75rem 0 .4rem; font-weight: 600; }
+    input, select { width: 100%; padding: .6rem; background: #0f172a; color: #f1f5f9; border: 1px solid #94a3b8; border-radius: .25rem; font: inherit; }
+    button { padding: .65rem 1rem; border: 0; border-radius: .25rem; background: #93c5fd; color: #0f172a; font: inherit; font-weight: 600; cursor: pointer; }
+    button:disabled { opacity: .5; cursor: not-allowed; }
+    .actions { display: flex; flex-wrap: wrap; gap: .5rem; margin-top: .75rem; }
+    .view-options { display: flex; flex-wrap: wrap; gap: .75rem; margin: .75rem 0 0; padding: .75rem; border: 1px solid #475569; }
+    .view-options label { display: flex; align-items: center; gap: .4rem; margin: 0; }
+    .view-options input { width: auto; margin: 0; }
+    .status { min-height: 1.5rem; overflow-wrap: anywhere; }
+    .error { color: #fecaca; }
+    .success { color: #bbf7d0; }
+    pre { max-height: 75vh; overflow: auto; padding: .75rem; background: #0f172a; border: 1px solid #475569; border-radius: .25rem; white-space: pre; font: .85rem/1.5 monospace; }
+    details { margin: .5rem 0; }
+    summary { cursor: pointer; font-weight: 600; overflow-wrap: anywhere; }
+    ul { padding-left: 1.25rem; }
+    .operation-link { display: inline; padding: 0; border: 0; background: none; color: #93c5fd; font: inherit; text-align: left; text-decoration: underline; overflow-wrap: anywhere; }
+    :focus-visible { outline: 3px solid #fbbf24; outline-offset: 3px; }
+    [hidden] { display: none !important; }
+    @media (max-width: 900px) { body { padding: 1rem; } main { grid-template-columns: minmax(0, 1fr); grid-template-areas: "dates" "changelog" "sources" "file" "operations" "schema"; } }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>EVE ESI schema browser</h1>
+    <p class="intro">Fetch or open an ESI OpenAPI schema, inspect its operations, and save JSON. Data stays in this page until reload.</p>
+    <p class="help">ESI access requires an internet connection and browser permission for cross-origin requests. No EVE account or authentication is needed.</p>
+  </header>
+  <main>
+      <section id="dates-pane" aria-labelledby="dates-heading">
+        <h2 id="dates-heading">Compatibility dates</h2>
+        <div class="actions">
+          <button id="fetch-dates" type="button">Fetch compatibility dates</button>
+          <button id="save-dates" type="button" disabled>Save dates</button>
+        </div>
+        <p id="dates-status" class="status" role="status" aria-live="polite"></p>
+        <pre id="dates-json" tabindex="0">Not fetched.</pre>
+      </section>
+      <section id="changelog-pane" aria-labelledby="changelog-heading">
+        <h2 id="changelog-heading">Schema changelog</h2>
+        <div class="actions">
+          <button id="fetch-changelog" type="button">Fetch changelog</button>
+          <button id="save-changelog" type="button" disabled>Save changelog</button>
+        </div>
+        <p id="changelog-status" class="status" role="status" aria-live="polite"></p>
+        <pre id="changelog-json" tabindex="0">Not fetched.</pre>
+      </section>
+      <section id="sources-pane" aria-labelledby="sources-heading">
+        <h2 id="sources-heading">ESI data</h2>
+        <label for="compatibility-date">Compatibility date</label>
+        <select id="compatibility-date" disabled><option value="">Fetch dates first</option></select>
+        <div class="actions"><button id="fetch-schema" type="button" disabled>Fetch selected schema</button></div>
+      </section>
+      <section id="file-pane" aria-labelledby="file-heading">
+        <h2 id="file-heading">Schema file</h2>
+        <label for="schema-file">Open raw OpenAPI or dereferenced Argus JSON</label>
+        <input id="schema-file" type="file" accept=".json,application/json">
+        <p class="help">Raw imports have an unknown receipt timestamp. A dereferenced file cannot be converted back to its original raw schema. Dereferencing preserves sibling fields on references, unlike the current eve-link resolver.</p>
+        <div class="actions">
+          <button id="save-raw" type="button" disabled>Save raw schema</button>
+          <button id="save-dereferenced" type="button" disabled>Save dereferenced schema</button>
+        </div>
+        <p id="schema-status" class="status" role="status" aria-live="polite"></p>
+      </section>
+      <section id="operations-pane" aria-labelledby="navigation-heading">
+        <h2 id="navigation-heading">Operations by tag</h2>
+        <p class="help">Choose a tag, then an operation to inspect its JSON.</p>
+        <nav id="operations" aria-label="Schema operations"><p>No schema loaded.</p></nav>
+      </section>
+      <section id="schema-pane" aria-labelledby="schema-heading">
+        <h2 id="schema-heading">Schema</h2>
+        <p id="schema-info" class="help">No schema loaded.</p>
+        <fieldset class="view-options">
+          <legend>Display schema as</legend>
+          <label><input id="schema-view-dereferenced" name="schema-view" type="radio" value="dereferenced" checked disabled> Dereferenced</label>
+          <label><input id="schema-view-raw" name="schema-view" type="radio" value="raw" disabled> Raw</label>
+        </fieldset>
+        <p id="view-status" class="status" role="status" aria-live="polite"></p>
+        <div class="actions"><button id="show-schema" type="button" disabled>Show full schema</button></div>
+        <h3 id="view-heading">JSON</h3>
+        <pre id="schema-json" tabindex="0">No schema loaded.</pre>
+      </section>
+  </main>
+  <script>
+    "use strict";
+
+    const URLS = {
+      dates: "https://esi.evetech.net/meta/compatibility-dates",
+      schema: "https://esi.evetech.net/meta/openapi.json",
+      changelog: "https://esi.evetech.net/meta/changelog",
+    };
+    const $ = (id) => document.getElementById(id);
+    const state = {
+      dates: null,
+      changelog: null,
+      schema: null,
+      selectedOperation: null,
+      schemaRequest: 0,
+      datesRequest: 0,
+      changelogRequest: 0,
+    };
+    const methods = new Set(["get", "put", "post", "delete", "options", "head", "patch", "trace"]);
+
+    function setStatus(id, message, error = false) {
+      const element = $(id);
+      element.textContent = message;
+      element.className = `status ${error ? "error" : "success"}`;
+    }
+
+    function isObject(value) {
+      return value !== null && typeof value === "object" && !Array.isArray(value);
+    }
+
+    function isDate(value) {
+      if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+      const date = new Date(`${value}T00:00:00Z`);
+      return !Number.isNaN(date.valueOf()) && date.toISOString().slice(0, 10) === value;
+    }
+
+    function validateSchema(schema) {
+      if (!isObject(schema) || typeof schema.openapi !== "string" ||
+          !isObject(schema.info) || !isObject(schema.paths) || !isObject(schema.components)) {
+        throw new Error("Expected an OpenAPI object with openapi, info, paths, and components.");
+      }
+    }
+
+    function isTimestamp(value) {
+      return typeof value === "string" &&
+        /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/.test(value) &&
+        isDate(value.slice(0, 10)) && !Number.isNaN(Date.parse(value));
+    }
+
+    function parseSchema(input, source, timestamp = null) {
+      let raw = null;
+      let dereferenced = null;
+      if (isObject(input) && Object.hasOwn(input, "dereferenced_schema")) {
+        if (!Object.hasOwn(input, "timestamp") ||
+            (input.timestamp !== null && !isTimestamp(input.timestamp))) {
+          throw new Error("The dereferenced schema timestamp must be an ISO timestamp or null.");
+        }
+        validateSchema(input.dereferenced_schema);
+        if (hasRefs(input.dereferenced_schema)) {
+          throw new Error("The dereferenced schema still contains $ref values.");
+        }
+        dereferenced = input.dereferenced_schema;
+        timestamp = input.timestamp;
+      } else {
+        validateSchema(input);
+        raw = input;
+      }
+      return { raw, dereferenced, timestamp, source };
+    }
+
+    function hasRefs(value) {
+      if (Array.isArray(value)) return value.some(hasRefs);
+      if (!isObject(value)) return false;
+      return Object.hasOwn(value, "$ref") || Object.values(value).some(hasRefs);
+    }
+
+    function dereference(root) {
+      function resolve(value, ancestors) {
+        if (!isObject(value) && !Array.isArray(value)) return value;
+        if (ancestors.has(value)) throw new Error("Cyclic reference detected.");
+        const next = new Set(ancestors);
+        next.add(value);
+        if (Array.isArray(value)) return value.map((item) => resolve(item, next));
+        if (Object.hasOwn(value, "$ref")) {
+          const ref = value.$ref;
+          if (typeof ref !== "string" || (ref !== "#" && !ref.startsWith("#/"))) {
+            throw new Error(`Only internal JSON pointer references are supported: ${String(ref)}`);
+          }
+          let target = root;
+          let pointer;
+          try {
+            pointer = decodeURIComponent(ref.slice(1));
+          } catch {
+            throw new Error(`Invalid JSON pointer: ${ref}`);
+          }
+          const tokens = pointer === "" ? [] : pointer.slice(1).split("/");
+          for (const token of tokens) {
+            if (/~(?![01])/.test(token)) throw new Error(`Invalid JSON pointer: ${ref}`);
+            const key = token.replace(/~1/g, "/").replace(/~0/g, "~");
+            if ((!isObject(target) && !Array.isArray(target)) || !Object.hasOwn(target, key)) {
+              throw new Error(`Missing reference target: ${ref}`);
+            }
+            target = target[key];
+          }
+          const resolved = resolve(target, next);
+          const siblings = Object.entries(value).filter(([key]) => key !== "$ref");
+          if (!siblings.length) return resolved;
+          if (!isObject(resolved)) throw new Error(`Reference with sibling fields does not resolve to an object: ${ref}`);
+          return {
+            ...resolved,
+            ...Object.fromEntries(siblings.map(([key, item]) => [key, resolve(item, next)])),
+          };
+        }
+        return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, resolve(item, next)]));
+      }
+      return resolve(root, new Set());
+    }
+
+    function downloadJson(value, filename) {
+      const blob = new Blob([JSON.stringify(value, null, 2) + "\n"], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = filename;
+      document.body.append(anchor);
+      anchor.click();
+      anchor.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    }
+
+    function saveSchema(value, format) {
+      const schema = state.schema.raw || state.schema.dereferenced;
+      const version = schema.info.version;
+      const date = isDate(version) ? `-${version}` : "";
+      downloadJson(value, `esi-schema${date}-${format}.json`);
+      if (date) {
+        setStatus("schema-status", `${format === "raw" ? "Raw" : "Dereferenced"} schema prepared for download.`);
+      } else {
+        setStatus("schema-status", "Compatibility date is unknown; the filename has no date.", true);
+      }
+    }
+
+    function saveMetadata(value, dates, filename, status) {
+      const latest = dates.length && dates.every(isDate)
+        ? dates.reduce((current, date) => date > current ? date : current)
+        : null;
+      downloadJson(value, `${filename}${latest ? `-${latest}` : ""}.json`);
+      if (latest) {
+        setStatus(status, "Prepared for download.");
+      } else {
+        setStatus(status, "Latest date is unknown because the list is empty or contains an invalid date; the filename has no date.", true);
+      }
+    }
+
+    async function fetchJson(url) {
+      const response = await fetch(url);
+      if (!response.ok) throw new Error(`HTTP ${response.status} ${response.statusText}`.trim());
+      try {
+        return await response.json();
+      } catch (error) {
+        if (error instanceof SyntaxError) throw new Error("ESI returned invalid JSON.");
+        throw error;
+      }
+    }
+
+    function operationIndex(schema) {
+      const groups = new Map();
+      let skipped = 0;
+      for (const [path, pathItem] of Object.entries(schema.paths)) {
+        if (!isObject(pathItem)) { skipped++; continue; }
+        if (Object.hasOwn(pathItem, "$ref")) { skipped++; continue; }
+        for (const [method, operation] of Object.entries(pathItem)) {
+          if (!methods.has(method.toLowerCase())) continue;
+          if (!isObject(operation) || typeof operation.operationId !== "string" || !operation.operationId) {
+            skipped++;
+            continue;
+          }
+          const tags = Array.isArray(operation.tags) ? operation.tags.filter((tag) => typeof tag === "string" && tag) : [];
+          for (const tag of new Set(tags.length ? tags : ["(Untagged)"])) {
+            if (!groups.has(tag)) groups.set(tag, []);
+            groups.get(tag).push({ path, method: method.toUpperCase(), methodKey: method, operation });
+          }
+        }
+      }
+      return { groups, skipped };
+    }
+
+    function renderOperations(schema) {
+      const nav = $("operations");
+      nav.replaceChildren();
+      const { groups, skipped } = operationIndex(schema);
+      for (const tag of [...groups.keys()].sort()) {
+        const details = document.createElement("details");
+        const summary = document.createElement("summary");
+        summary.textContent = tag;
+        details.append(summary);
+        const list = document.createElement("ul");
+        const operations = groups.get(tag).sort((a, b) =>
+          a.operation.operationId.localeCompare(b.operation.operationId) ||
+          a.path.localeCompare(b.path) || a.method.localeCompare(b.method));
+        for (const item of operations) {
+          const li = document.createElement("li");
+          const button = document.createElement("button");
+          button.type = "button";
+          button.className = "operation-link";
+          button.textContent = item.operation.operationId;
+          button.addEventListener("click", () => {
+            state.selectedOperation = { path: item.path, method: item.methodKey };
+            showCurrentView();
+            $("schema-heading").scrollIntoView({ block: "start" });
+          });
+          li.append(button);
+          list.append(li);
+        }
+        details.append(list);
+        nav.append(details);
+      }
+      if (!groups.size || skipped) {
+        const message = document.createElement("p");
+        message.className = "help";
+        message.textContent = !groups.size ? "No indexable operations found." : `${skipped} path or operation entries could not be indexed.`;
+        nav.append(message);
+      }
+    }
+
+    function showCurrentView() {
+      const schema = state.schema;
+      if (!schema) return;
+      const selected = $("schema-view-raw").checked ? "raw" : "dereferenced";
+      const data = selected === "raw" ? schema.raw : schema.dereferenced;
+      const selection = state.selectedOperation;
+      if (schema.dereferenced) $("view-status").textContent = "";
+      if (selection) {
+        const operation = data.paths[selection.path]?.[selection.method];
+        if (isObject(operation) && typeof operation.operationId === "string") {
+          $("view-heading").textContent = `${operation.operationId} — ${selection.method.toUpperCase()} ${selection.path}`;
+          $("schema-json").textContent = JSON.stringify(operation, null, 2);
+          return;
+        }
+        state.selectedOperation = null;
+        setStatus("view-status", "The selected operation is not available in this view; showing the full schema.", true);
+      }
+      $("view-heading").textContent = selected === "raw" ? "Raw OpenAPI JSON" : "Dereferenced schema JSON";
+      $("schema-json").textContent = JSON.stringify(data, null, 2);
+    }
+
+    function showFullSchema() {
+      state.selectedOperation = null;
+      showCurrentView();
+    }
+
+    function applySchema(schema) {
+      let conversionError = null;
+      if (!schema.dereferenced) {
+        try {
+          schema.dereferenced = dereference(schema.raw);
+        } catch (error) {
+          conversionError = error;
+        }
+      }
+      state.schema = schema;
+      state.selectedOperation = null;
+      $("schema-info").textContent = `${schema.source} · ${schema.raw ? "raw OpenAPI" : "dereferenced"} · Received: ${schema.timestamp || "unknown"}`;
+      $("save-raw").disabled = !schema.raw;
+      $("save-dereferenced").disabled = false;
+      $("schema-view-raw").disabled = !schema.raw;
+      $("schema-view-dereferenced").disabled = !schema.dereferenced;
+      $("schema-view-raw").checked = !schema.dereferenced;
+      $("schema-view-dereferenced").checked = !!schema.dereferenced;
+      if (conversionError) {
+        setStatus("view-status", `Could not dereference schema; showing raw JSON: ${conversionError.message}`, true);
+      } else {
+        $("view-status").textContent = "";
+      }
+      $("show-schema").disabled = false;
+      renderOperations(schema.dereferenced || schema.raw);
+      showFullSchema();
+    }
+
+    $("fetch-dates").addEventListener("click", async () => {
+      const request = ++state.datesRequest;
+      setStatus("dates-status", "Fetching compatibility dates…");
+      try {
+        const result = await fetchJson(URLS.dates);
+        if (!isObject(result) || !Array.isArray(result.compatibility_dates) ||
+            !result.compatibility_dates.every(isDate)) {
+          throw new Error("ESI returned an invalid compatibility date list.");
+        }
+        if (request !== state.datesRequest) return;
+        state.dates = result;
+        $("dates-json").textContent = JSON.stringify(result, null, 2);
+        $("save-dates").disabled = false;
+        const select = $("compatibility-date");
+        const previous = select.value;
+        select.replaceChildren();
+        const dates = [...new Set(result.compatibility_dates)].sort().reverse();
+        if (!dates.length) {
+          select.add(new Option("No dates available", ""));
+          select.disabled = true;
+          $("fetch-schema").disabled = true;
+        } else {
+          for (const date of dates) select.add(new Option(date, date));
+          select.value = dates.includes(previous) ? previous : dates[0];
+          select.disabled = false;
+          $("fetch-schema").disabled = false;
+        }
+        if (previous && previous !== select.value) {
+          state.schemaRequest++;
+          setStatus("schema-status", "Compatibility dates changed. Fetch the selected schema to load it.");
+        }
+        setStatus("dates-status", `Loaded ${dates.length} compatibility dates.`);
+      } catch (error) {
+        if (request === state.datesRequest) setStatus("dates-status", `Could not fetch dates: ${error.message}`, true);
+      }
+    });
+
+    $("fetch-changelog").addEventListener("click", async () => {
+      const request = ++state.changelogRequest;
+      setStatus("changelog-status", "Fetching changelog…");
+      try {
+        const result = await fetchJson(URLS.changelog);
+        if (!isObject(result)) throw new Error("ESI returned an invalid changelog.");
+        if (request !== state.changelogRequest) return;
+        state.changelog = result;
+        $("changelog-json").textContent = JSON.stringify(result, null, 2);
+        $("save-changelog").disabled = false;
+        setStatus("changelog-status", "Changelog loaded.");
+      } catch (error) {
+        if (request === state.changelogRequest) setStatus("changelog-status", `Could not fetch changelog: ${error.message}`, true);
+      }
+    });
+
+    $("compatibility-date").addEventListener("change", () => {
+      state.schemaRequest++;
+      setStatus("schema-status", "Date selected. Fetch the schema to load it.");
+    });
+
+    $("fetch-schema").addEventListener("click", async () => {
+      const date = $("compatibility-date").value;
+      const request = ++state.schemaRequest;
+      setStatus("schema-status", `Fetching schema for ${date}…`);
+      try {
+        const url = new URL(URLS.schema);
+        url.searchParams.set("compatibility_date", date);
+        const result = await fetchJson(url);
+        const schema = parseSchema(result, `ESI ${date}`, new Date().toISOString());
+        if (request !== state.schemaRequest) return;
+        applySchema(schema);
+        setStatus("schema-status", `Schema for ${date} loaded.`);
+      } catch (error) {
+        if (request === state.schemaRequest) setStatus("schema-status", `Could not fetch schema for ${date}: ${error.message}`, true);
+      }
+    });
+
+    $("schema-file").addEventListener("change", async (event) => {
+      const file = event.target.files[0];
+      if (!file) return;
+      const request = ++state.schemaRequest;
+      setStatus("schema-status", `Opening ${file.name}…`);
+      try {
+        const input = JSON.parse(await file.text());
+        const schema = parseSchema(input, `File: ${file.name}`);
+        if (request !== state.schemaRequest) return;
+        applySchema(schema);
+        setStatus("schema-status", `Loaded ${file.name}.`);
+      } catch (error) {
+        if (request === state.schemaRequest) setStatus("schema-status", `Could not open ${file.name}: ${error.message}`, true);
+      } finally {
+        event.target.value = "";
+      }
+    });
+
+    $("save-dates").addEventListener("click", () => saveMetadata(
+      state.dates, state.dates.compatibility_dates, "esi-compatibility-dates", "dates-status",
+    ));
+    $("save-changelog").addEventListener("click", () => {
+      const entries = Object.hasOwn(state.changelog, "changelog")
+        ? state.changelog.changelog : state.changelog;
+      saveMetadata(
+        state.changelog, isObject(entries) ? Object.keys(entries) : [],
+        "esi-schema-changelog", "changelog-status",
+      );
+    });
+    $("save-raw").addEventListener("click", () => saveSchema(state.schema.raw, "raw"));
+    $("save-dereferenced").addEventListener("click", () => {
+      try {
+        const schema = state.schema;
+        if (!schema.dereferenced) schema.dereferenced = dereference(schema.raw);
+        saveSchema({ dereferenced_schema: schema.dereferenced, timestamp: schema.timestamp }, "dereferenced");
+      } catch (error) {
+        setStatus("schema-status", `Could not dereference schema: ${error.message}`, true);
+      }
+    });
+    $("schema-view-raw").addEventListener("change", showCurrentView);
+    $("schema-view-dereferenced").addEventListener("change", showCurrentView);
+    $("show-schema").addEventListener("click", showFullSchema);
+  </script>
+</body>
+</html>
