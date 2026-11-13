@@ -1,0 +1,396 @@
+<!doctype html>
+<!--
+  Standalone ESI market-group downloader. Open directly in a modern browser.
+  Network access and ESI cross-origin permission are required for downloads.
+  Data stays in memory until reload.
+-->
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>EVE market groups</title>
+  <style>
+    :root { color-scheme: dark; font-family: system-ui, sans-serif; background: #111827; color: #e5e7eb; }
+    * { box-sizing: border-box; }
+    body { margin: 0; padding: 1.5rem; }
+    h1 { margin-top: 0; font-size: 1.6rem; }
+    h2 { margin-top: 0; font-size: 1.2rem; }
+    p { line-height: 1.5; }
+    .intro, .help { color: #b9c4d4; }
+    .help { font-size: .9rem; }
+    main { display: grid; grid-template-columns: minmax(16rem, 1fr) minmax(0, 2fr); gap: .75rem; align-items: start; }
+    section { min-width: 0; padding: 1.25rem; border: 1px solid #475569; border-radius: .5rem; background: #1e293b; }
+    section + section { margin-top: .75rem; }
+    label { display: block; margin: .75rem 0 .4rem; font-weight: 600; }
+    input, select { width: 100%; padding: .6rem; background: #0f172a; color: #f1f5f9; border: 1px solid #94a3b8; border-radius: .25rem; font: inherit; }
+    button { padding: .65rem 1rem; border: 0; border-radius: .25rem; background: #93c5fd; color: #0f172a; font: inherit; font-weight: 600; cursor: pointer; }
+    button:disabled { opacity: .5; cursor: not-allowed; }
+    .actions { display: flex; flex-wrap: wrap; gap: .5rem; margin-top: .75rem; }
+    .status { min-height: 1.5rem; overflow-wrap: anywhere; }
+    .error { color: #fecaca; }
+    .success { color: #bbf7d0; }
+    pre { max-height: 75vh; overflow: auto; padding: .75rem; background: #0f172a; border: 1px solid #475569; border-radius: .25rem; white-space: pre; font: .85rem/1.5 monospace; }
+    :focus-visible { outline: 3px solid #fbbf24; outline-offset: 3px; }
+    @media (max-width: 900px) { body { padding: 1rem; } main { grid-template-columns: minmax(0, 1fr); } }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>EVE market groups</h1>
+    <p class="intro">Load an ESI schema, then download market groups and their paths as JSON. Data stays in this page until reload.</p>
+    <p class="help">ESI access requires an internet connection and browser permission for cross-origin requests. No EVE account or authentication is needed.</p>
+  </header>
+  <main>
+    <div>
+      <section aria-labelledby="schema-heading">
+        <h2 id="schema-heading">ESI schema</h2>
+        <label for="schema-file">Open raw OpenAPI or dereferenced schema JSON</label>
+        <input id="schema-file" type="file" accept=".json,application/json">
+        <p class="help">Dereferenced files contain <code>dereferenced_schema</code> and <code>timestamp</code>.</p>
+        <div class="actions"><button id="fetch-schema" type="button">Fetch latest schema</button></div>
+        <p id="schema-status" class="status" role="status" aria-live="polite">A schema is required before fetching market groups.</p>
+        <p id="schema-info" class="help">No schema loaded.</p>
+      </section>
+      <section aria-labelledby="fetch-heading">
+        <h2 id="fetch-heading">Market groups</h2>
+        <p class="help">Up to 10 details are fetched concurrently, without time-based rate limiting or automatic retries. A failed request stops the download; no partial dataset is exported.</p>
+        <label for="language">Language</label>
+        <select id="language">
+          <option value="en" selected>English (en)</option>
+          <option value="de">German (de)</option>
+          <option value="es">Spanish (es)</option>
+          <option value="fr">French (fr)</option>
+          <option value="ja">Japanese (ja)</option>
+          <option value="ko">Korean (ko)</option>
+          <option value="ru">Russian (ru)</option>
+          <option value="zh">Chinese (zh)</option>
+        </select>
+        <p class="help">The selected language applies to the next fetch; the current dataset and its save filename retain the language used to fetch it.</p>
+        <div class="actions">
+          <button id="fetch-groups" type="button" disabled>Fetch market groups</button>
+          <button id="save-groups" type="button" disabled>Save JSON</button>
+        </div>
+        <p id="groups-status" class="status" role="status" aria-live="polite"></p>
+      </section>
+    </div>
+    <section aria-labelledby="dataset-heading">
+      <h2 id="dataset-heading">Dataset</h2>
+      <p class="help">The receipt time is from the last completed response; expiry is from the ID-list response. ESI requests do not form an atomic snapshot. ESI type lists may differ from static data exports. Fields unavailable from ESI, including <code>icon_id</code> and <code>has_types</code>, are omitted.</p>
+      <h3>Market paths</h3>
+      <p class="help">Market groups form a hierarchy. Each path starts at a root group and follows its parent-child chain to the group itself. <code>int_path</code> contains the group IDs; <code>str_path</code> contains the corresponding names returned by ESI in the same order. For example, an illustrative child might have <code>int_path: [4, 9]</code> and <code>str_path: ["Ships", "Frigates"]</code>.</p>
+      <p class="help">A root group's path contains only itself and its <code>parent_group_id</code> is null. For other groups, <code>parent_group_id</code> identifies the immediate parent. <code>types</code> contains the type IDs returned by ESI for that group, not an aggregation of its descendants.</p>
+      <pre id="dataset-json" tabindex="0">No dataset loaded.</pre>
+    </section>
+  </main>
+  <script>
+    "use strict";
+
+    const ESI_ORIGIN = "https://esi.evetech.net";
+    const MAX_CONCURRENCY = 10;
+    const $ = (id) => document.getElementById(id);
+    const state = { schema: null, dataset: null, datasetLanguage: null, loadingSchema: false, loadingGroups: false };
+
+    function isObject(value) {
+      return value !== null && typeof value === "object" && !Array.isArray(value);
+    }
+
+    function isDate(value) {
+      if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+      const date = new Date(`${value}T00:00:00Z`);
+      return !Number.isNaN(date.valueOf()) && date.toISOString().slice(0, 10) === value;
+    }
+
+    function isTimestamp(value) {
+      return typeof value === "string" &&
+        /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/.test(value) &&
+        isDate(value.slice(0, 10)) && !Number.isNaN(Date.parse(value));
+    }
+
+    function resolvePathItem(root, item) {
+      const seen = new Set();
+      while (isObject(item) && Object.hasOwn(item, "$ref")) {
+        const ref = item.$ref;
+        if (typeof ref !== "string" || !ref.startsWith("#/")) throw new Error(`Unsupported schema path reference: ${String(ref)}`);
+        if (seen.has(ref)) throw new Error(`Cyclic schema path reference: ${ref}`);
+        seen.add(ref);
+        let pointer;
+        try {
+          pointer = decodeURIComponent(ref.slice(2));
+        } catch {
+          throw new Error(`Invalid schema path reference: ${ref}`);
+        }
+        let target = root;
+        for (const token of pointer.split("/")) {
+          if (/~(?![01])/.test(token)) throw new Error(`Invalid schema path reference: ${ref}`);
+          const key = token.replace(/~1/g, "/").replace(/~0/g, "~");
+          if ((!isObject(target) && !Array.isArray(target)) || !Object.hasOwn(target, key)) {
+            throw new Error(`Missing schema path reference: ${ref}`);
+          }
+          target = target[key];
+        }
+        if (!isObject(target)) throw new Error(`Invalid schema path target: ${ref}`);
+        item = { ...target, ...Object.fromEntries(Object.entries(item).filter(([key]) => key !== "$ref")) };
+      }
+      return item;
+    }
+
+    function parseMarketSchema(input, source, timestamp = null) {
+      let schema = input;
+      if (isObject(input) && Object.hasOwn(input, "dereferenced_schema")) {
+        if (!Object.hasOwn(input, "timestamp") || (input.timestamp !== null && !isTimestamp(input.timestamp))) {
+          throw new Error("The schema timestamp must be an ISO timestamp or null.");
+        }
+        schema = input.dereferenced_schema;
+        timestamp = input.timestamp;
+      }
+      if (!isObject(schema) || typeof schema.openapi !== "string" ||
+          !isObject(schema.info) || !isObject(schema.paths) || !isObject(schema.components)) {
+        throw new Error("Expected an OpenAPI object with openapi, info, paths, and components.");
+      }
+      const compatibilityDate = schema.info.version;
+      if (!isDate(compatibilityDate)) throw new Error("Schema info.version must contain a valid compatibility date.");
+      const found = new Map();
+      const wanted = new Set(["GetMarketsGroups", "GetMarketsGroupsMarketGroupId"]);
+      for (const [path, original] of Object.entries(schema.paths)) {
+        const item = resolvePathItem(schema, original);
+        if (!isObject(item) || !isObject(item.get) || !wanted.has(item.get.operationId)) continue;
+        if (found.has(item.get.operationId)) throw new Error(`Duplicate schema operation: ${item.get.operationId}`);
+        found.set(item.get.operationId, path);
+      }
+      for (const operation of wanted) {
+        if (!found.has(operation)) throw new Error(`Schema is missing GET operation ${operation}.`);
+      }
+      const listPath = found.get("GetMarketsGroups");
+      const detailPath = found.get("GetMarketsGroupsMarketGroupId");
+      const safePath = (path) => typeof path === "string" && /^\/(?!\/)[^?#\\]*$/.test(path);
+      if (!safePath(listPath) || /[{}]/.test(listPath) || !safePath(detailPath) ||
+          !detailPath.includes("{market_group_id}") ||
+          /[{}]/.test(detailPath.replace("{market_group_id}", ""))) {
+        throw new Error("Schema market-group operation paths are invalid.");
+      }
+      return { compatibilityDate, listPath, detailPath, source, timestamp };
+    }
+
+    function positiveId(value) {
+      return Number.isSafeInteger(value) && value > 0;
+    }
+
+    function buildDataset({ groups, receivedAt, expiresAt }) {
+      const records = new Map();
+      for (const group of groups) {
+        if (!isObject(group) || !positiveId(group.market_group_id) ||
+            typeof group.name !== "string" || typeof group.description !== "string" ||
+            !Array.isArray(group.types) || !group.types.every(positiveId) ||
+            new Set(group.types).size !== group.types.length ||
+            (group.parent_group_id != null && !positiveId(group.parent_group_id))) {
+          throw new Error(`Invalid market group or type data for ID ${group?.market_group_id}.`);
+        }
+        if (records.has(group.market_group_id)) throw new Error(`Duplicate market group ${group.market_group_id}.`);
+        records.set(group.market_group_id, group);
+      }
+      const paths = new Map();
+      const active = new Set();
+      function getPath(id) {
+        if (paths.has(id)) return paths.get(id);
+        if (active.has(id)) throw new Error(`Market group parent cycle at ${id}.`);
+        const group = records.get(id);
+        if (!group) throw new Error(`Missing market group parent ${id}.`);
+        active.add(id);
+        const parent = group.parent_group_id == null ? { ids: [], names: [] } : getPath(group.parent_group_id);
+        const path = { ids: [...parent.ids, id], names: [...parent.names, group.name] };
+        active.delete(id);
+        paths.set(id, path);
+        return path;
+      }
+      const result = {};
+      for (const id of [...records.keys()].sort((a, b) => a - b)) {
+        const group = records.get(id);
+        const path = getPath(id);
+        result[id] = {
+          market_group_id: id,
+          description: group.description,
+          int_path: path.ids,
+          name: group.name,
+          parent_group_id: group.parent_group_id ?? null,
+          str_path: path.names,
+          types: [...group.types].sort((a, b) => a - b),
+        };
+      }
+      return { received_at: receivedAt, expires_at: expiresAt, market_groups: result };
+    }
+
+    async function getJson(url, options = {}) {
+      const response = await fetch(url, options);
+      if (!response.ok) {
+        const retry = response.headers.get("Retry-After");
+        throw new Error(`HTTP ${response.status} ${response.statusText}${retry ? `; retry after ${retry}` : ""}`.trim());
+      }
+      let data;
+      try {
+        data = await response.json();
+      } catch (error) {
+        if (error instanceof SyntaxError) throw new Error("ESI returned invalid JSON.");
+        throw error;
+      }
+      return { data, response, receivedAt: new Date().toISOString() };
+    }
+
+    async function fetchMarketGroups(schema, progress, language) {
+      const controller = new AbortController();
+      const options = { headers: { "X-Compatibility-Date": schema.compatibilityDate, "Accept-Language": language }, signal: controller.signal };
+      const list = await getJson(new URL(schema.listPath, ESI_ORIGIN), options);
+      if (!Array.isArray(list.data) || !list.data.every(positiveId) || new Set(list.data).size !== list.data.length) {
+        throw new Error("ESI returned invalid or duplicate market group IDs.");
+      }
+      const expiry = list.response.headers.get("Expires");
+      const parsedExpiry = expiry === null ? null : Date.parse(expiry);
+      if (parsedExpiry !== null && Number.isNaN(parsedExpiry)) throw new Error("The ID-list response has an invalid Expires header.");
+      const ids = [...list.data].sort((a, b) => a - b);
+      const details = [];
+      let next = 0;
+      let failure = null;
+      progress(0, ids.length);
+      async function worker() {
+        while (next < ids.length && !controller.signal.aborted) {
+          const id = ids[next++];
+          try {
+            const path = schema.detailPath.replace("{market_group_id}", String(id));
+            const result = await getJson(new URL(path, ESI_ORIGIN), options);
+            if (!isObject(result.data) || result.data.market_group_id !== id) {
+              throw new Error(`ESI returned the wrong market group for ID ${id}.`);
+            }
+            details.push(result);
+            progress(details.length, ids.length);
+          } catch (error) {
+            if (!failure) {
+              failure = new Error(`Market group ${id}: ${error.message}`, { cause: error });
+              controller.abort();
+            }
+            throw failure;
+          }
+        }
+      }
+      const workers = Array.from({ length: Math.min(MAX_CONCURRENCY, ids.length) }, () => worker());
+      try {
+        await Promise.all(workers);
+      } catch (error) {
+        await Promise.allSettled(workers);
+        throw error;
+      }
+      const receivedAt = details.reduce((latest, item) => item.receivedAt > latest ? item.receivedAt : latest, list.receivedAt);
+      return buildDataset({
+        groups: details.map((item) => item.data),
+        receivedAt,
+        expiresAt: parsedExpiry === null ? null : new Date(parsedExpiry).toISOString(),
+      });
+    }
+
+    function setStatus(id, message, error = false) {
+      const element = $(id);
+      element.textContent = message;
+      element.className = `status ${error ? "error" : "success"}`;
+    }
+
+    function updateControls() {
+      const busy = state.loadingSchema || state.loadingGroups;
+      $("schema-file").disabled = busy;
+      $("fetch-schema").disabled = busy;
+      $("language").disabled = busy;
+      $("fetch-groups").disabled = busy || !state.schema;
+      $("save-groups").disabled = busy || !state.dataset;
+    }
+
+    function applySchema(schema) {
+      state.schema = schema;
+      state.dataset = null;
+      state.datasetLanguage = null;
+      $("schema-info").textContent = `${schema.source} · Compatibility date: ${schema.compatibilityDate} · Schema received: ${schema.timestamp || "unknown"}`;
+      $("dataset-json").textContent = "No dataset loaded.";
+      $("groups-status").textContent = "";
+    }
+
+    $("schema-file").addEventListener("change", async (event) => {
+      const file = event.target.files[0];
+      if (!file) return;
+      state.loadingSchema = true;
+      updateControls();
+      setStatus("schema-status", `Opening ${file.name}…`);
+      try {
+        const schema = parseMarketSchema(JSON.parse(await file.text()), `File: ${file.name}`);
+        applySchema(schema);
+        setStatus("schema-status", `Loaded ${file.name}.`);
+      } catch (error) {
+        setStatus("schema-status", `Could not open ${file.name}: ${error.message}`, true);
+      } finally {
+        event.target.value = "";
+        state.loadingSchema = false;
+        updateControls();
+      }
+    });
+
+    $("fetch-schema").addEventListener("click", async () => {
+      state.loadingSchema = true;
+      updateControls();
+      setStatus("schema-status", "Fetching compatibility dates…");
+      try {
+        const dates = (await getJson(`${ESI_ORIGIN}/meta/compatibility-dates`)).data;
+        if (!isObject(dates) || !Array.isArray(dates.compatibility_dates) ||
+            !dates.compatibility_dates.length || !dates.compatibility_dates.every(isDate)) {
+          throw new Error("ESI returned an invalid or empty compatibility date list.");
+        }
+        const latest = [...dates.compatibility_dates].sort().at(-1);
+        setStatus("schema-status", `Fetching schema for ${latest}…`);
+        const url = new URL("/meta/openapi.json", ESI_ORIGIN);
+        url.searchParams.set("compatibility_date", latest);
+        const result = await getJson(url);
+        const schema = parseMarketSchema(result.data, `ESI ${latest}`, result.receivedAt);
+        applySchema(schema);
+        setStatus("schema-status", `Loaded the latest schema (${schema.compatibilityDate}).`);
+      } catch (error) {
+        setStatus("schema-status", `Could not fetch the latest schema: ${error.message}`, true);
+      } finally {
+        state.loadingSchema = false;
+        updateControls();
+      }
+    });
+
+    $("fetch-groups").addEventListener("click", async () => {
+      if (!state.schema || state.loadingSchema || state.loadingGroups) return;
+      const language = $("language").value;
+      state.loadingGroups = true;
+      state.dataset = null;
+      state.datasetLanguage = null;
+      $("dataset-json").textContent = "No dataset loaded.";
+      updateControls();
+      setStatus("groups-status", "Fetching market group IDs…");
+      try {
+        const dataset = await fetchMarketGroups(state.schema, (count, total) => {
+          setStatus("groups-status", `Fetched ${count} of ${total} market groups.`);
+        }, language);
+        state.dataset = dataset;
+        state.datasetLanguage = language;
+        $("dataset-json").textContent = JSON.stringify(dataset, null, 2);
+        const count = Object.keys(dataset.market_groups).length;
+        setStatus("groups-status", `Loaded ${count} market groups.${dataset.expires_at === null ? " ID-list expiry is unknown." : ""}`, dataset.expires_at === null);
+      } catch (error) {
+        setStatus("groups-status", `Could not fetch market groups: ${error.message}`, true);
+      } finally {
+        state.loadingGroups = false;
+        updateControls();
+      }
+    });
+
+    $("save-groups").addEventListener("click", () => {
+      const blob = new Blob([JSON.stringify(state.dataset, null, 2) + "\n"], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = `market-groups-${state.datasetLanguage}-${new Date().toISOString().slice(0, 10)}.json`;
+      document.body.append(anchor);
+      anchor.click();
+      anchor.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    });
+  </script>
+</body>
+</html>

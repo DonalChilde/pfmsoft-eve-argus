@@ -80,9 +80,9 @@
       </section>
       <section id="file-pane" aria-labelledby="file-heading">
         <h2 id="file-heading">Schema file</h2>
-        <label for="schema-file">Open raw OpenAPI or dereferenced Argus JSON</label>
+        <label for="schema-file">Open raw OpenAPI or dereferenced schema JSON</label>
         <input id="schema-file" type="file" accept=".json,application/json">
-        <p class="help">Raw imports have an unknown receipt timestamp. A dereferenced file cannot be converted back to its original raw schema. Dereferencing preserves sibling fields on references, unlike the current eve-link resolver.</p>
+        <p class="help">Dereferenced files contain <code>dereferenced_schema</code> and <code>timestamp</code>. Raw imports have an unknown receipt timestamp. A dereferenced file cannot be converted back to its original raw schema. Dereferencing preserves sibling fields on references, unlike the current eve-link resolver.</p>
         <div class="actions">
           <button id="save-raw" type="button" disabled>Save raw schema</button>
           <button id="save-dereferenced" type="button" disabled>Save dereferenced schema</button>

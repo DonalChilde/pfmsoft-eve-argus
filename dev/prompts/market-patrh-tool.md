@@ -4,9 +4,38 @@ I want to implement downloading market groups in html and javascript. The html f
 
 First we will have to get the market group ids from the Eve Online ESI, then download each market group. I would like the market group downloads to happen in parallel, for better speed.
 
-After all the data has been downloaded, combine into a json dict that has recieved_by, expires_at, adn a dict of market_groups by market_group_id. the market_group data should mirror eve-argus market_group datastructure.
+After all the data has been downloaded, combine it into a JSON object with
+`received_at`, `expires_at`, and `market_groups` keyed by market group ID.
 
 create the market groups tool in the dev/tools folder, and keep the look consistent with the other tools.
+
+### Market groups tool
+
+Open [the market groups tool](../tools/market-groups.html) directly in a modern
+browser. Load a raw OpenAPI schema or a dereferenced, timestamped schema file,
+or fetch the latest schema from ESI. A valid schema is required; its
+compatibility date and market-group operations determine the requests.
+
+Choose a language (English, `en`, by default) and select **Fetch market
+groups** to fetch the ID list and then details with at most ten concurrent
+requests. The selection applies to the next fetch and does not change an
+already loaded dataset or its save filename. There is no time-based rate limit or automatic
+retry. The page shows progress and displays the completed JSON; select **Save
+JSON** to download it as `market-groups-LANGUAGE-YYYY-MM-DD.json`, using the
+language selected for that fetch and the current UTC date at save time. Any
+failed request stops the run and prevents partial export.
+Errors, including rate-limit responses, are shown; retrying starts a new run.
+Calls request names in the selected language and do not require login.
+
+The output contains `received_at` (when the last response was received),
+`expires_at` (the ID-list response's expiry, or `null` if unavailable), and
+`market_groups`, keyed by ID. Records contain `market_group_id`, `description`,
+`int_path`, `name`, `parent_group_id`, `str_path`, and `types`. Paths include the
+root and the group itself. ESI does not provide `icon_id` or `has_types`, so
+those fields are omitted. ESI type lists may differ from static data exports, and
+the responses are not an atomic snapshot. Missing parents and cycles fail
+explicitly. Run the focused tests with
+`node --test dev/tools/tests/test_market_groups.js`.
 
 ### GetMarketsGroupsMarketGroupId
 
