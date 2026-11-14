@@ -1,0 +1,656 @@
+<!doctype html>
+<!-- Standalone ESI market orders tool. Open directly in a modern browser. -->
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>EVE market orders</title>
+  <style>
+    :root { color-scheme: dark; font-family: system-ui, sans-serif; background: #111827; color: #e5e7eb; }
+    * { box-sizing: border-box; }
+    body { margin: 0; padding: 1.5rem; }
+    h1 { margin-top: 0; font-size: 1.6rem; }
+    h2 { margin-top: 0; font-size: 1.2rem; }
+    p { line-height: 1.5; }
+    .help { color: #b9c4d4; font-size: .9rem; }
+    main { display: grid; grid-template-columns: minmax(17rem, 1fr) minmax(0, 2fr); gap: .75rem; align-items: start; }
+    section { min-width: 0; padding: 1.25rem; border: 1px solid #475569; border-radius: .5rem; background: #1e293b; }
+    section + section { margin-top: .75rem; }
+    label { display: block; margin: .75rem 0 .4rem; font-weight: 600; }
+    input, select { width: 100%; padding: .6rem; background: #0f172a; color: #f1f5f9; border: 1px solid #94a3b8; border-radius: .25rem; font: inherit; }
+    button { padding: .65rem 1rem; border: 0; border-radius: .25rem; background: #93c5fd; color: #0f172a; font: inherit; font-weight: 600; cursor: pointer; }
+    button:disabled { opacity: .5; cursor: not-allowed; }
+    .actions { display: flex; flex-wrap: wrap; gap: .5rem; margin-top: .75rem; }
+    .status { min-height: 1.5rem; overflow-wrap: anywhere; }
+    .error { color: #fecaca; }
+    .success { color: #bbf7d0; }
+    pre { max-height: 60vh; overflow: auto; padding: .75rem; background: #0f172a; border: 1px solid #475569; border-radius: .25rem; white-space: pre; font: .85rem/1.5 monospace; }
+    :focus-visible { outline: 3px solid #fbbf24; outline-offset: 3px; }
+    @media (max-width: 900px) { body { padding: 1rem; } main { grid-template-columns: minmax(0, 1fr); } }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>EVE market orders</h1>
+    <p class="help">Load an ESI schema, choose a region, and fetch its market orders. Data stays in memory until reload. ESI access requires an internet connection and browser cross-origin permission; no login is needed.</p>
+    <p class="help">Pages must have the same expiry. Matching expiry is a practical approximation and does not guarantee a consistent snapshot.</p>
+  </header>
+  <main>
+    <div>
+      <section aria-labelledby="schema-heading">
+        <h2 id="schema-heading">ESI schema</h2>
+        <label for="schema-file">Open raw OpenAPI or dereferenced schema JSON</label>
+        <input id="schema-file" type="file" accept=".json,application/json">
+        <p class="help">Dereferenced files contain <code>dereferenced_schema</code> and <code>timestamp</code>.</p>
+        <div class="actions"><button id="fetch-schema" type="button">Fetch latest schema</button></div>
+        <p id="schema-status" class="status" role="status" aria-live="polite">A schema is required.</p>
+        <p id="schema-info" class="help">No schema loaded.</p>
+      </section>
+      <section aria-labelledby="names-heading">
+        <h2 id="names-heading">Resolved names</h2>
+        <label for="names-file">Open names JSON (optional)</label>
+        <input id="names-file" type="file" accept=".json,application/json">
+        <p class="help">Loaded names are retained as-is. Ensure the file uses your desired language. Only unknown IDs are requested. ESI rejects IDs above 2,147,483,647; such locations remain unresolved unless supplied in a names file. Imported structure names can use the <code>structure</code> category.</p>
+        <div class="actions">
+          <button id="resolve-names" type="button" disabled>Resolve missing order names</button>
+          <button id="save-names" type="button" disabled>Save names JSON</button>
+        </div>
+        <p id="names-status" class="status" role="status" aria-live="polite">No names loaded.</p>
+      </section>
+      <section aria-labelledby="orders-heading">
+        <h2 id="orders-heading">Market orders</h2>
+        <label for="language">Language for newly resolved names</label>
+        <select id="language">
+          <option value="en" selected>English (en)</option><option value="de">German (de)</option>
+          <option value="es">Spanish (es)</option><option value="fr">French (fr)</option>
+          <option value="ja">Japanese (ja)</option><option value="ko">Korean (ko)</option>
+          <option value="ru">Russian (ru)</option><option value="zh">Chinese (zh)</option>
+        </select>
+        <div class="actions"><button id="fetch-regions" type="button" disabled>Fetch regions</button></div>
+        <label for="region">Region</label>
+        <select id="region" disabled><option value="">Fetch regions first</option></select>
+        <div class="actions">
+          <button id="fetch-orders" type="button" disabled>Fetch market orders</button>
+          <button id="save-orders" type="button" disabled>Save orders JSON</button>
+        </div>
+        <p class="help">Up to 10 pages are fetched concurrently. There is no time-based request limiter or automatic retry.</p>
+        <p id="orders-status" class="status" role="status" aria-live="polite"></p>
+      </section>
+    </div>
+    <div>
+      <section aria-labelledby="counts-heading">
+        <h2 id="counts-heading">Order counts</h2>
+        <p id="dataset-info" class="help">No orders loaded.</p>
+        <pre id="order-counts" tabindex="0">No orders loaded.</pre>
+      </section>
+      <section aria-labelledby="summary-heading">
+        <h2 id="summary-heading">Price summary</h2>
+        <p class="help">Changes to the scope or filter apply when you calculate again. The saved summary retains the scope used to calculate it.</p>
+        <label for="summary-scope">Scope</label>
+        <select id="summary-scope"><option value="region">Region</option><option value="system">Solar system</option><option value="location">Station / location</option></select>
+        <label for="scope-id">Solar system or location</label>
+        <select id="scope-id" disabled><option value="">Not needed for a region summary</option></select>
+        <label for="filter-factor">Outlier filter factor</label>
+        <input id="filter-factor" type="number" value="100" min="1" step="any">
+        <div class="actions">
+          <button id="calculate-summary" type="button" disabled>Calculate summary</button>
+          <button id="save-summary" type="button" disabled>Save summary JSON</button>
+        </div>
+        <p id="summary-status" class="status" role="status" aria-live="polite"></p>
+        <pre id="summary-json" tabindex="0">No summary calculated.</pre>
+      </section>
+    </div>
+  </main>
+  <script>
+    "use strict";
+
+    const ESI_ORIGIN = "https://esi.evetech.net";
+    const MAX_CONCURRENCY = 10;
+    const NAME_BATCH_SIZE = 950;
+    const MAX_NAME_ID = 2147483647;
+    const CATEGORIES = new Set(["alliance", "character", "constellation", "corporation", "faction", "inventory_type", "region", "solar_system", "station", "structure"]);
+    const $ = (id) => document.getElementById(id);
+    const state = { schema: null, names: new Map(), regions: [], dataset: null, summary: null, busy: false };
+
+    function isObject(value) {
+      return value !== null && typeof value === "object" && !Array.isArray(value);
+    }
+
+    function isDate(value) {
+      if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+      const date = new Date(`${value}T00:00:00Z`);
+      return !Number.isNaN(date.valueOf()) && date.toISOString().slice(0, 10) === value;
+    }
+
+    function isTimestamp(value) {
+      return typeof value === "string" &&
+        /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/.test(value) &&
+        isDate(value.slice(0, 10)) && !Number.isNaN(Date.parse(value));
+    }
+
+    function resolvePathItem(root, item) {
+      const seen = new Set();
+      while (isObject(item) && Object.hasOwn(item, "$ref")) {
+        const ref = item.$ref;
+        if (typeof ref !== "string" || !ref.startsWith("#/")) throw new Error(`Unsupported schema path reference: ${String(ref)}`);
+        if (seen.has(ref)) throw new Error(`Cyclic schema path reference: ${ref}`);
+        seen.add(ref);
+        let pointer;
+        try { pointer = decodeURIComponent(ref.slice(2)); }
+        catch { throw new Error(`Invalid schema path reference: ${ref}`); }
+        let target = root;
+        for (const token of pointer.split("/")) {
+          if (/~(?![01])/.test(token)) throw new Error(`Invalid schema path reference: ${ref}`);
+          const key = token.replace(/~1/g, "/").replace(/~0/g, "~");
+          if ((!isObject(target) && !Array.isArray(target)) || !Object.hasOwn(target, key)) throw new Error(`Missing schema path reference: ${ref}`);
+          target = target[key];
+        }
+        if (!isObject(target)) throw new Error(`Invalid schema path target: ${ref}`);
+        item = { ...target, ...Object.fromEntries(Object.entries(item).filter(([key]) => key !== "$ref")) };
+      }
+      return item;
+    }
+
+    function parseSchema(input, source, timestamp = null) {
+      let schema = input;
+      if (isObject(input) && Object.hasOwn(input, "dereferenced_schema")) {
+        if (!Object.hasOwn(input, "timestamp") || (input.timestamp !== null && !isTimestamp(input.timestamp))) throw new Error("The schema timestamp must be an ISO timestamp or null.");
+        schema = input.dereferenced_schema;
+        timestamp = input.timestamp;
+      }
+      if (!isObject(schema) || typeof schema.openapi !== "string" || !isObject(schema.info) || !isObject(schema.paths) || !isObject(schema.components)) throw new Error("Expected an OpenAPI object with openapi, info, paths, and components.");
+      const compatibilityDate = schema.info.version;
+      if (!isDate(compatibilityDate)) throw new Error("Schema info.version must contain a valid compatibility date.");
+      const wanted = new Map([["GetUniverseRegions", "get"], ["PostUniverseNames", "post"], ["GetMarketsRegionIdOrders", "get"]]);
+      const found = new Map();
+      for (const [path, original] of Object.entries(schema.paths)) {
+        const item = resolvePathItem(schema, original);
+        if (!isObject(item)) continue;
+        for (const [operation, method] of wanted) {
+          if (!isObject(item[method]) || item[method].operationId !== operation) continue;
+          if (found.has(operation)) throw new Error(`Duplicate schema operation: ${operation}`);
+          found.set(operation, path);
+        }
+      }
+      for (const operation of wanted.keys()) if (!found.has(operation)) throw new Error(`Schema is missing operation ${operation}.`);
+      const regionsPath = found.get("GetUniverseRegions");
+      const namesPath = found.get("PostUniverseNames");
+      const ordersPath = found.get("GetMarketsRegionIdOrders");
+      const safePath = (path) => typeof path === "string" && /^\/(?!\/)[^?#\\]*$/.test(path);
+      if (!safePath(regionsPath) || /[{}]/.test(regionsPath) || !safePath(namesPath) || /[{}]/.test(namesPath) ||
+          !safePath(ordersPath) || !ordersPath.includes("{region_id}") ||
+          /[{}]/.test(ordersPath.replace("{region_id}", ""))) throw new Error("Schema operation paths are invalid.");
+      return { compatibilityDate, regionsPath, namesPath, ordersPath, source, timestamp };
+    }
+
+    function positiveId(value) {
+      return Number.isSafeInteger(value) && value > 0;
+    }
+
+    function parseNames(input) {
+      if (!Array.isArray(input)) throw new Error("Names file must be a JSON array.");
+      const names = new Map();
+      for (const item of input) {
+        if (!isObject(item) || !positiveId(item.id) || typeof item.name !== "string" || !item.name || !CATEGORIES.has(item.category)) throw new Error("Names must have a safe positive ID, name, and valid category.");
+        const previous = names.get(item.id);
+        if (previous && (previous.name !== item.name || previous.category !== item.category)) throw new Error(`Conflicting names for ID ${item.id}.`);
+        names.set(item.id, { id: item.id, name: item.name, category: item.category });
+      }
+      return names;
+    }
+
+    async function getJson(url, options = {}) {
+      const response = await fetch(url, options);
+      if (!response.ok) {
+        const retry = response.headers.get("Retry-After");
+        const detail = (await response.text()).trim().replace(/\s+/g, " ").slice(0, 500);
+        throw new Error(`HTTP ${response.status} ${response.statusText}${retry ? `; retry after ${retry}` : ""}${detail ? `; ${detail}` : ""}`.trim());
+      }
+      let data;
+      try { data = await response.json(); }
+      catch (error) {
+        if (error instanceof SyntaxError) throw new Error("ESI returned invalid JSON.");
+        throw error;
+      }
+      return { data, response, receivedAt: new Date().toISOString() };
+    }
+
+    function requestHeaders(schema, language) {
+      return { "X-Compatibility-Date": schema.compatibilityDate, "Accept-Language": language };
+    }
+
+    async function resolveNames(schema, existing, ids, language, progress) {
+      const names = new Map(existing);
+      const missing = [...new Set(ids)].filter((id) => {
+        if (!positiveId(id)) throw new Error(`Invalid or unsafe name ID: ${id}`);
+        return !names.has(id);
+      });
+      const unsupportedIds = missing.filter((id) => id > MAX_NAME_ID);
+      const unknown = missing.filter((id) => id <= MAX_NAME_ID);
+      let done = 0;
+      progress(done, unknown.length);
+      for (let i = 0; i < unknown.length; i += NAME_BATCH_SIZE) {
+        const batch = unknown.slice(i, i + NAME_BATCH_SIZE);
+        const result = await getJson(new URL(schema.namesPath, ESI_ORIGIN), {
+          method: "POST", headers: { ...requestHeaders(schema, language), "Content-Type": "application/json" }, body: JSON.stringify(batch),
+        });
+        const received = parseNames(result.data);
+        if (received.size !== batch.length || batch.some((id) => !received.has(id))) throw new Error("Names response is missing requested IDs or contains unexpected IDs.");
+        for (const [id, record] of received) names.set(id, record);
+        done += batch.length;
+        progress(done, unknown.length);
+      }
+      return { names, unsupportedIds };
+    }
+
+    function validateOrder(item) {
+      if (!isObject(item) || !["order_id", "type_id", "location_id", "system_id"].every((key) => positiveId(item[key])) ||
+          !["duration", "min_volume", "volume_total", "volume_remain"].every((key) => Number.isSafeInteger(item[key]) && item[key] >= 0) ||
+          item.volume_remain > item.volume_total || typeof item.is_buy_order !== "boolean" ||
+          typeof item.price !== "number" || !Number.isFinite(item.price) || item.price < 0 ||
+          typeof item.issued !== "string" || typeof item.range !== "string") {
+        throw new Error("ESI returned an invalid order or an integer outside JavaScript's safe range.");
+      }
+    }
+
+    function readExpiry(response, page) {
+      const value = response.headers.get("Expires");
+      if (value === null || Number.isNaN(Date.parse(value))) throw new Error(`Page ${page} is missing a valid Expires header.`);
+      return Date.parse(value);
+    }
+
+    async function fetchOrders(schema, regionId, language, progress) {
+      if (!positiveId(regionId)) throw new Error("Choose a valid region.");
+      const controller = new AbortController();
+      const options = { headers: requestHeaders(schema, language), signal: controller.signal };
+      const path = schema.ordersPath.replace("{region_id}", String(regionId));
+      const pageUrl = (page) => {
+        const url = new URL(path, ESI_ORIGIN);
+        url.searchParams.set("order_type", "all");
+        url.searchParams.set("page", String(page));
+        return url;
+      };
+      const first = await getJson(pageUrl(1), options);
+      const expiry = readExpiry(first.response, 1);
+      const pagesHeader = first.response.headers.get("X-Pages");
+      if (pagesHeader === null || !/^[1-9]\d*$/.test(pagesHeader) || !Number.isSafeInteger(Number(pagesHeader))) throw new Error("Page 1 is missing a valid X-Pages header.");
+      const count = Number(pagesHeader);
+      const pages = new Array(count);
+      pages[0] = first;
+      let next = 2;
+      let completed = 1;
+      let failure = null;
+      progress(completed, count);
+      async function worker() {
+        while (next <= count && !controller.signal.aborted) {
+          const page = next++;
+          try {
+            const result = await getJson(pageUrl(page), options);
+            // ESI does not expose Last-Modified to browsers. Equal Expires values
+            // approximate page consistency, but do not prove a single snapshot.
+            if (readExpiry(result.response, page) !== expiry) throw new Error(`Page ${page} Expires does not match page 1.`);
+            pages[page - 1] = result;
+            progress(++completed, count);
+          } catch (error) {
+            if (!failure) { failure = new Error(`Page ${page}: ${error.message}`, { cause: error }); controller.abort(); }
+            throw failure;
+          }
+        }
+      }
+      const workers = Array.from({ length: Math.min(MAX_CONCURRENCY, count - 1) }, () => worker());
+      try { await Promise.all(workers); }
+      catch (error) { await Promise.allSettled(workers); throw error; }
+      const orders = [];
+      const ids = new Set();
+      let receivedAt = first.receivedAt;
+      for (const page of pages) {
+        if (!Array.isArray(page.data)) throw new Error("ESI returned an invalid orders page.");
+        if (page.receivedAt > receivedAt) receivedAt = page.receivedAt;
+        for (const order of page.data) {
+          validateOrder(order);
+          if (ids.has(order.order_id)) throw new Error(`Duplicate order ID ${order.order_id}.`);
+          ids.add(order.order_id);
+          orders.push(order);
+        }
+      }
+      return { received_at: receivedAt, expires_at: new Date(expiry).toISOString(), region_id: regionId, orders };
+    }
+
+    function decimalRatio(value) {
+      const text = String(value).trim();
+      const match = /^(\d+)(?:\.(\d*))?(?:e([+-]?\d+))?$/i.exec(text);
+      if (!match || text.length > 200) throw new Error("Expected a finite nonnegative decimal.");
+      const exponent = Number(match[3] || 0) - (match[2] || "").length;
+      if (!Number.isSafeInteger(exponent) || Math.abs(exponent) > 400) throw new Error("Decimal exponent is out of range.");
+      const digits = BigInt(match[1] + (match[2] || ""));
+      return exponent >= 0 ? [digits * 10n ** BigInt(exponent), 1n] : [digits, 10n ** BigInt(-exponent)];
+    }
+
+    function priceCents(value) {
+      const [numerator, denominator] = decimalRatio(value);
+      const scaled = numerator * 100n;
+      let cents = scaled / denominator;
+      const remainder = scaled % denominator;
+      if (remainder * 2n > denominator || (remainder * 2n === denominator && cents % 2n === 1n)) cents++;
+      return cents;
+    }
+
+    function currencyNumber(cents) {
+      const value = Number(cents) / 100;
+      if (!Number.isFinite(value) || priceCents(value) !== cents) throw new Error("A summary price cannot be represented safely in JSON.");
+      return value;
+    }
+
+    function safeCount(value) {
+      if (value > BigInt(Number.MAX_SAFE_INTEGER)) throw new Error("A summary count exceeds JavaScript's safe integer range.");
+      return Number(value);
+    }
+
+    function summarizeSide(orders, regionId, typeId, systemId, locationId, isBuy, factorNumerator, factorDenominator) {
+      if (!orders.length) return null;
+      const sorted = orders.map((order) => ({ price: priceCents(order.price), volume: BigInt(order.volume_remain) }));
+      sorted.sort((a, b) => a.price === b.price ? 0 : (a.price < b.price ? (isBuy ? 1 : -1) : (isBuy ? -1 : 1)));
+      const best = sorted[0].price;
+      const valid = [];
+      let filteredItems = 0n;
+      let filteredOrders = 0;
+      for (const order of sorted) {
+        const include = isBuy ? order.price * factorNumerator >= best * factorDenominator : order.price * factorDenominator <= best * factorNumerator;
+        if (include) valid.push(order);
+        else { filteredItems += order.volume; filteredOrders++; }
+      }
+      let totalItems = 0n;
+      let weighted = 0n;
+      for (const order of valid) { totalItems += order.volume; weighted += order.volume * order.price; }
+      if (totalItems <= 0n) return null;
+      let cumulative = 0n;
+      let fivePrice = valid[valid.length - 1].price;
+      for (const order of valid) {
+        cumulative += order.volume;
+        if (cumulative * 20n >= totalItems) { fivePrice = order.price; break; }
+      }
+      let fiveItems = 0n;
+      let fiveOrders = 0;
+      for (const order of valid) {
+        if (isBuy ? order.price >= fivePrice : order.price <= fivePrice) { fiveItems += order.volume; fiveOrders++; }
+      }
+      const average = (weighted * 2n + totalItems) / (2n * totalItems);
+      const lowest = isBuy ? valid[valid.length - 1].price : valid[0].price;
+      const highest = isBuy ? valid[0].price : valid[valid.length - 1].price;
+      return {
+        region_id: regionId, type_id: typeId, system_id: systemId, location_id: locationId,
+        is_buy_summary: isBuy, five_price: currencyNumber(fivePrice), five_orders: fiveOrders,
+        five_items: safeCount(fiveItems), lowest: currencyNumber(lowest), highest: currencyNumber(highest),
+        total_items: safeCount(totalItems), total_orders: valid.length, average: currencyNumber(average),
+        filtered_items: safeCount(filteredItems), filtered_orders: filteredOrders,
+      };
+    }
+
+    function calculateSummaries(dataset, { systemId, locationId, filterFactor }) {
+      if (systemId !== null && locationId !== null) throw new Error("Choose a system or a location, not both.");
+      const [numerator, denominator] = decimalRatio(filterFactor);
+      if (numerator <= denominator) throw new Error("Filter factor must be finite and greater than 1.");
+      const grouped = new Map();
+      for (const order of dataset.orders) {
+        if (!grouped.has(order.type_id)) grouped.set(order.type_id, { buy: [], sell: [] });
+        if ((systemId !== null && order.system_id !== systemId) || (locationId !== null && order.location_id !== locationId)) continue;
+        grouped.get(order.type_id)[order.is_buy_order ? "buy" : "sell"].push(order);
+      }
+      const records = {};
+      for (const [typeId, sides] of [...grouped].sort((a, b) => a[0] - b[0])) {
+        const buy = summarizeSide(sides.buy, dataset.region_id, typeId, systemId, locationId, true, numerator, denominator);
+        const sell = summarizeSide(sides.sell, dataset.region_id, typeId, systemId, locationId, false, numerator, denominator);
+        if (buy !== null || sell !== null) records[typeId] = { buy_summary: buy, sell_summary: sell };
+      }
+      return { received_at: dataset.received_at, expires_at: dataset.expires_at, region_id: dataset.region_id, system_id: systemId, location_id: locationId, records };
+    }
+
+    function fileSafe(value) {
+      return value.replace(/[^A-Za-z0-9_-]+/g, "_").replace(/^_+|_+$/g, "").replace(/_+/g, "_");
+    }
+
+    function ordersFilename(regionId, expiresAt) {
+      return `market-orders-${regionId}-${fileSafe(expiresAt)}.json`;
+    }
+
+    function summaryFilename(summary) {
+      const scope = summary.location_id !== null ? `location-${summary.location_id}` : summary.system_id !== null ? `system-${summary.system_id}` : `region-${summary.region_id}`;
+      return `order-summary-${scope}-${fileSafe(summary.expires_at)}.json`;
+    }
+
+    function saveJson(value, filename) {
+      const blob = new Blob([JSON.stringify(value, null, 2) + "\n"], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = filename;
+      document.body.append(anchor);
+      anchor.click();
+      anchor.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    }
+
+    function setStatus(id, message, error = false) {
+      $(id).textContent = message;
+      $(id).className = `status ${error ? "error" : "success"}`;
+    }
+
+    function showNamesStatus(unsupportedIds) {
+      const count = state.names.size.toLocaleString();
+      if (!unsupportedIds.length) {
+        setStatus("names-status", `${count} names available.`);
+        return;
+      }
+      const examples = unsupportedIds.slice(0, 5).join(", ");
+      const more = unsupportedIds.length > 5 ? ", …" : "";
+      setStatus("names-status", `${count} names available. ${unsupportedIds.length} ID(s) could not be resolved because ESI accepts only 32-bit IDs: ${examples}${more}. These may be player structures; load their names from a file if available.`, true);
+    }
+
+    function updateControls() {
+      const busy = state.busy;
+      for (const id of ["schema-file", "fetch-schema", "names-file", "language", "summary-scope", "filter-factor"]) $(id).disabled = busy;
+      $("fetch-regions").disabled = busy || !state.schema;
+      $("region").disabled = busy || !state.regions.length;
+      $("fetch-orders").disabled = busy || !state.schema || !state.regions.length || !$("region").value;
+      $("save-orders").disabled = busy || !state.dataset;
+      $("resolve-names").disabled = busy || !state.schema || !state.dataset;
+      $("save-names").disabled = busy || !state.names.size;
+      $("calculate-summary").disabled = busy || !state.dataset;
+      $("save-summary").disabled = busy || !state.summary;
+      $("scope-id").disabled = busy || !state.dataset || $("summary-scope").value === "region";
+    }
+
+    function option(value, text) {
+      const element = document.createElement("option");
+      element.value = String(value);
+      element.textContent = text;
+      return element;
+    }
+
+    function labelFor(id) {
+      const record = state.names.get(id);
+      return record ? `${record.name} (${id})` : `Unresolved (${id})`;
+    }
+
+    function showRegions() {
+      const selected = $("region").value;
+      $("region").replaceChildren(...state.regions.map((id) => option(id, labelFor(id))));
+      if (state.regions.includes(Number(selected))) $("region").value = selected;
+    }
+
+    function orderIds(dataset) {
+      const ids = new Set([dataset.region_id]);
+      for (const order of dataset.orders) { ids.add(order.system_id); ids.add(order.location_id); ids.add(order.type_id); }
+      return [...ids];
+    }
+
+    function countOrders(dataset) {
+      const systems = new Map();
+      const locations = new Map();
+      for (const order of dataset.orders) {
+        systems.set(order.system_id, (systems.get(order.system_id) || 0) + 1);
+        locations.set(order.location_id, (locations.get(order.location_id) || 0) + 1);
+      }
+      return { systems, locations };
+    }
+
+    function showCounts() {
+      if (!state.dataset) return;
+      const { systems, locations } = countOrders(state.dataset);
+      const lines = (map) => [...map].sort((a, b) => a[0] - b[0]).map(([id, count]) => `${labelFor(id)}: ${count.toLocaleString()}`);
+      $("dataset-info").textContent = `${labelFor(state.dataset.region_id)} · ${state.dataset.orders.length.toLocaleString()} orders · received ${state.dataset.received_at} · expires ${state.dataset.expires_at}`;
+      $("order-counts").textContent = `Solar systems\n${lines(systems).join("\n")}\n\nStations / locations\n${lines(locations).join("\n")}`;
+      updateScopeOptions();
+    }
+
+    function updateScopeOptions() {
+      const selected = $("scope-id").value;
+      const scope = $("summary-scope").value;
+      if (!state.dataset || scope === "region") {
+        $("scope-id").replaceChildren(option("", "Not needed for a region summary"));
+      } else {
+        const counts = countOrders(state.dataset);
+        const ids = [...(scope === "system" ? counts.systems : counts.locations).keys()].sort((a, b) => a - b);
+        $("scope-id").replaceChildren(...ids.map((id) => option(id, labelFor(id))));
+        if (ids.includes(Number(selected))) $("scope-id").value = selected;
+      }
+      updateControls();
+    }
+
+    function applySchema(schema) {
+      state.schema = schema;
+      state.regions = [];
+      state.dataset = null;
+      state.summary = null;
+      $("region").replaceChildren(option("", "Fetch regions first"));
+      $("schema-info").textContent = `${schema.source} · Compatibility date: ${schema.compatibilityDate} · Schema received: ${schema.timestamp || "unknown"}`;
+      $("dataset-info").textContent = "No orders loaded.";
+      $("order-counts").textContent = "No orders loaded.";
+      $("summary-json").textContent = "No summary calculated.";
+      $("orders-status").textContent = "";
+      $("summary-status").textContent = "";
+    }
+
+    $("schema-file").addEventListener("change", async (event) => {
+      const file = event.target.files[0];
+      if (!file) return;
+      state.busy = true; updateControls();
+      try {
+        applySchema(parseSchema(JSON.parse(await file.text()), `File: ${file.name}`));
+        setStatus("schema-status", `Loaded ${file.name}.`);
+      } catch (error) { setStatus("schema-status", `Could not open ${file.name}: ${error.message}`, true); }
+      finally { event.target.value = ""; state.busy = false; updateControls(); }
+    });
+
+    $("fetch-schema").addEventListener("click", async () => {
+      state.busy = true; updateControls();
+      try {
+        setStatus("schema-status", "Fetching compatibility dates…");
+        const dates = (await getJson(`${ESI_ORIGIN}/meta/compatibility-dates`)).data;
+        if (!isObject(dates) || !Array.isArray(dates.compatibility_dates) || !dates.compatibility_dates.length || !dates.compatibility_dates.every(isDate)) throw new Error("ESI returned an invalid or empty compatibility date list.");
+        const latest = [...dates.compatibility_dates].sort().at(-1);
+        const url = new URL("/meta/openapi.json", ESI_ORIGIN);
+        url.searchParams.set("compatibility_date", latest);
+        setStatus("schema-status", `Fetching schema for ${latest}…`);
+        const result = await getJson(url);
+        applySchema(parseSchema(result.data, `ESI ${latest}`, result.receivedAt));
+        setStatus("schema-status", `Loaded schema ${state.schema.compatibilityDate}.`);
+      } catch (error) { setStatus("schema-status", `Could not fetch schema: ${error.message}`, true); }
+      finally { state.busy = false; updateControls(); }
+    });
+
+    $("names-file").addEventListener("change", async (event) => {
+      const file = event.target.files[0];
+      if (!file) return;
+      state.busy = true; updateControls();
+      try {
+        const incoming = parseNames(JSON.parse(await file.text()));
+        state.names = parseNames([...state.names.values(), ...incoming.values()]);
+        showRegions(); showCounts();
+        setStatus("names-status", `Loaded ${file.name}; ${state.names.size.toLocaleString()} names available.`);
+      } catch (error) { setStatus("names-status", `Could not open ${file.name}: ${error.message}`, true); }
+      finally { event.target.value = ""; state.busy = false; updateControls(); }
+    });
+
+    $("fetch-regions").addEventListener("click", async () => {
+      if (!state.schema || state.busy) return;
+      state.busy = true; updateControls();
+      try {
+        setStatus("orders-status", "Fetching regions…");
+        const result = await getJson(new URL(state.schema.regionsPath, ESI_ORIGIN), { headers: requestHeaders(state.schema, $("language").value) });
+        if (!Array.isArray(result.data) || !result.data.every(positiveId) || new Set(result.data).size !== result.data.length) throw new Error("ESI returned invalid or duplicate region IDs.");
+        const resolved = await resolveNames(state.schema, state.names, result.data, $("language").value, (done, total) => setStatus("names-status", `Resolved ${done} of ${total} new region names.`));
+        state.names = resolved.names;
+        showNamesStatus(resolved.unsupportedIds);
+        state.regions = [...result.data].sort((a, b) => labelFor(a).localeCompare(labelFor(b)));
+        showRegions();
+        setStatus("orders-status", `Loaded ${state.regions.length} regions.`);
+      } catch (error) { setStatus("orders-status", `Could not load regions: ${error.message}`, true); }
+      finally { state.busy = false; updateControls(); }
+    });
+
+    $("region").addEventListener("change", updateControls);
+    $("summary-scope").addEventListener("change", updateScopeOptions);
+
+    async function resolveOrderNames() {
+      const resolved = await resolveNames(state.schema, state.names, orderIds(state.dataset), $("language").value,
+        (done, total) => setStatus("names-status", `Resolved ${done} of ${total} new names.`));
+      state.names = resolved.names;
+      showRegions(); showCounts();
+      showNamesStatus(resolved.unsupportedIds);
+    }
+
+    $("fetch-orders").addEventListener("click", async () => {
+      if (!state.schema || state.busy || !positiveId(Number($("region").value))) return;
+      const regionId = Number($("region").value);
+      state.busy = true; state.dataset = null; state.summary = null; updateControls();
+      $("dataset-info").textContent = "No orders loaded.";
+      $("order-counts").textContent = "No orders loaded.";
+      $("summary-json").textContent = "No summary calculated.";
+      $("summary-status").textContent = "";
+      try {
+        setStatus("orders-status", "Fetching page 1…");
+        state.dataset = await fetchOrders(state.schema, regionId, $("language").value,
+          (done, total) => setStatus("orders-status", `Fetched ${done} of ${total} pages.`));
+        showCounts();
+        setStatus("orders-status", `Loaded ${state.dataset.orders.length.toLocaleString()} orders. Matching expiry does not guarantee a consistent snapshot.`);
+        try { await resolveOrderNames(); }
+        catch (error) { setStatus("names-status", `Could not resolve all names: ${error.message}. Orders remain available; retry name resolution.`, true); }
+      } catch (error) { setStatus("orders-status", `Could not fetch orders: ${error.message}`, true); }
+      finally { state.busy = false; updateControls(); }
+    });
+
+    $("resolve-names").addEventListener("click", async () => {
+      if (!state.schema || !state.dataset || state.busy) return;
+      state.busy = true; updateControls();
+      try { await resolveOrderNames(); }
+      catch (error) { setStatus("names-status", `Could not resolve all names: ${error.message}`, true); }
+      finally { state.busy = false; updateControls(); }
+    });
+
+    $("calculate-summary").addEventListener("click", () => {
+      if (!state.dataset || state.busy) return;
+      try {
+        const scope = $("summary-scope").value;
+        const selected = Number($("scope-id").value);
+        if (scope !== "region" && !positiveId(selected)) throw new Error("Select a system or location.");
+        state.summary = calculateSummaries(state.dataset, {
+          systemId: scope === "system" ? selected : null, locationId: scope === "location" ? selected : null,
+          filterFactor: $("filter-factor").value,
+        });
+        $("summary-json").textContent = JSON.stringify(state.summary, null, 2);
+        setStatus("summary-status", `Calculated ${Object.keys(state.summary.records).length.toLocaleString()} type summaries.`);
+      } catch (error) {
+        state.summary = null;
+        $("summary-json").textContent = "No summary calculated.";
+        setStatus("summary-status", `Could not calculate summary: ${error.message}`, true);
+      }
+      updateControls();
+    });
+
+    $("save-orders").addEventListener("click", () => saveJson(state.dataset, ordersFilename(state.dataset.region_id, state.dataset.expires_at)));
+    $("save-summary").addEventListener("click", () => saveJson(state.summary, summaryFilename(state.summary)));
+    $("save-names").addEventListener("click", () => saveJson([...state.names.values()].sort((a, b) => a.id - b.id), "resolved-names.json"));
+  </script>
+</body>
+</html>
