@@ -22,6 +22,40 @@ entry points without `get_`/`write_` prefixes and pass writer datasets by keywor
 Generic metadata operations remain unsupported; use `read.sde_metadata` and
 `write.sde_metadata` for SDE build metadata.
 
+## Planetary Interaction unit-cost foundation
+
+The [PI package](src/pfmsoft/eve_argus/pi) provides a validated local P0-P4 recipe
+catalog and pure unit-cost calculations. It does not yet expose a CLI report or
+automatically enumerate production alternatives.
+
+- [Catalog](src/pfmsoft/eve_argus/pi/catalog.py): `load_catalog()` returns the
+  83 material definitions. `mining_planet_types()` derives P1/P2 single-planet
+  resource eligibility from raw-resource co-occurrence, not extraction capacity.
+  The source is the local PI reference, not independently verified live game data.
+- [Costing](src/pfmsoft/eve_argus/pi/costing.py): `mined_source()` quotes zero-cost
+  extraction/local refining with optional final export; `calculate_stage()`
+  consumes explicit input quotes and returns a per-cycle breakdown and reusable
+  unit price. Neither function reads databases or accesses the network.
+
+Use `Decimal` prices and a fractional effective customs rate (`Decimal("0.1")`
+for 10%). `CostBoundary.OFF_PLANET` input quotes incur import tax;
+`CostBoundary.ON_PLANET` explicitly means local to the consuming stage.
+Choose `export_output=True` to include output export tax, or `False` when the
+output stays on the same planet for another stage. Reuse the returned
+`StageCost.output` as an input quote without charging its previous export again.
+All purchased inputs and reused upstream quotes must share the declared market
+price basis, and tax-dependent sources must share the customs rate.
+
+For example, purchasing 3000 P0 at 1 ISK/unit, importing at 10%, and exporting
+the 20 refined P1 costs `(3000 + 600 + 800) / 20 = 220` ISK/P1.
+Freely mined/refined P1 exported at the same rate costs 40 ISK/P1; eligible
+freely mined/refined P2 costs 720 ISK/P2. No mining cost, factory throughput,
+sales tax, or transport fee is included. Missing prices retain explicit reasons
+and propagate unknown totals rather than partial quotes.
+
+See the [PI design and implementation plan](dev/prompts/planetary_interaction.md)
+for the remaining scenario-generation, market-data, and reporting work.
+
 ## Export market groups
 
 ```bash

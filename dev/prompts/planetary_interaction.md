@@ -26,8 +26,9 @@ behavior or public interfaces.
 - The [PI planning workbook](../tmp/pi_spreadsheet/PI%20Planning.xlsx), especially
   the **What PI To Build** sheet, demonstrates mixed-input choices using unit
   prices from other scenarios. Reconcile representative calculations with its
-  formulas before implementation. The workbook formulas have not yet been
-  inspected as part of this plan. Its display idioms are not requirements.
+  formulas before implementing scenario generation. Representative formulas
+  have now been inspected; see the implementation status and discrepancies below.
+  Its display idioms are not requirements.
 - [Order summaries](../../src/pfmsoft/eve_argus/dynamic/order_summary.py) and
   [history summaries](../../src/pfmsoft/eve_argus/market_history/history_summary.py)
   provide existing price calculations.
@@ -39,6 +40,72 @@ behavior or public interfaces.
 Keep PI data models and calculation logic under the
 [`pi` package](../../src/pfmsoft/eve_argus/pi). Keep CLI orchestration, report
 collection, and rendering separate from reusable calculations.
+Prefer documented, typed, slotted, keyword-only dataclasses for data models over
+positional tuples, TypedDicts, or loosely typed dictionaries. Use Google-style
+`Attributes` sections to explain field semantics, units, customs boundaries, and
+missing-value meanings where applicable.
+
+### Implementation status
+
+The first implementation slice supplies:
+
+- A typed, validated catalog of all 83 P0-P4 materials, transcribed from the
+  ingredient table with explicit type-ID resolution of reference name aliases.
+- Raw-resource planet metadata and derived P1/P2 mining eligibility. All 24 P2
+  results agree with the local single-planet table; this is internal reference
+  reconciliation, not independent verification against current game data.
+- Pure mined-source pricing and explicit-boundary production-stage costing,
+  including purchased-P0 refining, mixed sources, unknown-cost propagation,
+  uniform market-basis validation, and shared customs-rate validation.
+- Reusable source quotes and per-stage material/import/export breakdowns using
+  `Decimal`. Callers explicitly choose exported versus locally retained output.
+- Focused synthetic tests under
+  [`tests/pfmsoft/eve_argus/pi`](../../tests/pfmsoft/eve_argus/pi).
+
+Implementation modules are
+[`models.py`](../../src/pfmsoft/eve_argus/pi/models.py),
+[`catalog.py`](../../src/pfmsoft/eve_argus/pi/catalog.py), and
+[`costing.py`](../../src/pfmsoft/eve_argus/pi/costing.py).
+
+Automatic scenario enumeration, graph storage/traversal, database price adapters,
+source-price tables, renderers, and the CLI report remain to be implemented.
+This slice makes no choice about enumerating integrated versus staged layouts,
+or unresolved report options. The calculation primitive supplies normalized
+per-cycle unit costs; whole-run scheduling and surplus accounting remain deferred.
+
+Verification for this slice:
+
+- Red: the new tests initially failed because the PI implementation modules did
+  not exist.
+- Green: `uv run --no-sync pytest tests/pfmsoft/eve_argus/pi -q` passed 36 tests.
+- Focused Ruff lint/format checks passed, and Pylance reported no diagnostics in
+  the three implementation modules and two new test modules.
+- A read-only comparison matched all 83 recipe rows and all 24 derived P2
+  eligibility rows against the local Markdown reference.
+
+Validation used the existing environment without installing dependencies.
+
+### Workbook reconciliation
+
+Read-only inspection of representative workbook formulas confirms that
+**What PI To Build** selects per-material sources through **Price Lookup**, which
+can refer to calculated **PI Unit Cost** prices. Representative lower-tier
+formulas agree with the documented import/export multipliers and output
+normalization.
+
+Do not copy the workbook's higher-tier tax formulas without checking their
+taxable bases. In **PI Unit Cost**:
+
+- `N73` imports P2 inputs using a base of 400 rather than 7200.
+- `O73` exports a P3 output using a base of 7200 rather than 60000.
+- `N102` imports P3 inputs using a base of 7200 rather than 60000.
+
+These conflict with the local reference's tier-specific customs bases. The
+implementation uses the input material's base for import and the output
+material's base for export; it does not reproduce those spreadsheet defects.
+The workbook also contains broken defined names and cached/hard-coded values,
+so neither cached totals nor all workbook routes have been certified. No workbook
+changes or live market requests were made.
 
 ## Confirmed scope
 
@@ -401,5 +468,6 @@ distinguish generation time from source timestamps.
   fees are explicitly excluded for now; identify any other proposed fee before
   including it rather than silently adding costs.
 
-This planning update changes documentation only; calculation tests and workbook
-reconciliation have not yet been run.
+Focused calculation tests now cover the first implementation slice. Full report
+acceptance, exhaustive scenario counts, and complete workbook reconciliation
+remain pending; they must not be inferred from the foundation tests passing.
