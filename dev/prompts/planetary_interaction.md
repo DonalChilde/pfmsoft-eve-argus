@@ -73,15 +73,15 @@ unit available off-planet, before import into a downstream production planet.
 For manufactured sources, it includes the export required to reach that boundary.
 Market purchase prices exclude subsequent planetary import charges.
 
-| Source label | Applies to | Unit-price basis |
-| ------------ | ---------- | ---------------- |
-| Jita buy | P0-P4 where available | Selected Jita buy-price statistic |
-| Jita sell | P0-P4 where available | Selected Jita sell-price statistic |
-| Regional ten-day average | P0-P4 where available | Existing regional volume-weighted history-summary average |
-| Freely mined with a P1 result | P1 | P1 taxable base value multiplied by the effective tax rate |
-| Purchased P0 refined to P1 | P1 | P0 purchase and import costs, divided by recipe output, plus P1 export tax |
-| Freely mined with a P2 result | Eligible P2 | P2 taxable base value multiplied by the effective tax rate |
-| Manufactured from selected sources | P2-P4 | Explicit recipe inputs, selected source scenarios, and applicable customs movements |
+| Source label                       | Applies to            | Unit-price basis                                                                    |
+| ---------------------------------- | --------------------- | ----------------------------------------------------------------------------------- |
+| Jita buy                           | P0-P4 where available | Selected Jita buy-price statistic                                                   |
+| Jita sell                          | P0-P4 where available | Selected Jita sell-price statistic                                                  |
+| Regional ten-day average           | P0-P4 where available | Existing regional volume-weighted history-summary average                           |
+| Freely mined with a P1 result      | P1                    | P1 taxable base value multiplied by the effective tax rate                          |
+| Purchased P0 refined to P1         | P1                    | P0 purchase and import costs, divided by recipe output, plus P1 export tax          |
+| Freely mined with a P2 result      | Eligible P2           | P2 taxable base value multiplied by the effective tax rate                          |
+| Manufactured from selected sources | P2-P4                 | Explicit recipe inputs, selected source scenarios, and applicable customs movements |
 
 ### Simple mining-derived sources
 
