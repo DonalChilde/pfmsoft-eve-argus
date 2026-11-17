@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>PI Browser - {{ inputs.hub.system_name }}</title>
+  <link rel="stylesheet" href="styles.css">
+  <script id="pi-data" type="application/json">{{ payload | tojson }}</script>
+  <script src="decimal.js" defer></script>
+  <script src="engine.js" defer></script>
+  <script src="app.js" defer></script>
+</head>
+<body>
+<header>
+  <p class="eyebrow">EVE ARGUS / PLANETARY INTERACTION</p>
+  <h1>What PI to build</h1>
+  <p>Compare production routes. Choose your sources. Export only the prices you need.</p>
+  <p class="metadata">{{ inputs.hub.station_name }} &middot; Orders received {{ inputs.response.received_at }}
+    &middot; Generated {{ inputs.generated_at.format_iso() }}</p>
+  <p class="metadata">Effective order expiry: {{ inputs.order_expires_at or "Unknown" }}
+    &middot; Order freshness: {{ inputs.order_freshness }}</p>
+</header>
+<main>
+  <noscript><p class="error">JavaScript is required for calculations and price downloads.</p></noscript>
+  <section class="notices" aria-label="Source notices">
+    {% for warning in inputs.warnings %}<p>{{ warning }}</p>{% endfor %}
+    <p>Prices use stored snapshots, not live orders. History and units/day are regional The Forge data, not station sales.</p>
+    <p>Mining extraction costs are assumed zero. Sales tax and transport fees are excluded. Entered production rates do not certify factory capacity or market fills.</p>
+  </section>
+  <section class="controls" aria-label="Scenario controls">
+    <label>Customs tax (%) <input id="tax-rate" type="number" min="0" max="100" step="any"></label>
+    <label>Purchased input prices <select id="market-basis"></select></label>
+    <label>Sales valuation <select id="valuation-basis"></select></label>
+    <label>Expanded intermediates <select id="boundary">
+      <option value="on-planet">Retained on the same planet</option>
+      <option value="off-planet">Exported and reimported</option>
+    </select></label>
+    <label>Scenario preset <select id="preset">
+      <option value="market">Market sources</option>
+      <option value="profitable-p2">Make profitable P2</option>
+    </select></label>
+  </section>
+  <p id="scenario-status" role="status"></p>
+  <p id="error" class="error" role="alert" hidden></p>
+  <div id="scenario-notices" class="notices"></div>
+  <details>
+    <summary>Shared material sources <span class="muted">(one choice per material, reused downstream)</span></summary>
+    <div id="sources" class="table-scroll"></div>
+  </details>
+  <section class="toolbar" aria-label="Comparison filters and export">
+    <label>Find product <input id="search" type="search" placeholder="Product name or type ID"></label>
+    <label>Starting tier <select id="starting-tier"><option value="">All starting tiers</option>
+      <option value="0">P0</option><option value="1">P1</option><option value="2">P2</option><option value="3">P3</option>
+    </select></label>
+    <label><input id="profitable-only" type="checkbox"> Profitable only</label>
+    <label>Sort within groups <select id="sort"><option value="name">Name</option>
+      <option value="profit">Unit profit (highest first)</option><option value="cost">Unit cost (lowest first)</option>
+    </select></label>
+    <button id="add-profitable" title="Add the cheapest profitable visible manufacturing route for each unselected type. Preserve current selections.">Add profitable visible</button>
+    <button id="clear-selection">Clear selection</button>
+    <button id="download" class="primary" disabled>Download prices JSON</button>
+  </section>
+  <p id="selection-status" role="status"></p>
+  <p class="muted">Export any subset. One quote per type: selecting another route replaces that type's previous selection. Hidden selections are retained. Quoted and exported prices are unit costs, not sales valuations.</p>
+  <p class="muted">Factory cycles = completed recipe cycles/hour. Initial value 1 is an editable assumption, not a capacity estimate. Daily/30-day profit assumes continuous operation. Stage details show their own recipe cycle; upstream costs must not be added again.</p>
+  <div id="comparisons"></div>
+  <details><summary>Selected prices</summary><div id="selected-prices" class="table-scroll"></div></details>
+  <details><summary>Export JSON preview (copy if an embedded browser blocks downloads)</summary>
+    <textarea id="export-preview" rows="12" readonly aria-label="Export prices JSON preview"></textarea>
+  </details>
+  <details><summary>Market input reference tables and history coverage</summary><div id="references"></div></details>
+</main>
+<footer>Offline snapshot browser. Decimal arithmetic: <a href="decimal-LICENCE.txt">decimal.js 10.6.0 (MIT)</a>.</footer>
+</body>
+</html>

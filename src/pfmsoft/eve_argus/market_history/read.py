@@ -403,8 +403,15 @@ def market_history_responses_by_region(
 
 
 @deprecated("newest_history_date is deprecated, use newest_market_history_date instead")
-@log_timing(logger=logger, level=_timing_log_level)
 def newest_history_date(
+    connection: Connection, *, region_id: int, before: str
+) -> str | None:
+    """Compatibility alias for newest_market_history_date."""
+    return newest_market_history_date(connection, region_id=region_id, before=before)
+
+
+@log_timing(logger=logger, level=_timing_log_level)
+def newest_market_history_date(
     connection: Connection, *, region_id: int, before: str
 ) -> str | None:
     """Read the newest stored history date in a region strictly before a date.

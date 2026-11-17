@@ -52,7 +52,7 @@ behavior or public interfaces.
   supply Jita's primary station, system, and region. Resolve the Jita entry from
   this model; do not duplicate station IDs or require snapshots for other hubs.
 - [Registered reports](../../src/pfmsoft/eve_argus/cli/reports/__init__.py)
-  provide the integration point; no PI report is currently registered.
+  include the `planetary-interaction` browser generator.
 
 Keep PI data models and calculation logic under the
 [`pi` package](../../src/pfmsoft/eve_argus/pi). Keep CLI orchestration, report
@@ -84,7 +84,7 @@ Implementation modules are
 [`catalog.py`](../../src/pfmsoft/eve_argus/pi/catalog.py), and
 [`costing.py`](../../src/pfmsoft/eve_argus/pi/costing.py).
 
-The next slice adds
+The scenario slice adds
 [`scenarios.py`](../../src/pfmsoft/eve_argus/pi/scenarios.py) with documented
 dataclass graph/branch models, shared dependencies, exact total/complete counts,
 lazy concrete-outcome expansion, and best-complete scenario selection. The user
@@ -102,9 +102,57 @@ finished-product purchase/mining quotes at the root, but not those sources for
 its ingredients. Output sale valuation remains separate from the acquisition
 graph so it can be reused across valuation bases.
 
-Database price adapters, source-price tables, the interactive HTML browser,
-selected-price JSON export, and the CLI generator remain to be implemented.
-These are now the next delivery target, rather than a Markdown-first report.
+The browser data slice now adds:
+
+- [`reports/pi_browser.py`](../../src/pfmsoft/eve_argus/reports/pi_browser.py):
+  documented dataclasses and a collector for explicitly supplied stored datasets,
+  resolving Jita from the hub model. It retains all 83 material rows, station
+  buy/sell 5% quotes, regional history prices and daily volume, coverage,
+  response metadata, effective order expiry, and freshness notices.
+- [`pi/comparisons.py`](../../src/pfmsoft/eve_argus/pi/comparisons.py):
+  documented grouped comparisons and rate estimates. The full catalog produces
+  105 rows across the seven workbook tier pairs, with local/exported intermediate
+  variants explicitly requested. Shared starting quotes can be purchased or
+  previously manufactured; direct P1 ingredients of P4 recipes are retained.
+- Explicit completed-cycles/hour scaling without cycle-duration division or
+  changes to unit costs. Unknown sales values preserve known acquisition costs.
+
+The collector reuses station-trades history windows and calculations. The caller
+supplies one regional ten-day window ending at the newest stored regional date
+strictly before the UTC generation date, not a separate anchor per material.
+History freshness follows the existing newest-used-day policy (older than seven
+days is stale); missing type history and known zero volume stay distinct.
+
+The browser/CLI slice now supplies:
+
+- [`reports/pi_browser_render.py`](../../src/pfmsoft/eve_argus/reports/pi_browser_render.py)
+  and packaged templates/assets: safe embedded snapshot JSON, local scripts,
+  all source-reference tables, 105 grouped comparisons, recipe/customs details,
+  filters, sorting, and shared per-material source controls.
+- [`cli/reports/planetary_interaction.py`](../../src/pfmsoft/eve_argus/cli/reports/planetary_interaction.py):
+  registered CLI snapshot selection, Jita-only station book reads, optional
+  regional history, output preflight, render-before-write, overwrite protection,
+  and quiet mode that retains warnings.
+- The `Make profitable P2` preset, manual source overrides, editable
+  completed-cycles/hour estimates, one selected export quote per type, and JSON
+  downloads containing exact decimal strings. A copyable JSON preview is
+  available for embedded browsers that block native downloads.
+- User-approved locally bundled decimal.js 10.6.0 (MIT), 6% initial customs tax,
+  and on-planet intermediates. Initial rate is 1 completed cycle/hour, explicitly
+  labeled an editable assumption. Invalid controls show errors, retain editable
+  inputs, clear derived values, and disable export until corrected.
+
+The CLI command is:
+
+```bash
+uv run eve-argus reports planetary-interaction --to ./reports/pi-browser
+```
+
+Keep all six generated files together and open `index.html` directly from disk.
+Use `--tax-percent`, `--intermediate-boundary`, `--overwrite`, and `--quiet`
+as required. No server, CDN, or implicit data refresh is involved. Writes are
+not a multi-file atomic transaction.
+
 The industry report is currently a proof script according to the user; promoting
 it and implementing price-override import remain separate consumer work. The
 calculation primitive supplies normalized per-cycle unit costs; whole-run
@@ -131,6 +179,25 @@ Scenario-composition verification:
 - Tests compare exact small-graph counts with lazy expansion, cover input-import
   thresholds that change the best route, and verify bounded P4 expansion without
   dropping non-cheapest or unavailable alternatives.
+
+Browser data/comparison verification:
+
+- Red: the collector and comparison tests failed because their modules did not
+  exist. Green: the focused PI and browser-collector selection passes 75 tests.
+- Focused Ruff lint/format checks pass. Pylance reports no diagnostics in the
+  two new implementation modules and two new test modules.
+- Tests cover all 105 grouped rows, local/exported intermediates, mixed-source
+  P2 reuse, direct P1-to-P4 requirements, missing sales/input prices, exact
+  completed-cycles/hour scaling, Jita hub-model resolution, order provenance,
+  history weighting/coverage/zero volume, and freshness.
+- The user authorized a read-only smoke check using `dev/app-dir`. Immutable
+  read-only SQLite access found all 83 buy/sell references, 42 usable history
+  prices, and a common November 7-16, 2026 history window. Both intermediate
+  boundary modes produced 105 complete acquisition costs. Expired order inputs
+  remained usable with an explicit notice.
+- Source database SHA256 hashes and app-directory file size/mtime/ctime metadata
+  were unchanged across that smoke check. No app configuration was loaded, no
+  app-directory files were written, and no market requests were made.
 
 ### Scenario counts and compact representation
 
@@ -421,8 +488,8 @@ all uses of that material as a starting input.
 
 ## HTML browser presentation
 
-Proposed command: `eve-argus reports planetary-interaction`. The name and
-report-specific options remain subject to the decisions below. The command
+Implemented command: `eve-argus reports planetary-interaction --to DIRECTORY`.
+The command
 generates the browser directory; it does not start a server or require the
 industry report to be promoted first.
 
@@ -500,10 +567,11 @@ manufacturing choice can be economically suboptimal, and users must retain the
 ability to select it. Unknown costs or sales valuations cannot establish
 profitability; show their status instead of treating them as zero.
 
-Make switching between presets and custom source choices easy. Identify the
-active scenario and manual deviations visibly. Additional presets and the exact
-reapplication/reset policy remain design decisions; do not silently discard
-manual work.
+The active preset and manual-override count are visible. Manual choices persist
+across tax, price-basis, boundary, and rate changes. Switching presets asks for
+confirmation before clearing manual choices. Unknown-profit P2 manufacture falls
+back to the selected purchase quote with an explicit notice, never a claim of
+profitability. Additional presets are deferred.
 
 ### Factory cycles and time-based estimates
 
@@ -564,10 +632,10 @@ distinguish generation time from source timestamps.
 ### Explorer direction
 
 Generate a self-contained directory on demand from collected recipes, source
-prices, and provenance. A proposed artifact layout is `index.html`, `app.js`,
-and `styles.css`, with snapshot data embedded safely in the HTML or a local
-script. The file names are not yet a public interface. Bundle any required
-browser dependencies locally; no CDN or live source refresh is required.
+prices, and provenance. The implemented layout is `index.html`, `engine.js`,
+`app.js`, `styles.css`, `decimal.js`, and `decimal-LICENCE.txt`, with snapshot
+data embedded safely in the HTML. All browser dependencies are local; no CDN
+or live source refresh is required.
 
 The user must be able to open the generated entry HTML directly from disk without
 a server or network access. Do not require browser `fetch()` calls for sibling
@@ -576,9 +644,10 @@ directory as actually opened from disk, including all asset paths. Preserve the
 Python catalog, costing, and scenario code; do not replace it with browser-only
 business logic.
 
-Standalone browser recalculation requires a browser-side evaluator. Its decimal
-arithmetic approach and interface remain implementation decisions. Verify its
-calculations against Python fixtures in tests; no production export/import
+The browser evaluator uses the user-approved vendored decimal.js with precision
+28 and half-even rounding, matching the Python Decimal context. Tests compare
+all grouped costs against Python in both intermediate-boundary modes, including
+mixed mined, manufactured, and purchased shared sources. No production export/import
 round-trip calculation check is required. Use packaged HTML templates,
 autoescaping, and safe embedded JSON rather than Markdown escaping or formatting.
 Preflight every generated file before writing, preserve unrelated destination
@@ -625,9 +694,9 @@ understanding without becoming importer requirements.
 - Because multiple route rows can share a type ID, let the user choose one
   exported quote per included type. Do not resolve duplicate choices by silently
   overwriting one route with another, or emit multiple keys for the same type.
-- Preserve monetary precision without converting through binary floats. Exact
-  decimal strings are the proposed export representation; settle accepted
-  importer value forms before implementation.
+- Preserve monetary precision without converting through binary floats. The
+  browser exports exact decimal strings; the future importer must support this
+  representation, with any additional accepted forms decided in its own scope.
 - Do not export unavailable or incomplete scenario costs as usable overrides,
   numeric zero, or partial totals.
 - Validate the JSON structure, type-ID keys, and price values, surfacing invalid
@@ -694,8 +763,9 @@ scope; defining this contract does not implement that consumer.
    Add focused synthetic fixtures for the acceptance cases below, including real
    browser interaction and JSON download checks. Mock external dependencies and
    run the smallest relevant pytest selection, then focused Ruff lint and format
-   checks for Python changes. Do not inspect live databases or refresh data as
-   an incidental part of development.
+   checks for Python changes. Do not inspect live databases as an incidental
+   step; the user has authorized read-only validation against `dev/app-dir`, whose
+   databases and other files must remain unchanged. Never refresh its data.
 10. **Connect industry overrides later as separate consumer work.**
     Promote the industry proof script through its own scoped CLI implementation
     and add JSON-file overrides using the `prices` contract above. Apply overrides
@@ -786,36 +856,51 @@ scope; defining this contract does not implement that consumer.
 - Importing a valid override file does not require scenario metadata or invoke
   PI calculation replay. Calculation parity is checked in tests instead.
 
-## Decisions to settle before implementation
+## Implemented policies and remaining decisions
 
-- History coverage display and any minimum-coverage policy. The most recent
-  available ten-day period is confirmed; verify the existing region/type anchor
-  semantics as part of implementation.
-- Browser decimal arithmetic and packaging of any dependencies. Do not install
-  or add third-party browser assets without the required approval.
-- Exact table/navigation layout and presentation of local versus exported
-  intermediate routes within the confirmed starting-tier groups.
-- Preset reapplication/reset behavior, treatment of manual deviations, and
-  explicit behavior when a preset's profitability comparison is unavailable.
-  Shared per-material choices and `Make profitable P2` are confirmed.
-- Initial cycles/hour values and validation/display precision. Its meaning is
-  confirmed as completed recipe cycles per hour, not a parallel-factory count.
+- History uses one shared regional ten-day calendar window. Coverage remains
+  visible without a minimum-coverage cutoff; absent and known-zero volume differ.
+- Approved decimal.js is vendored with its license. Monetary displays round to
+  two decimal places; reference and exported prices preserve exact values.
+- A global boundary selector distinguishes local versus exported/reimported
+  intermediate expansion; selected shared manufactured quotes are exported.
+- Preset changes require confirmation before replacing manual overrides.
+  Unknown-profit P2 falls back to purchase with an explicit notice.
+- Initial rate is 1 completed cycle/hour. Finite, nonnegative decimal rates are
+  accepted, including 0.5. Zero is a valid no-production estimate.
+- Export starts empty. Selecting another quote for an included type explicitly
+  replaces its selection. `Add profitable visible` chooses the cheapest positive-
+  profit visible route for each not-yet-selected type, preserving existing choices.
+- Continuous normalized unit costing is implemented; whole-run rounding,
+  surplus accounting, and factory-layout feasibility are deferred.
+- Cheapest complete route highlighting includes ties and never hides alternatives.
+  Margin/return percentages remain deferred until their denominators are defined.
 - Whether later Markdown or exhaustive JSON/CSV companions are needed; they are
   not part of the initial browser delivery or the selective `prices` contract.
 - Industry CLI promotion scope and override option name; accepted JSON price
   value forms, handling of zero/negative values, unknown type IDs, and duplicate
   or equivalent type-ID keys. The `prices` object and ignoring all other
   top-level fields are confirmed.
-- Continuous normalized unit costing versus whole-run rounding and surplus
-  accounting; continuous costing is proposed for this stage.
-- Profit-margin definitions, precision/display rounding, tie handling, product
-  selection defaults, and report-specific CLI options. Sales tax and transport
-  fees are explicitly excluded for now; identify any other proposed fee before
-  including it rather than silently adding costs.
 
-Focused calculation and scenario tests cover the first two implementation slices,
-including exact small-graph counts, mixed-source best selection, lazy P4 expansion,
-unavailable alternatives, and stable identities across equivalent rate spellings.
-HTML browser acceptance, market-data integration, selective export, and complete
-workbook reconciliation remain pending; they must not be inferred from the domain
-tests passing.
+Browser/CLI verification extends the earlier data/domain checks:
+
+- The focused combined selection passes 155 tests, covering all grouped routes
+  against Python in both boundary modes, mixed shared sources, the preset,
+  selective export shape, HTML escaping, CLI registration/defaults, Jita-only
+  read-only selection, common history anchoring, quiet warnings, collisions,
+  symlink protection, collection/render failures, and explicit partial-write
+  failure behavior.
+- Direct-from-disk browser checks exercise controls, a 0.5-cycle/hour rate,
+  filters, shared-source propagation, preset confirmation/cancellation, recovery
+  from an invalid cycle rate, boundary changes, and selecting a single Robotics
+  quote. Reloading requested only local files and produced no page errors. The
+  actual download handler's Blob matched the preview and contained only that
+  selected type ID in `prices`.
+  The integrated browser did not expose a native Playwright download event:
+  a saved native download has not been certified by that harness. The JSON
+  preview provides an explicit copy alternative.
+- User-authorized real-data generation used immutable read-only SQLite access
+  without loading app configuration. Database hashes and app-directory file
+  size/mtime/ctime metadata were unchanged. No refresh or market request occurred.
+- Full workbook reconciliation, native save-dialog automation, whole-run factory
+  scheduling, and the industry importer remain outside this completed slice.

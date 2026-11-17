@@ -22,11 +22,48 @@ entry points without `get_`/`write_` prefixes and pass writer datasets by keywor
 Generic metadata operations remain unsupported; use `read.sde_metadata` and
 `write.sde_metadata` for SDE build metadata.
 
-## Planetary Interaction unit-cost foundation
+## Planetary Interaction browser and unit costs
 
 The [PI package](src/pfmsoft/eve_argus/pi) provides a validated local P0-P4 recipe
-catalog, pure unit-cost calculations, and compact automatic production scenarios.
-It does not yet expose a CLI report or read stored market data for PI.
+catalog, pure unit-cost calculations, compact automatic production scenarios,
+and grouped comparisons for an offline HTML browser.
+
+```bash
+uv run eve-argus reports planetary-interaction --to ./reports/pi-browser
+```
+
+Open the generated `index.html` directly in a browser; no server or network is
+required. Keep all six generated files together when copying the directory.
+The command reads stored Jita station orders and optional The Forge history;
+it never fetches or refreshes data. Missing references and stale snapshots are
+shown explicitly. Generation follows `--overwrite` and `--quiet` conventions;
+quiet mode retains warnings/errors. Existing unrelated files are preserved.
+Collection and rendering finish before writing, but multiple writes are not
+an atomic transaction.
+
+- Starts at **6% customs tax**, with intermediate production retained on-planet.
+  Override with `--tax-percent` and
+  `--intermediate-boundary on-planet|off-planet`, or edit the browser controls.
+- Shows all seven workbook starting-tier/output-tier groups (105 comparisons),
+  separately selected input/sales price bases, recipe/customs details, and
+  complete Jita buy, Jita sell, and history reference tables. The history table
+  includes average daily regional volume and coverage.
+- Shared material choices support purchasing, mining-derived quotes, and
+  manufacturing. `Make profitable P2` mixes profitable P1-manufactured P2 quotes
+  with purchased P2 inputs. Manual choices persist across control changes;
+  switching presets asks before replacing them.
+- `Factory cycles` means **completed cycles/hour**, initially 1 as an editable
+  assumption, not a factory-capacity claim. Changing it affects time estimates,
+  never unit cost. Mining costs, sales tax, and transport fees are excluded.
+- Select any subset of source or route prices to download as JSON. There is one
+  selected quote per type; filters do not remove selections. The `prices` object
+  maps type-ID strings to exact decimal unit-cost strings, including applicable
+  export tax. A JSON preview supports copying if an embedded browser blocks
+  downloads. Industry-report override importing remains separate future work.
+
+Browser arithmetic uses locally bundled MIT-licensed decimal.js (with its
+license). Node.js enables the Python/browser parity tests; those tests skip if
+Node.js is unavailable.
 
 - [Catalog](src/pfmsoft/eve_argus/pi/catalog.py): `load_catalog()` returns the
   83 material definitions. `mining_planet_types()` derives P1/P2 single-planet
@@ -46,6 +83,23 @@ It does not yet expose a CLI report or read stored market data for PI.
   cheapest complete outcome without exhaustive enumeration. Set `manufacture=True`
   to require manufacturing the root product; `False` also includes its market
   and mining sources. Root outputs are always off-planet.
+- [Browser market inputs](src/pfmsoft/eve_argus/reports/pi_browser.py):
+  `collect_pi_market_inputs()` resolves Jita's primary station from the market-hub
+  model and collects separate buy-5%, sell-5%, and ten-day regional-history
+  references for every catalog material. Supply the selected order response and
+  matching dataset, generation time, and an optional `RegionalHistory` lookup.
+  The collector performs no database reads or refreshes itself; callers supply
+  the lookup. `prices_for()` returns quotes on one market basis. Missing prices,
+  history coverage, regional average daily volume, source timestamps, and
+  freshness warnings remain explicit. No other market-hub data is required.
+- [Grouped comparisons](src/pfmsoft/eve_argus/pi/comparisons.py):
+  `calculate_grouped_comparison()` expands manufacturing above a chosen starting
+  tier and consumes shared off-planet quotes at that tier or below. For example,
+  a P2-starting P3 can consume one bought P2 and one exported P1-manufactured P2
+  without expanding either quote again. Choose the intermediate customs boundary
+  explicitly. `build_grouped_comparisons()` produces the workbook's seven tier
+  groups: P0-to-P1, P1-to-P2/P3/P4, P2-to-P3/P4, and P3-to-P4 (105 comparisons
+  for the full catalog). Direct lower-tier recipe ingredients are retained.
 
 Use `Decimal` prices and a fractional effective customs rate (`Decimal("0.1")`
 for 10%). `CostBoundary.OFF_PLANET` input quotes incur import tax;
@@ -59,9 +113,17 @@ price basis, and tax-dependent sources must share the customs rate.
 For example, purchasing 3000 P0 at 1 ISK/unit, importing at 10%, and exporting
 the 20 refined P1 costs `(3000 + 600 + 800) / 20 = 220` ISK/P1.
 Freely mined/refined P1 exported at the same rate costs 40 ISK/P1; eligible
-freely mined/refined P2 costs 720 ISK/P2. No mining cost, factory throughput,
+freely mined/refined P2 costs 720 ISK/P2. No mining cost, inferred factory capacity,
 sales tax, or transport fee is included. Missing prices retain explicit reasons
 and propagate unknown totals rather than partial quotes.
+
+Grouped comparisons keep sales valuation separate from acquisition pricing.
+`estimate_production()` takes a comparison and `Decimal` completed
+`cycles_per_hour`; output quantity times that rate gives units/hour. Hourly,
+daily, and 30-day profit estimates assume continuous operation and do not certify
+a factory layout or market fills. Changing the rate never changes unit cost.
+Each stage breakdown is per that stage's recipe cycle; embedded upstream costs
+must not be added again when displaying a route.
 
 Mining-derived graph sources are exported prices, never implicitly free inputs
 on an arbitrary factory planet. Best-scenario comparisons include input import
@@ -78,7 +140,7 @@ routes/source choices, not distinct monetary totals. Sale-price comparison stays
 separate so an acquisition graph can be reused with different output valuations.
 
 See the [PI design and implementation plan](dev/prompts/planetary_interaction.md)
-for the remaining market-data, compact-display, and reporting work.
+for calculation assumptions, verification evidence, and deferred work.
 
 ## Export market groups
 
