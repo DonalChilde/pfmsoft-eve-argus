@@ -10,7 +10,8 @@ The report should answer:
 - What does each material cost under different purchase and production scenarios?
 - Which inputs should be purchased, manufactured, or supplied by mining?
 - How do import and export taxes affect those choices?
-- What profit or loss results when the output is valued at Jita buy or sell prices?
+- What profit or loss results when the output is valued using a separately
+  selected market-price basis?
 
 This document records confirmed requirements, proposed implementation decisions,
 and unresolved policies. It is not authorization to silently choose unresolved
@@ -44,8 +45,17 @@ collection, and rendering separate from reusable calculations.
 - Cover the complete P0-P4 material range.
 - Use one configurable effective customs-tax rate across all scenarios for now.
   This is a convenience, not a model of every possible in-game tax arrangement.
-- Compare Jita buy, Jita sell, and regional ten-day history-summary price bases.
+- Market-price inputs include Jita buy 5%, Jita sell 5%, and a regional ten-day
+  history-summary price.
   The history price is The Forge regional data, not a station-specific average.
+- Anchor history summaries to the most recent available ten-day period, reusing
+  existing window-selection functions where applicable.
+- Each scenario uses one market-price basis for all purchased inputs, including
+  purchases in upstream manufacturing scenarios. Do not mix buy, sell, and
+  history market-price bases within one production scenario.
+- Select one output valuation basis separately from the input market-price
+  basis. For example, acquire inputs at Jita sell 5% and compare the resulting
+  unit cost with Jita buy 5%.
 - Support mixed input tiers and sources within the same recipe.
 - Preserve all modeled outcomes, including suboptimal, unprofitable, and
   incomplete alternatives. External constraints may justify a non-cheapest choice.
@@ -53,6 +63,10 @@ collection, and rendering separate from reusable calculations.
 - Allow a scenario's calculated unit price to supply an input to another scenario.
 - Support small operations combining mining-derived and purchased materials.
 - Produce a CLI report with Markdown as the initial human-readable format.
+- Use compact branching representations to make all alternatives inspectable
+  without requiring a separate flat Markdown row for every complete combination.
+- Exclude sales tax and transport fees from this stage's calculations, and state
+  those exclusions beside profit/loss comparisons.
 
 ### Outside this stage
 
@@ -66,6 +80,23 @@ Do not treat the absence of capacity modeling as evidence that a production
 scenario is executable at unlimited scale. Market-purchased P1 and higher inputs
 are the common factory supply case because mining volume is limited.
 
+### Notional production facilities
+
+Planets and factories can be notional for unit-cost calculations, but customs
+movements must remain explicit. Notional facilities do not imply free transfers
+between planets.
+
+The user identifies a capacity caveat for P4 made from all P1: a single planet
+cannot fit enough factories for one P4 unit per hour, but can support one every
+two hours. Retain this constraint for later throughput/profit-per-hour work;
+do not apply it as a multiplier to per-unit material or customs costs. Verify its
+product/route applicability before implementing hourly estimates.
+
+If investigation reveals other cases where actual planet or factory constraints
+change the unit-cost result, surface them to the user before choosing a workaround
+or expanding into layout optimization. Factory layouts remain deferred unless
+such a dependency requires revisiting the scope.
+
 ## Source-price model
 
 A material can have multiple named source prices. A source price is the cost per
@@ -75,8 +106,8 @@ Market purchase prices exclude subsequent planetary import charges.
 
 | Source label                       | Applies to            | Unit-price basis                                                                    |
 | ---------------------------------- | --------------------- | ----------------------------------------------------------------------------------- |
-| Jita buy                           | P0-P4 where available | Selected Jita buy-price statistic                                                   |
-| Jita sell                          | P0-P4 where available | Selected Jita sell-price statistic                                                  |
+| Jita buy 5%                        | P0-P4 where available | Existing Jita buy 5% price statistic                                                |
+| Jita sell 5%                       | P0-P4 where available | Existing Jita sell 5% price statistic                                               |
 | Regional ten-day average           | P0-P4 where available | Existing regional volume-weighted history-summary average                           |
 | Freely mined with a P1 result      | P1                    | P1 taxable base value multiplied by the effective tax rate                          |
 | Purchased P0 refined to P1         | P1                    | P0 purchase and import costs, divided by recipe output, plus P1 export tax          |
@@ -124,6 +155,8 @@ P1 unit cost =
 ```
 
 Calculate this for each selected, available P0 market-price basis.
+Within a downstream scenario, the P0 purchase basis must match that scenario's
+other market purchases.
 
 ## Customs boundaries and scenario composition
 
@@ -169,6 +202,12 @@ Preserve the specific upstream scenario identity, not just its cheapest price.
 Repeated use of an upstream source can reuse its calculation without losing its
 provenance or charging fixed/batch costs that are outside this model.
 
+Mixed sourcing means choosing market purchase, mining-derived supply, or an
+explicit manufacturing route independently for each input. It does not mean
+mixing different market-price bases: all market-purchased leaves in a scenario
+share the selected input basis. Reused upstream scenarios must be compatible with
+that basis and the shared customs-tax rate.
+
 ## Market inputs, precision, and missing data
 
 - Read stored source data without implicit fetching or refresh.
@@ -177,13 +216,34 @@ provenance or charging fixed/batch costs that are outside this model.
   Order and history timestamps must not imply synchronized collection.
 - Reuse the ten-day volume-weighted history-summary average. Zero-volume or
   missing history is unavailable pricing, not a free input.
+- Include average daily traded volume in the history input table for all
+  materials and output products covered by the report, even when input and
+  output prices use order data. Reuse the helper's full-window denominator:
+  total observed traded units
+  divided by ten calendar days, with missing days contributing zero to that
+  average and missing-day coverage displayed separately. Distinguish unavailable
+  history from a known zero-volume summary. Label the metric as The Forge
+  regional units/day, not Jita station volume, factory throughput, or expected
+  sales for this operation.
+- Select the most recent available ten-day calendar period using existing
+  history-window helpers where applicable. Record the actual anchor, dates, and
+  missing-day coverage; do not silently substitute ten nonconsecutive trading
+  days or force a window ending yesterday. Verify whether the appropriate
+  existing selection policy anchors per region or per type before integration,
+  and document the resulting behavior.
 - Warn and render stale inputs; retain unknown freshness as unknown.
 - Keep unavailable alternatives visible with an explanation. Missing prices
   invalidate only dependent costs; never rank an incomplete partial sum as a
   complete unit cost.
 - Use `Decimal` for monetary calculations. Do not convert through binary floats.
-- State sale-price basis and fee assumptions beside profit comparisons. Define
-  margin and return-on-cost denominators before implementing those fields.
+- Keep input acquisition basis and output valuation basis distinct in scenario
+  identity, report metadata, and comparisons. A scenario has one of each; they
+  may differ.
+- Calculate per-unit profit/loss as selected output valuation minus exported
+  output unit cost, excluding sales tax and transport fees. Label this as a
+  comparison on the stated price bases, not an after-all-fees return or a fill
+  forecast. Define margin and return-on-cost denominators before implementing
+  those percentage fields.
 
 ## Proposed report presentation
 
@@ -193,10 +253,30 @@ report-specific options remain subject to the decisions below.
 Markdown should contain:
 
 1. Assumptions, tax rate, source definitions, and freshness/coverage notices.
-2. Simple source-price tables, including the mining-derived P1 and P2 values.
-3. Best-complete-alternative comparisons per product and price basis.
-4. All modeled alternatives, grouped into understandable categories such as
-   `From P1`, `From P2`, and `Mixed P1/P2 inputs`.
+   Include the input market-price basis, separate output valuation basis, and
+   explicit exclusions for sales tax and transport fees.
+2. Source-price tables covering all materials and output products used by the
+   report, not only those selected by the cheapest scenario:
+   - A Jita buy 5% table and a separate Jita sell 5% table, each showing type ID,
+     material name, PI tier, unit price in ISK, and source scope/freshness.
+   - A The Forge ten-day history-summary table showing type ID, material name,
+     PI tier, average unit price in ISK, average daily traded volume in regional
+     units/day, actual window dates, coverage, and freshness.
+   - Simple calculated source-price tables, including mining-derived P1/P2 and
+     purchased-P0 refining values, with the applicable tax rate and price basis.
+   Use one row per material per source table and deterministic ordering. Shared
+   metadata can appear above a table; retain per-material differences where
+   applicable. Show unavailable inputs explicitly rather than omitting rows.
+   Displayed prices must match the values used by the calculations, subject only
+   to stated presentation rounding.
+3. Best-complete-alternative comparisons per product and price basis. The
+   history-summary input table satisfies the average daily volume requirement;
+   repeating volume in this comparison is optional. Volume is shared market
+   context, not an additive scenario total or a daily-profit forecast.
+4. All modeled alternatives in compact branching representations, grouped into
+   understandable categories such as `From P1`, `From P2`, and
+   `Mixed P1/P2 inputs`. Label branch choices and reusable sub-scenarios clearly;
+   preserve enough detail to reconstruct each complete outcome.
 5. Input source choices, quantities, material and tax breakdowns, and traceable
    production dependencies.
 6. Missing-data explanations and visibility of unprofitable alternatives.
@@ -229,13 +309,23 @@ distinguish generation time from source timestamps.
    missing-value propagation independently of databases and rendering.
 4. **Compose production scenarios.**
    Support independent per-input choices and reusable upstream scenarios.
+   Enforce one market-price basis across all purchased leaves and retain a
+   separately selected output valuation basis.
    Preserve all alternatives rather than pruning to cheapest-only routes.
-   Measure exact alternative counts for the full P0-P4 range before committing
-   to an exhaustive display strategy; do not silently cap or truncate results.
+   Measure exact alternative counts for the full P0-P4 range and prototype
+   compact branching displays on representative P3/P4 chains. Do not silently
+   cap or truncate results. Keep facilities notional while preserving customs
+   boundaries; surface discovered capacity dependencies that change unit costs.
 5. **Connect stored market prices.**
-   Select the required Jita order and The Forge history inputs, retaining their
-   provenance. Do not require unrelated market hubs. Provide actionable missing
-   source diagnostics using verified existing fetch/import commands.
+   Select Jita buy/sell 5% prices and The Forge's most recent available ten-day
+   history-summary inputs, retaining provenance and coverage. Reuse existing
+   history-selection functions where applicable; verify their anchor semantics.
+   Collect the buy/sell price references and history metrics for all materials
+   and output products covered by the source tables, including average daily
+   volume when acquisition and output valuation both use order prices. Keep
+   optional reference-data gaps from invalidating unrelated scenario costs.
+   Do not require unrelated market hubs. Provide actionable missing source
+   diagnostics using verified existing fetch/import commands.
 6. **Implement collection, rendering, and CLI integration.**
    Build one typed report model, add Markdown and any approved companion
    formats, register the report, and update directly related help/documentation.
@@ -263,6 +353,29 @@ distinguish generation time from source timestamps.
   combines mining-derived and market-purchased inputs.
 - Small synthetic graphs have exact expected alternative counts, stable source
   references, and visible non-cheapest outcomes.
+- Compact branches preserve every modeled combination and its source choices;
+  best-cost highlighting must not hide more expensive alternatives.
+- A scenario using Jita sell 5% values every market-purchased leaf, including
+  upstream P0 purchases, on that basis. A reused buy-5%-based upstream scenario
+  cannot silently enter the same input-cost calculation.
+- Given a synthetic exported output cost of 100 ISK from sell-5%-valued inputs
+  and an output buy-5% valuation of 120 ISK, per-unit profit is 20 ISK. No sales
+  tax or transport fee is deducted, and both bases and exclusions are displayed.
+- History fixtures select the most recent available ten-day calendar window
+  under the documented anchoring policy, preserving gaps rather than stretching
+  the window to collect ten trading days.
+- A ten-day history fixture with 1000 total observed traded units and two missing
+  days displays 100 units/day in the history-summary input table, with coverage
+  of 8/10 days. This also applies when both price bases use Jita order data. Missing
+  history displays unavailable volume, while a known zero-volume summary
+  displays zero; neither implies an executable daily sales target.
+- Separate buy-5%, sell-5%, and history-summary tables cover every material and
+  output product used by the report, including sources not selected by the best
+  scenario. Prices agree with calculation inputs, identities and ordering are
+  stable, and missing references remain visible without invalidating scenarios
+  that do not depend on them.
+- No hourly profit or factory-throughput claims are inferred from unit costs.
+  The all-P1-to-P4 capacity caveat does not double the per-unit material cost.
 - Missing prices and zero-volume history cannot appear as free inputs or valid
   best-cost results. Stale data remains identifiable without source refresh.
 - Summary values agree with detailed inputs/taxes and all approved output formats.
@@ -271,21 +384,22 @@ distinguish generation time from source timestamps.
 
 ## Decisions to settle before implementation
 
-- Exact Jita order scope and statistic: primary-station buy/sell 5% prices are
-  proposed, but not confirmed.
-- History-window anchoring, coverage display, and any minimum-coverage policy.
-- Whether each market scenario uses one uniform buy/sell/history basis or allows
-  market-price bases to mix per input. Mixed production sources and tiers are
-  required regardless; this separate policy must not be conflated with them.
+- Exact Jita order scope: primary-station scope is proposed, but not confirmed.
+  Buy/sell 5% statistics are confirmed.
+- History coverage display and any minimum-coverage policy. The most recent
+  available ten-day period is confirmed; verify the existing region/type anchor
+  semantics as part of implementation.
 - Which integrated same-planet and staged interplanetary production routes to
   enumerate without introducing a factory-layout optimizer.
-- Whether all alternatives require separate Markdown rows or can use a compact,
-  lossless branching representation, particularly for large P4 chains.
+- Exact compact branching layout, navigation, and how complete outcomes and
+  their costs are reconstructed without expanding every combination into a row.
 - Whether JSON/CSV companions are required and their exact schemas.
 - Continuous normalized unit costing versus whole-run rounding and surplus
   accounting; continuous costing is proposed for this stage.
-- Sale fees, profit-margin definitions, precision/display rounding, tie handling,
-  product selection defaults, and report-specific CLI options.
+- Profit-margin definitions, precision/display rounding, tie handling, product
+  selection defaults, and report-specific CLI options. Sales tax and transport
+  fees are explicitly excluded for now; identify any other proposed fee before
+  including it rather than silently adding costs.
 
 This planning update changes documentation only; calculation tests and workbook
 reconciliation have not yet been run.
