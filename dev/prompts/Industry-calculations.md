@@ -6,6 +6,11 @@ Develop an auditable EVE Online industry calculation reference and the separate
 EVE Argus integration needed to use it. A detailed manufacturing unit cost is one
 output, not the boundary of the design.
 
+The production-chain and trade-hub report contract is maintained separately in
+[Industry report](./industry-report.md). Use that prompt for report requirements,
+valuation policies, output design, and report implementation decisions. Keep
+reusable mechanics, evidence, and in-game comparisons in this document.
+
 This is a living specification, not authorization to implement every candidate
 feature. Work through unresolved mechanics and policy choices before committing
 to APIs. Deliver implementation in phases.
