@@ -58,6 +58,15 @@ def validate_tax_rate(tax_rate: Decimal) -> None:
         raise ValueError("tax_rate must be at most 1 (100%).")
 
 
+def tax_rate_key(tax_rate: Decimal) -> str:
+    """Return an exact canonical fractional rate for stable source/scenario IDs."""
+    validate_tax_rate(tax_rate)
+    if not tax_rate:
+        return "0"
+    text = format(tax_rate, "f")
+    return text.rstrip("0").rstrip(".") if "." in text else text
+
+
 @dataclass(slots=True, kw_only=True, frozen=True)
 class RecipeInput:
     """Units of one material consumed per complete recipe cycle.
@@ -223,3 +232,109 @@ class StageCost:
     export_tax: Decimal
     total_cost: Decimal | None
     output: SourcePrice
+
+
+@dataclass(slots=True, kw_only=True, frozen=True)
+class ScenarioCounts:
+    """Exact counts of structurally represented concrete source combinations.
+
+    Attributes:
+        total: All combinations, including those depending on unavailable prices
+            or unsupported mining sources.
+        complete: Combinations whose entire acquisition cost is known.
+    """
+
+    total: int
+    complete: int
+
+
+@dataclass(slots=True, kw_only=True, frozen=True)
+class SourceAlternative:
+    """One named leaf choice, preserving the original quote's identity.
+
+    Attributes:
+        option_id: Stable graph-local choice ID including market basis and tax rate.
+        source: Market or exported mining quote; unavailable quotes remain visible.
+    """
+
+    option_id: str
+    source: SourcePrice
+
+
+@dataclass(slots=True, kw_only=True, frozen=True)
+class ProductionAlternative:
+    """A compact recipe branch representing every combination of its input choices.
+
+    Attributes:
+        option_id: Stable branch ID including price basis, tax rate, and boundary.
+        product_type_id: EVE inventory type ID of the manufactured output.
+        boundary: Whether output is retained locally or exported. Local means
+            the same notional planet as the next consuming production stage.
+        inputs: Per-cycle requirements referring to graph materials by type ID.
+            Each occurrence independently selects any alternative for that material.
+        counts: Exact Cartesian-product counts without expanding input combinations.
+    """
+
+    option_id: str
+    product_type_id: int
+    boundary: CostBoundary
+    inputs: tuple[RecipeInput, ...]
+    counts: ScenarioCounts
+
+
+@dataclass(slots=True, kw_only=True, frozen=True)
+class MaterialAlternatives:
+    """Shared source and production branches for one material in a scenario graph.
+
+    Attributes:
+        material: Validated canonical identity and recipe.
+        sources: One market quote and, for P0/P1/P2, one exported mining quote.
+        production: Local and exported recipe branches; empty for P0.
+        counts: Counts across all branches, including local production usable by
+            downstream stages. Root comparisons must omit local output branches.
+    """
+
+    material: Material
+    sources: tuple[SourceAlternative, ...]
+    production: tuple[ProductionAlternative, ...]
+    counts: ScenarioCounts
+
+
+@dataclass(slots=True, kw_only=True, frozen=True)
+class ScenarioGraph:
+    """Compact shared choices for one acquisition-price basis and customs rate.
+
+    Output sale valuation is deliberately separate: the same production graph
+    can be compared with several sale-price bases without recalculating inputs.
+
+    Attributes:
+        market_basis: Uniform market basis used by all purchased leaves.
+        tax_rate: Effective customs fraction, from zero to one.
+        product_type_ids: Requested roots, deduplicated and sorted by type ID.
+        materials: Roots and their dependencies, each represented once and sorted
+            by type ID. No fully expanded Cartesian products are stored.
+    """
+
+    market_basis: MarketPriceBasis
+    tax_rate: Decimal
+    product_type_ids: tuple[int, ...]
+    materials: tuple[MaterialAlternatives, ...]
+
+
+@dataclass(slots=True, kw_only=True, frozen=True)
+class Scenario:
+    """One resolved outcome from a compact graph, retaining its input choices.
+
+    Attributes:
+        scenario_id: Deterministic identity for the entire selected outcome.
+        option_id: Graph branch or leaf selected for this material.
+        source: Reusable unit quote, including boundary and missing-data status.
+        stage: Per-cycle production breakdown; None for a market/mining leaf.
+        inputs: Resolved children in recipe order; empty for a leaf.
+    """
+
+    scenario_id: str
+    option_id: str
+    source: SourcePrice
+    stage: StageCost | None = None
+    inputs: tuple[Scenario, ...] = ()

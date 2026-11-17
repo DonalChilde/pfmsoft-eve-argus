@@ -25,8 +25,8 @@ Generic metadata operations remain unsupported; use `read.sde_metadata` and
 ## Planetary Interaction unit-cost foundation
 
 The [PI package](src/pfmsoft/eve_argus/pi) provides a validated local P0-P4 recipe
-catalog and pure unit-cost calculations. It does not yet expose a CLI report or
-automatically enumerate production alternatives.
+catalog, pure unit-cost calculations, and compact automatic production scenarios.
+It does not yet expose a CLI report or read stored market data for PI.
 
 - [Catalog](src/pfmsoft/eve_argus/pi/catalog.py): `load_catalog()` returns the
   83 material definitions. `mining_planet_types()` derives P1/P2 single-planet
@@ -36,6 +36,16 @@ automatically enumerate production alternatives.
   extraction/local refining with optional final export; `calculate_stage()`
   consumes explicit input quotes and returns a per-cycle breakdown and reusable
   unit price. Neither function reads databases or accesses the network.
+- [Scenarios](src/pfmsoft/eve_argus/pi/scenarios.py): `build_scenario_graph()`
+  represents market, mining, and manufacturing alternatives using documented
+  dataclasses. It shares material dependencies and includes both local and
+  exported intermediate production. Supply explicit off-planet market quotes on
+  one price basis; absent quotes become explicitly unavailable alternatives.
+  `scenario_counts()` returns exact total/complete combination counts,
+  `iter_scenarios()` expands outcomes lazily, and `best_scenario()` finds a
+  cheapest complete outcome without exhaustive enumeration. Set `manufacture=True`
+  to require manufacturing the root product; `False` also includes its market
+  and mining sources. Root outputs are always off-planet.
 
 Use `Decimal` prices and a fractional effective customs rate (`Decimal("0.1")`
 for 10%). `CostBoundary.OFF_PLANET` input quotes incur import tax;
@@ -53,8 +63,22 @@ freely mined/refined P2 costs 720 ISK/P2. No mining cost, factory throughput,
 sales tax, or transport fee is included. Missing prices retain explicit reasons
 and propagate unknown totals rather than partial quotes.
 
+Mining-derived graph sources are exported prices, never implicitly free inputs
+on an arbitrary factory planet. Best-scenario comparisons include input import
+taxes: a lower off-planet quote can be more expensive than a local intermediate.
+Unavailable and expensive alternatives remain in the graph even when a best
+complete result exists. A `None` best result explicitly means no complete
+eligible route; inspect the retained source reasons.
+
+Concrete combinations grow rapidly: the full catalog uses 83 material nodes and
+273 source/production branches, while some P4 roots represent more than
+532 quadrillion structural combinations. Use counts, best selections, or bounded
+iteration instead of converting a full P4 iterator to a list. Counts distinguish
+routes/source choices, not distinct monetary totals. Sale-price comparison stays
+separate so an acquisition graph can be reused with different output valuations.
+
 See the [PI design and implementation plan](dev/prompts/planetary_interaction.md)
-for the remaining scenario-generation, market-data, and reporting work.
+for the remaining market-data, compact-display, and reporting work.
 
 ## Export market groups
 

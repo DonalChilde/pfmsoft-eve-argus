@@ -12,6 +12,7 @@ from pfmsoft.eve_argus.pi.models import (
     SourcePrice,
     StageCost,
     Tier,
+    tax_rate_key,
     validate_tax_rate,
 )
 
@@ -38,7 +39,7 @@ def mined_source(
         else f"Freely mined with a {material.tier.name} result"
     )
     return SourcePrice(
-        source_id=f"mined:{type_id}:{tax_rate}:{boundary.value}",
+        source_id=f"mined:{type_id}:{tax_rate_key(tax_rate)}:{boundary.value}",
         label=label,
         type_id=type_id,
         unit_cost=(material.taxable_base * tax_rate if export_output else Decimal(0))
