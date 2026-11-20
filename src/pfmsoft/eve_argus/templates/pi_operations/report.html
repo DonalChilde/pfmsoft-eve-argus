@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Planetary Operations | Eve Argus</title>
+  <style>{% include "styles.css" %}</style>
+</head>
+<body>
+  <template id="extraction-view">{% include "extraction.html" %}</template>
+  <template id="factory-view">{% include "p1-inputs.html" %}</template>
+  <template id="market-view">{% include "market.html" %}</template>
+  <noscript>Enable JavaScript to use the offline operations and market views.</noscript>
+  <script>
+    "use strict";
+    const piSnapshot = {{ materials | tojson }};
+    const marketReports = {{ reports | tojson }};
+    const routePage = new URLSearchParams(location.search).get("page");
+    const viewId = routePage === "market" ? "market-view" : routePage === "factory" ? "factory-view" : "extraction-view";
+    document.body.append(document.getElementById(viewId).content.cloneNode(true));
+    if (viewId === "market-view") {
+      {% include "market.js" %}
+    } else {
+      {% include "mockup.js" %}
+    }
+  </script>
+</body>
+</html>

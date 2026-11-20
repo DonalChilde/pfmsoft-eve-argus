@@ -1,0 +1,46 @@
+  <div class="shell">
+    <header>
+      <div class="topline">
+        <div class="brand">ARGUS / PLANETARY OPERATIONS</div>
+        <span class="mock-badge">Offline report · stored market data</span>
+      </div>
+      <nav class="nav" aria-label="Planetary Interaction views">
+        <a href="?page=extraction">Extraction</a>
+        <a href="?page=factory">P1 Inputs</a>
+        <a href="?page=factory&amp;view=p2">P2 Inputs</a>
+        <a href="?page=factory&amp;view=p3">P3 Inputs</a>
+        <a href="?page=market" data-market-nav="prices">Market Prices</a>
+        <a href="?page=market&amp;view=history" data-market-nav="history">Market History</a>
+      </nav>
+    </header>
+    <main>
+      <div class="page-heading"><h1 id="market-title">Market Archive</h1></div>
+      <p class="sample-note">Planetary Industry materials (P0–P4) from locally stored snapshots. Freshness is evaluated when this report is generated; these are not live quotes.</p>
+      <div class="global-controls" id="market-controls" hidden>
+        <label data-prices-only>Price summary
+          <select id="market-scope">
+            <option value="jita">Jita system</option>
+            <option value="forge-prices">The Forge region</option>
+            <option value="all">All</option>
+          </select>
+        </label>
+        <label id="region-label">Region
+          <select id="market-region">
+            <option value="">All regions</option>
+          </select>
+        </label>
+      </div>
+      <p id="market-status" role="status">Loading saved report…</p>
+      <details>
+        <summary>Report metadata</summary>
+        <div id="market-metadata"></div>
+      </details>
+      <div class="table-wrap panel" role="region" aria-label="Saved market report" tabindex="0">
+        <table>
+          <caption class="sr-only" id="market-caption">Archived market report</caption>
+          <thead><tr id="market-columns"></tr></thead>
+          <tbody id="market-rows"></tbody>
+        </table>
+      </div>
+    </main>
+  </div>

@@ -24,6 +24,21 @@ Generic metadata operations remain unsupported; use `read.sde_metadata` and
 
 ## Planetary Interaction browser and unit costs
 
+For the separate route-oriented operations report, run:
+
+```bash
+uv run eve-argus reports planetary-operations --to ./reports/planetary-operations.html
+```
+
+Open the single HTML file directly in a browser. It includes Extraction,
+P1/P2/P3 Inputs, Market Prices, and Market History, with no companion files
+or network requests. It uses the latest locally stored The Forge order
+snapshot (Jita **system** and The Forge region) and per-material ten-day
+Forge history windows where available. `--overwrite` replaces an existing
+report; `--quiet` keeps warnings and errors visible.
+
+The original browser command below is unchanged.
+
 The [PI package](src/pfmsoft/eve_argus/pi) provides a validated local P0-P4 recipe
 catalog, pure unit-cost calculations, compact automatic production scenarios,
 and grouped comparisons for an offline HTML browser.

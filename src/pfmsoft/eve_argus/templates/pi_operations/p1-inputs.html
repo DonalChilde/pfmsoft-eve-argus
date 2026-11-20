@@ -1,0 +1,160 @@
+  <div class="shell">
+    <header>
+      <div class="topline">
+        <div class="brand">ARGUS / PLANETARY OPERATIONS</div>
+        <span class="mock-badge">Offline report · stored market data</span>
+      </div>
+      <nav class="nav" aria-label="Planetary Interaction views">
+        <a href="?page=extraction">Extraction</a>
+        <a href="?page=factory" aria-current="page">P1 Inputs</a>
+        <a href="?page=factory&amp;view=p2" data-factory-tier="P2">P2 Inputs</a>
+        <a href="?page=factory&amp;view=p3" data-factory-tier="P3">P3 Inputs</a>
+        <span class="planned">Exported Costs · planned</span>
+        <span class="planned">Factory Planner · planned</span>
+        <span class="planned">Extraction Planner · planned</span>
+        <a href="?page=market">Market Prices</a>
+        <a href="?page=market&amp;view=history">Market History</a>
+        <span class="planned">PI Stats · planned</span>
+        <span class="planned">Factory Layouts · planned</span>
+      </nav>
+    </header>
+
+    <main>
+      <div class="page-heading">
+        <div>
+          <div class="eyebrow">Factory operations · starting tier P1</div>
+          <h1>P1 Inputs</h1>
+          <p class="description">Compare routes that use imported P1 materials to produce P2, P3, or P4 outputs.</p>
+        </div>
+        <div class="meta" data-order-source></div>
+      </div>
+
+      <p class="sample-note"><strong>Scenario assumptions.</strong> All routes import only P1. P2 and P3 intermediates are made on-planet without customs charges. Import tax applies to all required P1, and export tax applies only to the finished output.</p>
+
+      <section class="global-controls" aria-label="Shared operation assumptions">
+        <label for="tax-rate">Effective customs tax (%)
+          <input id="tax-rate" type="number" value="6" min="0" max="100" step="any" aria-describedby="tax-status">
+          <span id="tax-status" role="status"></span>
+        </label>
+        <label for="sale-source">Sales valuation
+          <select id="sale-source">
+            <option>Jita Sell 5%</option>
+            <option>Jita Buy 5%</option>
+            <option>The Forge Avg</option>
+          </select>
+        </label>
+      </section>
+
+      <div class="workspace">
+        <aside id="input-materials" class="panel source-panel" aria-labelledby="sources-title">
+          <div class="panel-heading">
+            <h2 id="sources-title">Input material sources</h2>
+            <p>Choose a market source or the net unit cost from a matching Extraction operation.</p>
+          </div>
+          <div class="source-list" data-source-tiers="P1" data-use-extraction-costs></div>
+          <p class="footnote">Extraction costs use the settings carried here by mockup navigation, or Extraction defaults when opened directly.</p>
+        </aside>
+        <div class="pane-resizer" role="separator" aria-label="Resize input materials pane" aria-orientation="vertical" aria-valuemin="20" aria-valuemax="55" aria-valuenow="25" tabindex="0"></div>
+
+        <section class="panel comparison" aria-labelledby="operations-title">
+          <div class="comparison-head">
+            <div>
+              <h2 id="operations-title">P1-starting operations</h2>
+              <p>Each rate is editable independently and defaults to one completed recipe cycle per hour.</p>
+            </div>
+            <button type="button" class="source-toggle" aria-controls="input-materials" aria-expanded="true" hidden>Hide input materials</button>
+            <span class="mock-badge" id="factory-output-count"></span>
+          </div>
+          <div class="table-wrap operations-table-wrap" role="region" aria-label="P1-starting operations table" tabindex="0">
+            <table>
+              <caption class="muted" style="text-align:left;padding:0 14px 10px">Primary comparison; expand an operation for its cost and tax breakdown.</caption>
+              <thead>
+                <tr>
+                  <th scope="col">Operation / output</th>
+                  <th scope="col">Units / cycle</th>
+                  <th scope="col">Completed cycles / hour</th>
+                  <th scope="col">Units / hour</th>
+                  <th scope="col">Net cost / unit</th>
+                  <th scope="col">Sale / unit</th>
+                  <th scope="col">Profit margin</th>
+                  <th scope="col">Profit / loss / hour</th>
+                  <th scope="col">Profit / loss / 30 days</th>
+                </tr>
+              </thead>
+              <tbody data-factory-output-tier="2">
+                <tr class="operation-group"><th scope="rowgroup" colspan="9"><span>P1 → P2</span></th></tr>
+              </tbody>
+              <tbody data-factory-output-tier="3">
+                <tr class="operation-group"><th scope="rowgroup" colspan="9"><span>P1 → P3</span></th></tr>
+              </tbody>
+              <tbody data-factory-output-tier="4">
+                <tr class="operation-group"><th scope="rowgroup" colspan="9"><span>P1 → P4</span></th></tr>
+              </tbody>
+            </table>
+          </div>
+          <template id="factory-recipe">
+            <tr data-operation>
+              <td><button type="button" class="operation-name" aria-expanded="false"></button></td>
+              <td></td>
+              <td><input class="cycle-rate rate-input" type="number" min="0" step="any" value="1"></td>
+              <td><output class="units-hour"></output><span class="rate-status" role="status"></span></td>
+              <td></td>
+              <td></td>
+              <td><output class="profit-margin"></output></td>
+              <td><output class="profit-hour"></output></td>
+              <td><output class="profit-30days"></output></td>
+            </tr>
+            <tr class="detail-row" hidden><td colspan="9">
+              <div class="detail-grid">
+                <div class="detail-card cycle-costs">
+                  <h3>Per recipe cycle</h3>
+                  <p class="recipe-quantities"></p>
+                  <p class="imported-materials"></p>
+                  <p class="operation-id"></p>
+                </div>
+                <div class="detail-card">
+                  <h3>Continuous estimate</h3>
+                  <p>Profit / day <strong class="profit-day"></strong></p>
+                </div>
+              </div>
+            </td></tr>
+          </template>
+          <p class="footnote">Rates are user assumptions, not automatic factory-capacity calculations. Time estimates assume continuous operation and do not predict market fills.</p>
+        </section>
+      </div>
+      <dialog id="set-rates-dialog" class="info-dialog" aria-labelledby="set-rates-title">
+        <form class="dialog-content" method="dialog">
+          <h2 id="set-rates-title">Set cycles/hour</h2>
+          <p id="set-rates-help"></p>
+          <div id="bulk-cycle-rates" aria-describedby="set-rates-help" role="group" aria-label="Completed cycles/hour"></div>
+          <p>
+            <button type="submit" value="cancel" formnovalidate>Cancel</button>
+            <button type="submit" value="apply">Apply</button>
+          </p>
+        </form>
+      </dialog>
+      <dialog id="set-inputs-dialog" class="info-dialog" aria-labelledby="set-inputs-title">
+        <form class="dialog-content" method="dialog">
+          <h2 id="set-inputs-title">Set all inputs</h2>
+          <label>Input source <select id="bulk-input-source" autofocus></select></label>
+          <p>Only sources available for every material in this tier are listed.</p>
+          <button type="submit" value="cancel">Cancel</button>
+          <button type="submit" value="apply">Apply</button>
+        </form>
+      </dialog>
+      <dialog id="material-info-dialog" class="info-dialog" aria-labelledby="material-info-title">
+        <div class="dialog-content">
+          <div class="dialog-heading">
+            <h2 id="material-info-title">Material information</h2>
+            <button class="dialog-close" type="button" data-close-dialog aria-label="Close material information">Close</button>
+          </div>
+          <dl>
+            <dt>PI level</dt><dd id="material-info-tier"></dd>
+            <dt>Selected source</dt><dd id="material-info-source"></dd>
+            <dt>Unit value</dt><dd id="material-info-value"></dd>
+          </dl>
+          <p id="material-info-description"></p>
+        </div>
+      </dialog>
+    </main>
+  </div>

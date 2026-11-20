@@ -47,6 +47,13 @@ the production browser's scripts or templates.
 
 ## First mockup deliverables
 
+The separate CLI report is `eve-argus reports planetary-operations --to
+./reports/planetary-operations.html`. It packages the six active views into
+one offline HTML file without changing `reports planetary-interaction`.
+Unlike the fixed mockup archive below, the CLI uses the latest locally stored
+The Forge order response for both scopes and stored per-material Forge
+history, without refreshing either source.
+
 The static pages live in [`dev/tmp/pi-view/`](../tmp/pi-view/):
 
 - [Extraction](../tmp/pi-view/extraction.html) — P0-to-P1 and extraction-led
