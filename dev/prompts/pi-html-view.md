@@ -1,11 +1,9 @@
 # Planetary Interaction Operations View
 
-This is a design plan for a PI operations view, used alongside but developed
-separately from the CLI-generated **What PI to build** browser described in
-[planetary_interaction.md](./planetary_interaction.md). The two tools work with
-overlapping PI materials and operations, so calculation/catalog code may be
-reused after its semantics are checked. Do not treat this view as a redesign,
-replacement, or required extension of the existing browser.
+This is the design plan for `reports planetary-operations`, the sole PI report.
+It replaces the retired **What PI to build** browser described in the
+[historical PI design](./planetary_interaction.md). The reusable Python PI
+catalog and calculation tools remain available.
 
 The view is intended to help a player compare planned planet operations,
 understand input and customs costs, estimate output at a chosen factory rate,
@@ -13,7 +11,6 @@ and carry calculated unit costs into downstream operations.
 
 ## Confirmed decisions
 
-- Develop this as a separate view/application track.
 - Start the visual exploration with two pages sharing a navigation shell:
   **Extraction** and **P1 Inputs**.
 - Each operation has an editable **Completed cycles/hour** rate. On Extraction,
@@ -27,29 +24,23 @@ and carry calculated unit costs into downstream operations.
   production output and must not imply that archived prices or calculations are
   live or validated.
 
-## Separate product scope and possible code reuse
-
-The existing browser answers scenario questions about unit costs, route choices,
-sales valuations, and selective price export. This operations view has its own
-navigation, page organization, and interaction needs, including per-operation
-factory rates and loadout details.
+## Reusable Python code
 
 Candidate reusable code is in the PI catalog, models, and cost calculations,
 including:
 
 - [PI costing](../../src/pfmsoft/eve_argus/pi/costing.py)
 - [PI models](../../src/pfmsoft/eve_argus/pi/models.py)
-- [PI browser collection](../../src/pfmsoft/eve_argus/reports/pi_browser.py)
+- [Station-based PI market inputs](../../src/pfmsoft/eve_argus/reports/pi_market_inputs.py)
 
-Reuse is optional and should follow a behavior comparison. Keep this view's
-presentation and page state independent; do not make mockups import or depend on
-the production browser's scripts or templates.
+Reuse should follow a behavior comparison: the station-based collector is
+retained for Python callers, while the operations report uses Jita system prices.
 
 ## First mockup deliverables
 
-The separate CLI report is `eve-argus reports planetary-operations --to
+The CLI report is `eve-argus reports planetary-operations --to
 ./reports/planetary-operations.html`. It packages the active views into
-one offline HTML file without changing `reports planetary-interaction`.
+one offline HTML file.
 Unlike the fixed mockup archive below, the CLI uses the latest locally stored
 The Forge order response for both scopes and stored per-material Forge
 history, without refreshing either source.
@@ -594,6 +585,4 @@ The first iteration is ready for review when:
 - Layout remains usable on a narrow screen and has semantic headings, table
   headers, and labels for controls.
 
-After review, record visual and behavior decisions here before promoting this
-plan into [planetary_interaction.md](./planetary_interaction.md) or starting
-production integration.
+Record further visual and behavior decisions for the production report here.

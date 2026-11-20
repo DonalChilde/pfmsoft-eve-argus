@@ -1,5 +1,12 @@
 # Planetary Interaction
 
+This is a historical design record. The `reports planetary-interaction`
+browser and its renderer have been retired. See the [PI operations plan](./pi-html-view.md)
+for the supported report. The Python PI calculations and
+[station-based market collector](../../src/pfmsoft/eve_argus/reports/pi_market_inputs.py)
+remain available for reuse. Command examples and implementation notes below
+describe the retired browser, not the current CLI.
+
 ## Purpose and status
 
 Design and implement reusable calculations and a CLI-generated HTML browser for
@@ -104,7 +111,8 @@ graph so it can be reused across valuation bases.
 
 The browser data slice now adds:
 
-- [`reports/pi_browser.py`](../../src/pfmsoft/eve_argus/reports/pi_browser.py):
+- [`reports/pi_market_inputs.py`](../../src/pfmsoft/eve_argus/reports/pi_market_inputs.py)
+  (formerly `reports/pi_browser.py`):
   documented dataclasses and a collector for explicitly supplied stored datasets,
   resolving Jita from the hub model. It retains all 83 material rows, station
   buy/sell 5% quotes, regional history prices and daily volume, coverage,
@@ -125,11 +133,11 @@ days is stale); missing type history and known zero volume stay distinct.
 
 The browser/CLI slice now supplies:
 
-- [`reports/pi_browser_render.py`](../../src/pfmsoft/eve_argus/reports/pi_browser_render.py)
+- `reports/pi_browser_render.py` (retired)
   and packaged templates/assets: safe embedded snapshot JSON, local scripts,
   all source-reference tables, 105 grouped comparisons, recipe/customs details,
   filters, sorting, and shared per-material source controls.
-- [`cli/reports/planetary_interaction.py`](../../src/pfmsoft/eve_argus/cli/reports/planetary_interaction.py):
+- `cli/reports/planetary_interaction.py` (retired):
   registered CLI snapshot selection, Jita-only station book reads, optional
   regional history, output preflight, render-before-write, overwrite protection,
   and quiet mode that retains warnings.

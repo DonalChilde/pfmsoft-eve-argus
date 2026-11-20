@@ -1,4 +1,4 @@
-"""Collect PI browser price references from explicitly selected stored datasets."""
+"""Collect PI market price references from explicitly selected stored datasets."""
 
 from collections.abc import Mapping
 from dataclasses import dataclass
@@ -57,7 +57,7 @@ class PiMaterialPrices:
 
 @dataclass(slots=True, kw_only=True, frozen=True)
 class PiMarketInputs:
-    """Collected references shared by browser calculations and source tables.
+    """Collected references for PI calculations and source tables.
 
     Attributes:
         hub: Jita entry resolved from the configured market-hub model.
@@ -67,7 +67,7 @@ class PiMarketInputs:
         order_freshness: Current, expired, or unknown according to effective expiry.
         history_window: Common regional ten-calendar-day window, or None if absent.
         materials: Every catalog material in type-ID order, including missing prices.
-        warnings: Source-level notices retained for eventual CLI/browser display.
+        warnings: Source-level notices for callers to surface.
     """
 
     hub: MarketHub

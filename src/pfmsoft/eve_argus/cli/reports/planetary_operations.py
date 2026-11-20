@@ -25,7 +25,7 @@ from pfmsoft.eve_argus.reports.history_summary import (
     HistorySummaryInput,
     collect_history_summary_report,
 )
-from pfmsoft.eve_argus.reports.pi_browser import resolve_jita_hub
+from pfmsoft.eve_argus.reports.pi_market_inputs import resolve_jita_hub
 from pfmsoft.eve_argus.reports.pi_operations import (
     PiOperationsReport,
     render_pi_operations,

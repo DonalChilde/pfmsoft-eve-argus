@@ -18,6 +18,16 @@ from pfmsoft.eve_argus.pi.catalog import load_catalog
 from pfmsoft.eve_argus.settings import SETTINGS_KEY, EveArgusSettings
 
 
+def test_planetary_operations_is_the_only_pi_report() -> None:
+    """Expose the standalone report and reject the retired browser command."""
+    runner = CliRunner()
+    result = runner.invoke(app, ["reports", "planetary-operations", "--help"])
+    assert result.exit_code == 0
+    result = runner.invoke(app, ["reports", "planetary-interaction", "--help"])
+    assert result.exit_code == 2
+    assert "No such command" in result.output
+
+
 def test_standalone_report_uses_latest_orders_and_keeps_scope_separate(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

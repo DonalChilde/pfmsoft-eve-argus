@@ -17,7 +17,7 @@ from pfmsoft.eve_argus.market_history.models import MarketHistoryRecord
 from pfmsoft.eve_argus.models import market_hubs
 from pfmsoft.eve_argus.pi.catalog import load_catalog
 from pfmsoft.eve_argus.pi.models import MarketPriceBasis
-from pfmsoft.eve_argus.reports.pi_browser import collect_pi_market_inputs
+from pfmsoft.eve_argus.reports.pi_market_inputs import collect_pi_market_inputs
 from pfmsoft.eve_argus.reports.station_trades import (
     RegionalHistory,
     select_history_window,
