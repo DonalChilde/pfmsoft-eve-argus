@@ -7,9 +7,9 @@ dev/tmp/pi-view directory and sub directories can be used for mock ups.
 There should be a top nav bar allowing navigation to the different PI views, to include:
 
 - Extraction - A view for extraction (mining) focused PI activities. Extraction planets can also include some limited factory work.
-- P1-P4 - A view for factory planets turning P1 materials into higher level products.
-- P2-P4 - A view for factory planets turning P2 materials into higher leevel products.
-- P3-P4 - A view for factory planets turning P3 materials into higher level products.
+- P1 Inputs - A view for factory planets turning P1 materials into higher level products.
+- P2 Inputs - A view for factory planets turning P2 materials into higher leevel products.
+- P3 Inputs - A view for factory planets turning P3 materials into higher level products.
 - Exported costs - A view showing the exported unit costs of selected products. More details below.
 - Factory Planner - an interactive display of the possible PI building combinations at different Control Center levels.
 - Extraction Planner
@@ -32,29 +32,32 @@ There should be a top nav bar allowing navigation to the different PI views, to 
 - `Extracted P2` - a zero cost input representing materials produced on one planet for internal consumption. Extraction costs are real, but not modeled. Not possible for all combinations.
 - `Extracted P3` - a zero cost input representing materials produced on one planet for internal consumption. Extraction costs are real, but not modeled. Not possible for all combinations.
 
-On the left side of the view, there should be a pane that displays the possible inputs for the view, grouped by PI type eg. P0, P1, and some P2 for the extraction view. Name | dropdown box to select source | Price. Maybe in a table with an invisble grid for layout? Suggest what would work best.
+On the left side of the view, there should be a pane that displays the possible material inputs for the view, grouped by PI type eg. P0, P1, and some P2 for the extraction view. Name | dropdown box to select source | Price. Maybe in a table with an invisble grid for layout? Suggest what would work best.
 
 At the top of the view there should be an input box for tax rate, and a drop down box to pick the sales price source.
 
-Note that a change of input cost on one view may cascade changes through the rest of the views.
+Note that a change of input cost on one view may cascade changes through the rest of the views if they make use of a changed unit cost in their iput prices.
 
 We will start with buying and selling from one market hub, Jita, So the available sales prices for comparison should be `Jita Sell 5%`, `Jita Buy 5%`, and `The Forge Avg`.
 
+Later we will add the ability to choose from other market hubs, or user defined regions/systems.
+
 The main pane of the view should be a table with columns for:
-| Operation | Output | Cycles | Units per Cycle | Cycles per hour | Units Made | Materials Cost | Materials Cost per Unit | Taxes In | Taxes Out | Taxes Per unit | Net Cost per Unit | Unit Sales Price | Gross Sales | % Return | Profit / Loss per hour | Profit/Loss per day | Profit/Loss per 30 days | m3 in | m3 out |
-| --------- | ------ | ------ | --------------- | --------------- | ---------- | -------------- | ----------------------- | -------- | --------- | -------------- | ----------------- | ---------------- | ----------- | -------- | ---------------------- | ------------------- | ----------------------- | ----- | ------ |
+| Operation | Output | Cycles | Units per Cycle | Cycles per hour | Units Made | Materials Cost | Materials Cost per Unit | Taxes In | Taxes Out | Taxes Per unit | Net Cost per Unit | Unit Sales Price | Gross Sales | % Return | Profit / Loss per hour | Profit/Loss per day | Profit/Loss per 30 days | m3 in | m3 out | Loadout |
+| --------- | ------ | ------ | --------------- | --------------- | ---------- | -------------- | ----------------------- | -------- | --------- | -------------- | ----------------- | ---------------- | ----------- | -------- | ---------------------- | ------------------- | ----------------------- | ----- | ------ |--|
 
 where:
 
-- Operation is P0-P1, P1-P3, P0-P1-P2, etc. Operation should be unique across all views, as it will also be the identifier for a group of unit costs used later.
+- Operation is P0-P1, P1-P3, P0-P1-P2, etc. Operation should be unique across all views, as it will also be the identifier for a group of unit costs used as input prices later.
 - Cycles is a user editable field representing the number of cycles per hour of the final output to model. This number can be used to model different factory configurations.
 - Cycles per hour will almost always be 1, and is not user editable. it is .5 for certain P1-P4 configurations where it is not possible to support enough factories on one planet to build one unit per hour.
+- Loadout is a button, when pressed will show a popup that has the |name|Quantity| of imported materials that will fit in one launchpad, 10000 m3, to be used by a whole number of cycles. Only useful for situations where there are imported materials. This info can be copied to the clipboard in markdown format.
 
 The individual operations for each view will define a set of product prices that can be used in higher level calculations, eg the P0-P1 unit cost from the extraction view can be used as the P1 input cost for P1-P4.
 
 #### Export costs/prices
 
-The unit cost of zero or more materials can be exported for use in other calculations. One value per material supported.
+The unit cost of zero or more materials can be exported as json for use in other calculations. One value per material supported. json format has some work done in dev/prompts/planetary_interaction.md, refine and define.
 
 ### Extraction
 
@@ -67,5 +70,21 @@ The unit cost of zero or more materials can be exported for use in other calcula
 #### Operations
 
 - P0-P1
-- P0-P1-P2 - For producing P2 using P1 extracted on the same planet. Depending on the Import Material price selected, this can model P2 source one one planet, or split prduction with one P1 imported.
-- P0-P1-P3
+- P0-P1-P2 - For producing P2 using P1 extracted on the same planet. Depending on the Import Material price selected, this can model P2 source one one planet, or split production with one P1 imported.
+- P0-P1-P3 - For producing P3 using P1 extracted on the same planet. Depending on the Import Material price selected, this can model P2 source one one planet, or split production with P1 and or P2 imported.
+
+### P1 Inputs
+
+Describes the refining of P1 inputs to higher level materials.
+
+#### Possible Inputs
+
+- P1
+- P2
+- P3
+
+#### Operations
+
+- P1-P2
+- P1-P3
+- P1-P4
