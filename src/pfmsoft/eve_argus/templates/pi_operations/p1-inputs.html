@@ -140,7 +140,18 @@
           <h2 id="set-inputs-title">Set all inputs</h2>
           <label>Input source <select id="bulk-input-source" autofocus></select></label>
           <p>Only sources available for every material in this tier are listed.</p>
-          <button type="submit" value="cancel">Cancel</button>
+          <fieldset id="bulk-build-buy" hidden disabled>
+            <legend>Build/Buy comparison</legend>
+            <p><label>Market source <select id="bulk-build-buy-market">
+              <option>Jita Sell 5%</option>
+              <option>Jita Buy 5%</option>
+              <option>The Forge Avg</option>
+            </select></label></p>
+            <p><label>Minimum build savings (%) <input id="bulk-build-buy-threshold"
+              type="number" value="5" min="0" max="100" step="any" required></label></p>
+            <p>Build from P1 when the unit cost is lower by at least this percentage of the market price. If only one cost is available, use it. If neither is available, the market source is shown as unavailable.</p>
+          </fieldset>
+          <button type="submit" value="cancel" formnovalidate>Cancel</button>
           <button type="submit" value="apply">Apply</button>
         </form>
       </dialog>

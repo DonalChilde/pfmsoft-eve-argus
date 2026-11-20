@@ -29,7 +29,7 @@
     const pages = ["extraction", "factory", "market", "planner", "buy-build", "pi-stats", "factory-plans", "calculated-costs", "exported-costs"];
     const viewId = `${pages.includes(routePage) ? routePage : "extraction"}-view`;
     document.body.append(document.getElementById(viewId).content.cloneNode(true));
-    const scenarioKeys = ["extraction", "p1-inputs", "p2-inputs", "p3-inputs", "buy-build-tax"];
+    const scenarioKeys = ["extraction", "p1-inputs", "p2-inputs", "p3-inputs", "buy-build-tax", "p4-buy-overrides"];
     function carryScenario(keys = scenarioKeys) {
       for (const link of document.querySelectorAll(".nav a:not([aria-current])")) {
         const url = new URL(link.href);

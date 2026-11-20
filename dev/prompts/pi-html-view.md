@@ -441,6 +441,13 @@ dialogs. Default to `24` cycles/hour for P2 → P3 and `4` for P2 → P4.
   mockup navigation, or the P1 Inputs defaults when opened directly. This
   net unit cost includes the producing planet's P1 import and P2 export
   taxes. Charge P2 import tax separately at the receiving planet's rate.
+- The P2 material group's **Set all inputs** dialog offers **Build/Buy**.
+  Choose a market source (default `Jita Sell 5%`) and minimum savings
+  (default `5%`). Build when the P1 → P2 cost is lower and saves at least
+  that percentage of the market price; otherwise buy. If only one cost is
+  available, use it; if neither is available, show the selected market quote
+  as unavailable. Applying sets ordinary per-material sources, which can still
+  be edited individually and carry through report navigation.
 
 ### P3 Inputs
 
@@ -489,10 +496,29 @@ is imported there. Both customs rates default to 6% and are independently
 editable.
 
 Show the cheapest priced combination, both uniform sourcing baselines, and
-savings versus buying all P2. Show per-input quantities, unit costs and the
-recommended source. Prefer buying on equal costs. Label a sole priced option,
-and leave totals unavailable when any required input lacks a price. These
-are per-unit estimates, not a factory-capacity or hauling plan.
+savings versus buying all P2. Expand each output to show per-input quantities,
+unit costs, the percentage difference, and the recommended source in a
+full-width table with compact rows and horizontal column padding. Calculate
+the difference as `(buy − build) / buy`, shown as a percentage. Show positive
+values in green and negative values in red; keep zero and unavailable values
+neutral. Use a dash when either cost is unavailable or the buy price is
+nonpositive. Prefer buying on equal costs. Label a sole priced option, and
+leave totals unavailable when any required input lacks a price. These are
+per-unit estimates, not a factory-capacity or hauling plan.
+
+For each P4 output, **Buy?** defaults to the best available choice for each
+P2 input: checked buys, unchecked builds. Changing it recalculates
+**Best available**, while the buy-all and build-all baselines stay unchanged.
+Savings versus buy-all can be negative after a manual choice. Direct P1 is
+always bought. If a chosen option lacks a cost, the plan is unavailable.
+Manual choices travel through report navigation into **Calculated Costs**.
+
+Compare the finished P4 sale price using **Jita Sell 5%** (default),
+**Jita Buy 5%**, or **The Forge Avg**. This does not change ingredient costs
+or sourcing. Show the sale price and, for Best available, Buy all, and Build
+all, profit per unit (`sale − unit cost`) before sales taxes and fees and
+margin (`profit / sale`) in separate, adjacent columns. Use a dash when a
+required value is unavailable or a margin has a nonpositive sale price.
 
 ## Cost export
 

@@ -208,10 +208,33 @@ if (factoryInputTier > 1) {
 
 const setInputsDialog = document.getElementById("set-inputs-dialog");
 const bulkInputSource = document.getElementById("bulk-input-source");
+const bulkBuildBuy = document.getElementById("bulk-build-buy");
+const bulkMarket = document.getElementById("bulk-build-buy-market");
+const bulkThreshold = document.getElementById("bulk-build-buy-threshold");
+const bulkBuildBuyMode = "build-buy";
+const p1ToP2Source = factorySources.find(route => route.inputTier === 1 && route.outputTier === 2).label;
+const updateBulkBuildBuy = () => {
+  if (!bulkBuildBuy) return;
+  bulkBuildBuy.hidden = bulkBuildBuy.disabled = bulkInputSource.value !== bulkBuildBuyMode;
+};
+bulkInputSource.addEventListener("change", updateBulkBuildBuy);
 let bulkTargets = [];
 setInputsDialog.querySelector("form").addEventListener("submit", event => {
   if (event.submitter?.value !== "apply") return;
-  for (const select of bulkTargets) select.value = bulkInputSource.value;
+  if (bulkInputSource.value === bulkBuildBuyMode) {
+    const market = bulkMarket.value;
+    const threshold = bulkThreshold.valueAsNumber;
+    for (const select of bulkTargets) {
+      const id = Number(select.closest(".material").dataset.typeId);
+      const buy = quote(id, market);
+      const build = sourceCost(id, p1ToP2Source, factoryInputTier);
+      const useBuild = build !== null && (buy === null ||
+        (build < buy && (buy - build) * 100 >= buy * threshold));
+      select.value = useBuild ? p1ToP2Source : market;
+    }
+  } else {
+    for (const select of bulkTargets) select.value = bulkInputSource.value;
+  }
   updatePrices();
 });
 
@@ -242,10 +265,14 @@ for (const list of document.querySelectorAll("[data-source-tiers]")) {
         bulkTargets.every(select => [...select.options].some(candidate => candidate.value === option.value))
       );
       bulkInputSource.replaceChildren(...common.map(option => new Option(option.textContent, option.value)));
+      if (factoryRecipe && factoryInputTier === 2 && tier === "P2" && common.some(option => option.value === p1ToP2Source)) {
+        bulkInputSource.add(new Option("Build/Buy · market vs. P1 → P2", bulkBuildBuyMode));
+      }
       const current = bulkTargets[0].value;
       if (common.some(option => option.value === current) && bulkTargets.every(select => select.value === current)) {
         bulkInputSource.value = current;
       }
+      updateBulkBuildBuy();
       setInputsDialog.querySelector("h2").textContent = `Set all inputs for ${tier}`;
       setInputsDialog.showModal();
     });
@@ -626,6 +653,7 @@ const carryPrices = () => {
     "p2-inputs": pageParams.get("p2-inputs"),
     "p3-inputs": pageParams.get("p3-inputs"),
     "buy-build-tax": pageParams.get("buy-build-tax"),
+    "p4-buy-overrides": pageParams.get("p4-buy-overrides"),
   };
   if (extractionPage || factoryState) {
     const state = new URLSearchParams({ tax: taxInput.value });

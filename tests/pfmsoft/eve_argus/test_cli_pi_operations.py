@@ -106,11 +106,31 @@ def test_standalone_report_uses_latest_orders_and_keeps_scope_separate(
     html = output.read_text(encoding="utf-8")
     assert not re.search(r"<(?:script|link)\b[^>]*(?:src|href)=", html)
     assert 'href="?page=planner"' in html
+    factory = html.split('<template id="factory-view">', 1)[1]
+    factory = factory.split('<dialog id="set-inputs-dialog"', 1)[1].split(
+        "</dialog>", 1
+    )[0]
+    assert 'id="bulk-build-buy" hidden disabled' in factory
+    assert 'id="bulk-build-buy-market"' in factory
+    assert 'id="bulk-build-buy-threshold"' in factory
     buy_build = html.split('<template id="buy-build-view">', 1)[1].split(
         "</template>", 1
     )[0]
     assert "<h1>P4 Buy/Build</h1>" in buy_build
     assert "Savings vs. buy all / unit" in buy_build
+    assert re.search(
+        r'<select id="p4-sale-source">\s*<option>Jita Sell 5%</option>',
+        buy_build,
+    )
+    assert re.findall(r'<th scope="col">(.*?)</th>', buy_build)[-7:] == [
+        "Sale / unit",
+        "Best available profit / unit",
+        "Best available margin",
+        "Buy all profit / unit",
+        "Buy all margin",
+        "Build all profit / unit",
+        "Build all margin",
+    ]
     calculated = html.split('<template id="calculated-costs-view">', 1)[1].split(
         "</template>", 1
     )[0]
