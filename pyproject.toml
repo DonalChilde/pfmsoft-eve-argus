@@ -7,6 +7,7 @@ authors = [{ name = "Chad Lowe", email = "pfmsoft.dev@gmail.com" }]
 requires-python = ">=3.14"
 dependencies = [
     "jinja2>=3.1.6",
+    "markdown-it-py>=4.2.0",
     "mdformat>=1.0.0",
     "mdformat-gfm>=1.0.0",
     "pfmsoft-eve-link>=0.4.10",

@@ -597,6 +597,7 @@ version = "0.1.0"
 source = { editable = "." }
 dependencies = [
     { name = "jinja2" },
+    { name = "markdown-it-py" },
     { name = "mdformat" },
     { name = "mdformat-gfm" },
     { name = "pfmsoft-eve-link" },
@@ -618,6 +619,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "jinja2", specifier = ">=3.1.6" },
+    { name = "markdown-it-py", specifier = ">=4.2.0" },
     { name = "mdformat", specifier = ">=1.0.0" },
     { name = "mdformat-gfm", specifier = ">=1.0.0" },
     { name = "pfmsoft-eve-link", specifier = ">=0.4.10" },

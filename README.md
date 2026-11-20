@@ -22,6 +22,123 @@ entry points without `get_`/`write_` prefixes and pass writer datasets by keywor
 Generic metadata operations remain unsupported; use `read.sde_metadata` and
 `write.sde_metadata` for SDE build metadata.
 
+## Planetary Industry operations and unit costs
+
+To generate the Planetary Industry report, run:
+
+```bash
+uv run eve-argus reports planetary-operations --to ./reports/planetary-operations.html
+```
+
+Open the single HTML file directly in a browser. It includes Extraction,
+P1/P2/P3 Inputs, P4 Buy/Build, Factory Planner, Market Prices, Market History, PI Stats, and
+Factory Plans, with no companion files
+or network requests. It uses the latest locally stored The Forge order
+snapshot (Jita **system** and The Forge region) and per-material ten-day
+Forge history windows where available. `--overwrite` replaces an existing
+report; `--quiet` keeps warnings and errors visible.
+
+Factory Planner compares two colony layouts using the workbook's building and
+link budgets. Change the Command Center, planet radius, optional extra link
+distance, and building counts to see CPU, powergrid, and setup cost update.
+
+**Calculated Costs** compares route costs against a selected market basis.
+The **Source operation** filter defaults to **ALL** and keeps any checked
+rows when you change the filter.
+Use **Export Selected** to save one calculated cost per material and
+**Clear Selected** to uncheck all rows without changing saved costs. The
+**Exported Costs** view retains those values for the browser tab session
+and downloads the full list as `pi-unit-costs.json`:
+later exports update selected materials without removing the others. Clear
+resets the saved list but does not delete downloaded files.
+
+The former `reports planetary-interaction` command has been retired. Use the
+single-file `reports planetary-operations` report instead.
+
+### Reusable Python PI tools
+
+The [PI package](src/pfmsoft/eve_argus/pi) provides a validated local P0-P4 recipe
+catalog, pure unit-cost calculations, compact automatic production scenarios,
+and grouped comparisons.
+
+- [Catalog](src/pfmsoft/eve_argus/pi/catalog.py): `load_catalog()` returns the
+  83 material definitions. `mining_planet_types()` derives P1/P2 single-planet
+  resource eligibility from raw-resource co-occurrence, not extraction capacity.
+  The source is the local PI reference, not independently verified live game data.
+- [Costing](src/pfmsoft/eve_argus/pi/costing.py): `mined_source()` quotes zero-cost
+  extraction/local refining with optional final export; `calculate_stage()`
+  consumes explicit input quotes and returns a per-cycle breakdown and reusable
+  unit price. Neither function reads databases or accesses the network.
+- [Scenarios](src/pfmsoft/eve_argus/pi/scenarios.py): `build_scenario_graph()`
+  represents market, mining, and manufacturing alternatives using documented
+  dataclasses. It shares material dependencies and includes both local and
+  exported intermediate production. Supply explicit off-planet market quotes on
+  one price basis; absent quotes become explicitly unavailable alternatives.
+  `scenario_counts()` returns exact total/complete combination counts,
+  `iter_scenarios()` expands outcomes lazily, and `best_scenario()` finds a
+  cheapest complete outcome without exhaustive enumeration. Set `manufacture=True`
+  to require manufacturing the root product; `False` also includes its market
+  and mining sources. Root outputs are always off-planet.
+- [Station-based market inputs](src/pfmsoft/eve_argus/reports/pi_market_inputs.py):
+  `collect_pi_market_inputs()` resolves Jita's primary station from the market-hub
+  model and collects separate buy-5%, sell-5%, and ten-day regional-history
+  references for every catalog material. Supply the selected order response and
+  matching dataset, generation time, and an optional `RegionalHistory` lookup.
+  The collector performs no database reads or refreshes itself; callers supply
+  the lookup. `prices_for()` returns quotes on one market basis. Missing prices,
+  history coverage, regional average daily volume, source timestamps, and
+  freshness warnings remain explicit. No other market-hub data is required.
+- [Grouped comparisons](src/pfmsoft/eve_argus/pi/comparisons.py):
+  `calculate_grouped_comparison()` expands manufacturing above a chosen starting
+  tier and consumes shared off-planet quotes at that tier or below. For example,
+  a P2-starting P3 can consume one bought P2 and one exported P1-manufactured P2
+  without expanding either quote again. Choose the intermediate customs boundary
+  explicitly. `build_grouped_comparisons()` produces the workbook's seven tier
+  groups: P0-to-P1, P1-to-P2/P3/P4, P2-to-P3/P4, and P3-to-P4 (105 comparisons
+  for the full catalog). Direct lower-tier recipe ingredients are retained.
+
+Use `Decimal` prices and a fractional effective customs rate (`Decimal("0.1")`
+for 10%). `CostBoundary.OFF_PLANET` input quotes incur import tax;
+`CostBoundary.ON_PLANET` explicitly means local to the consuming stage.
+Choose `export_output=True` to include output export tax, or `False` when the
+output stays on the same planet for another stage. Reuse the returned
+`StageCost.output` as an input quote without charging its previous export again.
+All purchased inputs and reused upstream quotes must share the declared market
+price basis, and tax-dependent sources must share the customs rate.
+
+For example, purchasing 3000 P0 at 1 ISK/unit, importing at 10%, and exporting
+the 20 refined P1 costs `(3000 + 600 + 800) / 20 = 220` ISK/P1.
+Freely mined/refined P1 exported at the same rate costs 40 ISK/P1; eligible
+freely mined/refined P2 costs 720 ISK/P2. No mining cost, inferred factory capacity,
+sales tax, or transport fee is included. Missing prices retain explicit reasons
+and propagate unknown totals rather than partial quotes.
+
+Grouped comparisons keep sales valuation separate from acquisition pricing.
+`estimate_production()` takes a comparison and `Decimal` completed
+`cycles_per_hour`; output quantity times that rate gives units/hour. Hourly,
+daily, and 30-day profit estimates assume continuous operation and do not certify
+a factory layout or market fills. Changing the rate never changes unit cost.
+Each stage breakdown is per that stage's recipe cycle; embedded upstream costs
+must not be added again when displaying a route.
+
+Mining-derived graph sources are exported prices, never implicitly free inputs
+on an arbitrary factory planet. Best-scenario comparisons include input import
+taxes: a lower off-planet quote can be more expensive than a local intermediate.
+Unavailable and expensive alternatives remain in the graph even when a best
+complete result exists. A `None` best result explicitly means no complete
+eligible route; inspect the retained source reasons.
+
+Concrete combinations grow rapidly: the full catalog uses 83 material nodes and
+273 source/production branches, while some P4 roots represent more than
+532 quadrillion structural combinations. Use counts, best selections, or bounded
+iteration instead of converting a full P4 iterator to a list. Counts distinguish
+routes/source choices, not distinct monetary totals. Sale-price comparison stays
+separate so an acquisition graph can be reused with different output valuations.
+
+See the [PI operations plan](dev/prompts/pi-html-view.md) for the current report
+and the [historical PI design](dev/prompts/planetary_interaction.md) for the
+original Python calculation assumptions.
+
 ## Export market groups
 
 ```bash

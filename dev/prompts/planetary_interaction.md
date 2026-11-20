@@ -1,0 +1,914 @@
+# Planetary Interaction
+
+This is a historical design record. The `reports planetary-interaction`
+browser and its renderer have been retired. See the [PI operations plan](./pi-html-view.md)
+for the supported report. The Python PI calculations and
+[station-based market collector](../../src/pfmsoft/eve_argus/reports/pi_market_inputs.py)
+remain available for reuse. Command examples and implementation notes below
+describe the retired browser, not the current CLI.
+
+## Purpose and status
+
+Design and implement reusable calculations and a CLI-generated HTML browser for
+Planetary Interaction (PI) materials across the full P0-P4 range. The immediate
+target is the functionality of the workbook's **What PI To Build** sheet, not a
+copy of its layout or a static Markdown report.
+
+The report should answer:
+
+- What does each material cost under different purchase and production scenarios?
+- Which inputs should be purchased, manufactured, or supplied by mining?
+- How do import and export taxes affect those choices?
+- What profit or loss results when the output is valued using a separately
+  selected market-price basis?
+
+This document records confirmed requirements, proposed implementation decisions,
+and unresolved policies. It is not authorization to silently choose unresolved
+behavior or public interfaces.
+
+### Current implementation priority
+
+- Generate a directory containing HTML, JavaScript, styling, and snapshot data.
+  A single-file artifact is not required.
+- Make source-tier/output-tier comparisons, shared material-price selections,
+  easy scenario switching, and selective unit-price JSON export the main workflow.
+- Use only the configured Jita hub station for order prices, retaining The Forge
+  ten-day history prices and average daily traded volume.
+- Retain the Python foundation. Defer Markdown output, other market hubs, and
+  industry-report promotion/import implementation rather than making them
+  prerequisites for the browser.
+
+## References and current foundation
+
+- [PI reference documentation](../../src/pfmsoft/eve_argus/pi/markdown_docs/pi-stats.md)
+  contains recipes, type IDs, taxable base values, and customs formulas.
+- [Factory plans](../../src/pfmsoft/eve_argus/pi/markdown_docs/factory-plans.md)
+  provide context for later layout work, not requirements for this unit-cost stage.
+- The [PI planning workbook](../tmp/pi_spreadsheet/PI%20Planning.xlsx), especially
+  the **What PI To Build** sheet, demonstrates mixed-input choices using unit
+  prices from other scenarios. Reconcile representative calculations with its
+  formulas before implementing scenario generation. Representative formulas
+  have now been inspected; see the implementation status and discrepancies below.
+  Its display idioms are not requirements.
+- [Order summaries](../../src/pfmsoft/eve_argus/dynamic/order_summary.py) and
+  [history summaries](../../src/pfmsoft/eve_argus/market_history/history_summary.py)
+  provide existing price calculations.
+- [Price-summary CLI orchestration](../../src/pfmsoft/eve_argus/cli/reports/price_summaries.py)
+  demonstrates stored-source selection and safe report exports.
+- [Market-hub definitions](../../src/pfmsoft/eve_argus/models/market_hubs.py)
+  supply Jita's primary station, system, and region. Resolve the Jita entry from
+  this model; do not duplicate station IDs or require snapshots for other hubs.
+- [Registered reports](../../src/pfmsoft/eve_argus/cli/reports/__init__.py)
+  include the `planetary-interaction` browser generator.
+
+Keep PI data models and calculation logic under the
+[`pi` package](../../src/pfmsoft/eve_argus/pi). Keep CLI orchestration, report
+collection, and rendering separate from reusable calculations.
+Prefer documented, typed, slotted, keyword-only dataclasses for data models over
+positional tuples, TypedDicts, or loosely typed dictionaries. Use Google-style
+`Attributes` sections to explain field semantics, units, customs boundaries, and
+missing-value meanings where applicable.
+
+### Implementation status
+
+The first implementation slice supplies:
+
+- A typed, validated catalog of all 83 P0-P4 materials, transcribed from the
+  ingredient table with explicit type-ID resolution of reference name aliases.
+- Raw-resource planet metadata and derived P1/P2 mining eligibility. All 24 P2
+  results agree with the local single-planet table; this is internal reference
+  reconciliation, not independent verification against current game data.
+- Pure mined-source pricing and explicit-boundary production-stage costing,
+  including purchased-P0 refining, mixed sources, unknown-cost propagation,
+  uniform market-basis validation, and shared customs-rate validation.
+- Reusable source quotes and per-stage material/import/export breakdowns using
+  `Decimal`. Callers explicitly choose exported versus locally retained output.
+- Focused synthetic tests under
+  [`tests/pfmsoft/eve_argus/pi`](../../tests/pfmsoft/eve_argus/pi).
+
+Implementation modules are
+[`models.py`](../../src/pfmsoft/eve_argus/pi/models.py),
+[`catalog.py`](../../src/pfmsoft/eve_argus/pi/catalog.py), and
+[`costing.py`](../../src/pfmsoft/eve_argus/pi/costing.py).
+
+The scenario slice adds
+[`scenarios.py`](../../src/pfmsoft/eve_argus/pi/scenarios.py) with documented
+dataclass graph/branch models, shared dependencies, exact total/complete counts,
+lazy concrete-outcome expansion, and best-complete scenario selection. The user
+confirmed that both local and exported intermediate production should be included.
+Mining-derived graph quotes remain exported prices as agreed; they do not imply
+free extraction on an arbitrary factory planet.
+
+Best selection compares delivered input costs, including import tax for
+off-planet quotes. It evaluates shared nodes rather than exhaustively expanding
+their combinations. Equal-cost choices use deterministic scenario-ID
+tie-breaking at each node. A missing best result explicitly means no complete
+eligible route; unavailable and more expensive alternatives remain inspectable.
+Root queries only consider off-planet outputs. Requiring manufacture excludes
+finished-product purchase/mining quotes at the root, but not those sources for
+its ingredients. Output sale valuation remains separate from the acquisition
+graph so it can be reused across valuation bases.
+
+The browser data slice now adds:
+
+- [`reports/pi_market_inputs.py`](../../src/pfmsoft/eve_argus/reports/pi_market_inputs.py)
+  (formerly `reports/pi_browser.py`):
+  documented dataclasses and a collector for explicitly supplied stored datasets,
+  resolving Jita from the hub model. It retains all 83 material rows, station
+  buy/sell 5% quotes, regional history prices and daily volume, coverage,
+  response metadata, effective order expiry, and freshness notices.
+- [`pi/comparisons.py`](../../src/pfmsoft/eve_argus/pi/comparisons.py):
+  documented grouped comparisons and rate estimates. The full catalog produces
+  105 rows across the seven workbook tier pairs, with local/exported intermediate
+  variants explicitly requested. Shared starting quotes can be purchased or
+  previously manufactured; direct P1 ingredients of P4 recipes are retained.
+- Explicit completed-cycles/hour scaling without cycle-duration division or
+  changes to unit costs. Unknown sales values preserve known acquisition costs.
+
+The collector reuses station-trades history windows and calculations. The caller
+supplies one regional ten-day window ending at the newest stored regional date
+strictly before the UTC generation date, not a separate anchor per material.
+History freshness follows the existing newest-used-day policy (older than seven
+days is stale); missing type history and known zero volume stay distinct.
+
+The browser/CLI slice now supplies:
+
+- `reports/pi_browser_render.py` (retired)
+  and packaged templates/assets: safe embedded snapshot JSON, local scripts,
+  all source-reference tables, 105 grouped comparisons, recipe/customs details,
+  filters, sorting, and shared per-material source controls.
+- `cli/reports/planetary_interaction.py` (retired):
+  registered CLI snapshot selection, Jita-only station book reads, optional
+  regional history, output preflight, render-before-write, overwrite protection,
+  and quiet mode that retains warnings.
+- The `Make profitable P2` preset, manual source overrides, editable
+  completed-cycles/hour estimates, one selected export quote per type, and JSON
+  downloads containing exact decimal strings. A copyable JSON preview is
+  available for embedded browsers that block native downloads.
+- User-approved locally bundled decimal.js 10.6.0 (MIT), 6% initial customs tax,
+  and on-planet intermediates. Initial rate is 1 completed cycle/hour, explicitly
+  labeled an editable assumption. Invalid controls show errors, retain editable
+  inputs, clear derived values, and disable export until corrected.
+
+The CLI command is:
+
+```bash
+uv run eve-argus reports planetary-interaction --to ./reports/pi-browser
+```
+
+Keep all six generated files together and open `index.html` directly from disk.
+Use `--tax-percent`, `--intermediate-boundary`, `--overwrite`, and `--quiet`
+as required. No server, CDN, or implicit data refresh is involved. Writes are
+not a multi-file atomic transaction.
+
+The industry report is currently a proof script according to the user; promoting
+it and implementing price-override import remain separate consumer work. The
+calculation primitive supplies normalized per-cycle unit costs; whole-run
+scheduling and surplus accounting remain deferred.
+
+Verification for this slice:
+
+- Red: the new tests initially failed because the PI implementation modules did
+  not exist.
+- Green: `uv run --no-sync pytest tests/pfmsoft/eve_argus/pi -q` passed 36 tests.
+- Focused Ruff lint/format checks passed, and Pylance reported no diagnostics in
+  the three implementation modules and two new test modules.
+- A read-only comparison matched all 83 recipe rows and all 24 derived P2
+  eligibility rows against the local Markdown reference.
+
+Validation used the existing environment without installing dependencies.
+
+Scenario-composition verification:
+
+- Red: the new scenario tests initially failed because the module did not exist.
+- Green: `uv run --no-sync pytest tests/pfmsoft/eve_argus/pi -q` now passes 54 tests.
+- Focused Ruff lint/format checks pass; Pylance reports no diagnostics in the
+  changed Python modules and the new scenario test module.
+- Tests compare exact small-graph counts with lazy expansion, cover input-import
+  thresholds that change the best route, and verify bounded P4 expansion without
+  dropping non-cheapest or unavailable alternatives.
+
+Browser data/comparison verification:
+
+- Red: the collector and comparison tests failed because their modules did not
+  exist. Green: the focused PI and browser-collector selection passes 75 tests.
+- Focused Ruff lint/format checks pass. Pylance reports no diagnostics in the
+  two new implementation modules and two new test modules.
+- Tests cover all 105 grouped rows, local/exported intermediates, mixed-source
+  P2 reuse, direct P1-to-P4 requirements, missing sales/input prices, exact
+  completed-cycles/hour scaling, Jita hub-model resolution, order provenance,
+  history weighting/coverage/zero volume, and freshness.
+- The user authorized a read-only smoke check using `dev/app-dir`. Immutable
+  read-only SQLite access found all 83 buy/sell references, 42 usable history
+  prices, and a common November 7-16, 2026 history window. Both intermediate
+  boundary modes produced 105 complete acquisition costs. Expired order inputs
+  remained usable with an explicit notice.
+- Source database SHA256 hashes and app-directory file size/mtime/ctime metadata
+  were unchanged across that smoke check. No app configuration was loaded, no
+  app-directory files were written, and no market requests were made.
+
+### Scenario counts and compact representation
+
+The full P0-P4 graph uses 83 material nodes and 273 source/production branches.
+Each material's production branch references its ingredient materials, whose
+source and local/exported production alternatives are represented once. Input
+occurrences can independently choose their upstream alternatives; sharing a
+node does not force the same source choice everywhere in the Python engine.
+The first browser deliberately uses a simpler, shared source choice per material,
+matching the spreadsheet's price lookup. Keep the more general engine intact.
+
+With every canonical material supplied a known synthetic market quote, the
+manufactured, exported P4 roots have these exact structural combination counts:
+
+| Product | Total alternatives | Complete alternatives |
+| ------- | ------------------ | --------------------- |
+| Broadcast Node | 1,314,011,793,177 | 1,261,462,410,125 |
+| Integrity Response Drones | 532,325,256,680,948,849 | 532,325,256,680,948,849 |
+| Nano-Factory | 719,809,254 | 719,809,254 |
+| Organic Mortar Applicators | 719,809,254 | 719,809,254 |
+| Recursive Computing Module | 1,314,011,793,177 | 1,314,011,793,177 |
+| Self-Harmonizing Power Core | 1,314,011,793,177 | 1,261,462,410,125 |
+| Sterile Conduits | 719,809,254 | 719,809,254 |
+| Wetware Mainframe | 532,325,256,680,948,849 | 532,325,256,680,948,849 |
+
+These are route/source-choice counts, not counts of distinct prices. Total
+counts retain explicitly unavailable mining alternatives; complete counts exclude
+them and any combinations dependent on missing prices. Tax rates and quoted price
+values affect costs, not the structural counts. No market-depth or capacity limits
+are modeled. Do not materialize full P4 iterators or attempt one report row per
+complete outcome. The compact display must expose reusable branches and choices,
+not silently sample or truncate them.
+
+### Workbook reconciliation
+
+Read-only inspection of representative workbook formulas confirms that
+**What PI To Build** selects per-material sources through **Price Lookup**, which
+can refer to calculated **PI Unit Cost** prices. Representative lower-tier
+formulas agree with the documented import/export multipliers and output
+normalization.
+
+Do not copy the workbook's higher-tier tax formulas without checking their
+taxable bases. In **PI Unit Cost**:
+
+- `N73` imports P2 inputs using a base of 400 rather than 7200.
+- `O73` exports a P3 output using a base of 7200 rather than 60000.
+- `N102` imports P3 inputs using a base of 7200 rather than 60000.
+
+These conflict with the local reference's tier-specific customs bases. The
+implementation uses the input material's base for import and the output
+material's base for export; it does not reproduce those spreadsheet defects.
+The workbook also contains broken defined names and cached/hard-coded values,
+so neither cached totals nor all workbook routes have been certified. No workbook
+changes or live market requests were made.
+
+## Confirmed scope
+
+- Cover the complete P0-P4 material range.
+- Use one configurable effective customs-tax rate across all scenarios for now.
+  This is a convenience, not a model of every possible in-game tax arrangement.
+- Market-price inputs include Jita buy 5%, Jita sell 5%, and a regional ten-day
+  history-summary price.
+  The history price is The Forge regional data, not a station-specific average.
+- Scope order prices to Jita's primary station from the market-hub model. Other
+  hubs, including Dodixie, are deferred; do not require their stored data.
+- Anchor history summaries to the most recent available ten-day period, reusing
+  existing window-selection functions where applicable.
+- Each scenario uses one market-price basis for all purchased inputs, including
+  purchases in upstream manufacturing scenarios. Do not mix buy, sell, and
+  history market-price bases within one production scenario.
+- Select one output valuation basis separately from the input market-price
+  basis. For example, acquire inputs at Jita sell 5% and compare the resulting
+  unit cost with Jita buy 5%.
+- Support mixed input tiers and sources within the same recipe.
+- In the browser, choose one source per material and reuse that selected quote
+  downstream. Different materials can use different purchase, manufacturing,
+  or mining-derived sources, while purchased leaves retain the single selected
+  market-price basis.
+- Include both same-planet and exported/reimported intermediate manufacturing
+  routes. Keep mining-derived source prices at their exported boundary.
+- Preserve all modeled outcomes, including suboptimal, unprofitable, and
+  incomplete alternatives. External constraints may justify a non-cheapest choice.
+- Highlight the cheapest complete alternative without replacing the other results.
+- Allow a scenario's calculated unit price to supply an input to another scenario.
+- Support small operations combining mining-derived and purchased materials.
+- Produce a CLI-generated directory-based HTML browser as the initial interface.
+  Markdown output is deferred, not a prerequisite.
+- Group comparisons by starting-material tier and output tier, following the
+  meaning of workbook columns E and F. A product can have multiple route rows.
+- Provide easy scenario switching, including a `Make profitable P2` preset that
+  feeds a combination of purchased and manufactured P2 prices into P3/P4 routes.
+- Keep non-cheapest, unprofitable, and incomplete routes visible. Detailed
+  branching views may explain a route but are not the primary interface.
+- Keep an editable `Factory cycles` input per production comparison, defined as
+  completed recipe cycles per hour. Use it for time-based estimates, not unit
+  costs or automatic factory-layout claims.
+- Export selected unit prices in a JSON object with a `prices` dictionary for
+  industry-report overrides. The importer ignores all other top-level fields;
+  explanatory metadata is optional and does not require calculation replay.
+- Let the user export any chosen subset, including only profitable products or a
+  subset of those. Do not require exporting every material or every visible row.
+- Exclude sales tax and transport fees from this stage's calculations, and state
+  those exclusions beside profit/loss comparisons.
+
+### Outside this stage
+
+- Mining cost, extraction yield, mining time, and mining-volume constraints.
+- Factory capacity, feasible layouts, power/CPU use, scheduling, and loadouts.
+- Batch scheduling, capital/rate-of-return planning, and automatic production-rate
+  inference. Time-based estimates from user-entered cycles/hour are in scope.
+- A local interactive server and full EVE Argus web integration. The standalone
+  HTML explorer does not require either.
+- Other market hubs, replication of the workbook's other pages as interfaces,
+  and Markdown/exhaustive scenario exports for the first browser delivery.
+- Per-planet tax rates, customs ownership, and skill-derived effective rates.
+
+Do not treat the absence of capacity modeling as evidence that a production
+scenario is executable at unlimited scale. Market-purchased P1 and higher inputs
+are the common factory supply case because mining volume is limited.
+
+### Notional production facilities
+
+Planets and factories can be notional for unit-cost calculations, but customs
+movements must remain explicit. Notional facilities do not imply free transfers
+between planets.
+
+The user identifies a capacity caveat for P4 made from all P1: a single planet
+cannot fit enough factories for one P4 unit per hour, but can support one every
+two hours. Retain this as an explicit capacity caveat, not a certified default
+production rate. The user can enter 0.5 completed cycles/hour for an output of one
+unit/cycle. Do not apply it as a multiplier to per-unit material or customs costs,
+or claim that a user-entered rate proves a layout feasible.
+
+If investigation reveals other cases where actual planet or factory constraints
+change the unit-cost result, surface them to the user before choosing a workaround
+or expanding into layout optimization. Factory layouts remain deferred unless
+such a dependency requires revisiting the scope.
+
+## Source-price model
+
+A material can have multiple named source prices. A source price is the cost per
+unit available off-planet, before import into a downstream production planet.
+For manufactured sources, it includes the export required to reach that boundary.
+Market purchase prices exclude subsequent planetary import charges.
+
+| Source label                       | Applies to            | Unit-price basis                                                                    |
+| ---------------------------------- | --------------------- | ----------------------------------------------------------------------------------- |
+| Jita buy 5%                        | P0-P4 where available | Existing Jita buy 5% price statistic                                                |
+| Jita sell 5%                       | P0-P4 where available | Existing Jita sell 5% price statistic                                               |
+| Regional ten-day average           | P0-P4 where available | Existing regional volume-weighted history-summary average                           |
+| Freely mined with a P1 result      | P1                    | P1 taxable base value multiplied by the effective tax rate                          |
+| Purchased P0 refined to P1         | P1                    | P0 purchase and import costs, divided by recipe output, plus P1 export tax          |
+| Freely mined with a P2 result      | Eligible P2           | P2 taxable base value multiplied by the effective tax rate                          |
+| Manufactured from selected sources | P2-P4                 | Explicit recipe inputs, selected source scenarios, and applicable customs movements |
+
+### Simple mining-derived sources
+
+These are labels and values, not mining simulations. Their only price variable
+is the effective tax rate:
+
+- Locally mined P0 is free by assumption.
+- P0 refined to P1 on its mining planet incurs only the resulting P1 export tax.
+- Where both required raw resources are available on one planet, refinement
+  through P2 incurs only the resulting P2 export tax.
+- No intermediate import/export charges apply to materials retained on that
+  mining planet.
+
+With the reference's taxable base values, and `r` expressed as a fraction:
+
+```text
+Freely mined with a P1 result = 400 * r
+Freely mined with a P2 result = 7200 * r
+```
+
+At 10%, these prices are 40 ISK/P1 and 720 ISK/P2. Explicitly label the zero
+extraction-cost assumption; these are not opportunity-cost valuations.
+
+Use reviewed reference metadata to identify eligible P2 materials and planet
+types. The single-planet P2 table is a starting point, not verified evidence by
+itself. Do not offer mining-derived P2 sources for unsupported materials or
+substitute zero for an unavailable source. No planet-search engine is required.
+
+### Purchased P0 refining
+
+Include purchasing P0, importing it, refining it to P1, and exporting the P1.
+Although uncommon because of taxes, this is required for completeness.
+
+Using the documented 3000 P0 to 20 P1 recipe:
+
+```text
+P1 unit cost =
+    (3000 * P0 market unit price + 3000 * P0 taxable base * r * 0.5) / 20
+    + P1 taxable base * r
+```
+
+Calculate this for each selected, available P0 market-price basis.
+Within a downstream scenario, the P0 purchase basis must match that scenario's
+other market purchases.
+
+## Customs boundaries and scenario composition
+
+Apply the documented launchpad customs formulas:
+
+```text
+Import tax = imported quantity * taxable base value * r * 0.5
+Export tax = exported quantity * taxable base value * r
+```
+
+The taxable base is not the material's market price or calculated production cost.
+Use quantities and output sizes from the validated recipe data.
+
+For a stage consuming off-planet input sources and exporting its output:
+
+```text
+Input acquisition cost = sum(input quantity * selected source unit cost)
+Exported output unit cost =
+    (input acquisition cost + input import taxes + output export tax)
+    / output quantity
+```
+
+Keep recipe dependencies distinct from customs movements:
+
+- A P2 made from purchased P1 includes the P1 import charges and P2 export charge.
+- If another planet consumes that P2, retain its source cost and add P2 import
+  tax exactly once. Do not charge its previous export again.
+- If an intermediate is made and consumed on the same planet, charge neither
+  intermediate export nor intermediate import. Represent this integrated route
+  explicitly rather than assuming every recipe edge is a planetary transfer.
+- A recursive recipe alone does not determine where production occurs.
+
+For a P3 requiring P2-A and P2-B, show alternatives such as:
+
+- Purchase both P2 inputs.
+- Purchase A and manufacture B from purchased P1.
+- Manufacture A from purchased P1 and purchase B.
+- Manufacture both, retaining their selected production routes.
+- Substitute eligible mining-derived sources or purchased-P0 refining routes
+  within those branches.
+
+Preserve the specific upstream scenario identity, not just its cheapest price.
+Repeated use of an upstream source can reuse its calculation without losing its
+provenance or charging fixed/batch costs that are outside this model.
+
+Mixed sourcing means choosing market purchase, mining-derived supply, or an
+explicit manufacturing route independently for each input. It does not mean
+mixing different market-price bases: all market-purchased leaves in a scenario
+share the selected input basis. Reused upstream scenarios must be compatible with
+that basis and the shared customs-tax rate. The Python engine retains independent
+occurrence choices; the first browser applies a shared choice per material to
+all uses of that material as a starting input.
+
+## Market inputs, precision, and missing data
+
+- Read stored source data without implicit fetching or refresh.
+- Reuse existing price and history calculations instead of duplicating them.
+- Retain order scope, source response metadata, and history dates/coverage.
+  Order and history timestamps must not imply synchronized collection.
+- Reuse the ten-day volume-weighted history-summary average. Zero-volume or
+  missing history is unavailable pricing, not a free input.
+- Include average daily traded volume in the history input table for all
+  materials and output products covered by the report, even when input and
+  output prices use order data. Reuse the helper's full-window denominator:
+  total observed traded units
+  divided by ten calendar days, with missing days contributing zero to that
+  average and missing-day coverage displayed separately. Distinguish unavailable
+  history from a known zero-volume summary. Label the metric as The Forge
+  regional units/day, not Jita station volume, factory throughput, or expected
+  sales for this operation.
+- Select the most recent available ten-day calendar period using existing
+  history-window helpers where applicable. Record the actual anchor, dates, and
+  missing-day coverage; do not silently substitute ten nonconsecutive trading
+  days or force a window ending yesterday. Verify whether the appropriate
+  existing selection policy anchors per region or per type before integration,
+  and document the resulting behavior.
+- Warn and render stale inputs; retain unknown freshness as unknown.
+- Keep unavailable alternatives visible with an explanation. Missing prices
+  invalidate only dependent costs; never rank an incomplete partial sum as a
+  complete unit cost.
+- Use `Decimal` for monetary calculations. Do not convert through binary floats.
+- Keep input acquisition basis and output valuation basis distinct in scenario
+  identity, report metadata, and comparisons. A scenario has one of each; they
+  may differ.
+- Calculate per-unit profit/loss as selected output valuation minus exported
+  output unit cost, excluding sales tax and transport fees. Label this as a
+  comparison on the stated price bases, not an after-all-fees return or a fill
+  forecast. Define margin and return-on-cost denominators before implementing
+  those percentage fields.
+
+## HTML browser presentation
+
+Implemented command: `eve-argus reports planetary-interaction --to DIRECTORY`.
+The command
+generates the browser directory; it does not start a server or require the
+industry report to be promoted first.
+
+### Source-tier and output-tier groups
+
+Column E of **What PI To Build** identifies the starting-material tier, not just
+the immediately preceding recipe tier. Column F identifies the output tier
+within that group:
+
+| Starting inputs (E) | Output groups (F) |
+| ------------------- | ----------------- |
+| P0 | P1 |
+| P1 -> | P2, P3, P4 |
+| P2 -> | P3, P4 |
+| P3 -> | P4 |
+
+A P4 product therefore appears in separate P1-starting, P2-starting, and
+P3-starting comparisons. A comparison's identity includes the product type ID
+and starting tier, plus any explicit customs-route variant. Do not collapse these
+rows into one cheapest result or treat them as duplicate materials.
+
+Starting from P1 means processing through the required higher tiers to reach the
+output. Starting from P2 means using selected P2 quotes as the starting inputs,
+not necessarily buying every P2. A selected P2 quote may itself be the exported
+unit cost of P1-to-P2 manufacture. Direct lower-tier ingredients in a canonical
+recipe, such as P1 inputs to some P4 products, must still be supplied correctly;
+the group label does not override the recipe.
+
+Group labels do not imply free planetary transfers. Keep local intermediate
+production and exported/reimported source quotes distinguishable. Expanding
+intermediates within a route is different from consuming an already exported
+manufactured source quote.
+
+### Main workflow
+
+1. Review tax rate, input market-price basis, separate sales valuation basis,
+   source dates/coverage, and exclusions.
+2. Select a scenario preset or adjust the shared source selection for individual
+   materials. Show both the selected source label and resulting unit price.
+3. Compare output products within the starting-tier/output-tier groups. Expose
+   material cost, import/export tax, total exported unit cost, sales valuation,
+   and unit profit/loss. Highlight cheapest complete routes without hiding others.
+4. Adjust `Factory cycles` to see rate-based estimates. This affects production
+   and financial totals per time period, not the normalized unit cost.
+5. Filter or sort comparisons, including a profitable-only view, and choose
+   specific products and source/route prices to export. The user can choose all,
+   some profitable products, or any other complete subset.
+6. Download the chosen prices as JSON. Keep export inclusion separate from both
+   profitability and the choice of a price source used by downstream production.
+
+Use HTML's flexibility rather than reproduce the spreadsheet cell layout.
+Expandable recipe and tax details support the comparison tables; an arbitrary
+production-tree editor is not the first interface. Keep incomplete and
+unprofitable routes inspectable when filters are cleared, with explicit reasons
+for missing costs. Do not enumerate every complete graph combination.
+
+### Shared price selections and scenario switching
+
+Provide one shared source choice per material. Choosing a manufactured quote for
+a P2 updates every grouped comparison that consumes that selected P2 quote.
+Changing it does not rewrite a P1-starting route into a P2-starting route; those
+remain separate comparisons.
+
+Include a `Make profitable P2` preset:
+
+1. Evaluate P1-to-P2 manufacturing costs using the selected P1 source prices and
+   customs rate.
+2. Select manufactured P2 quotes with positive unit profit against the selected
+   sales valuation; select purchase quotes for the remaining nonprofitable P2.
+3. Feed those shared P2 quotes into the P2-starting P3/P4 comparisons. The result
+   can combine purchased P2-A and P1-manufactured P2-B in one downstream product.
+
+Profitability is not synonymous with being cheaper than buying: a profitable
+manufacturing choice can be economically suboptimal, and users must retain the
+ability to select it. Unknown costs or sales valuations cannot establish
+profitability; show their status instead of treating them as zero.
+
+The active preset and manual-override count are visible. Manual choices persist
+across tax, price-basis, boundary, and rate changes. Switching presets asks for
+confirmation before clearing manual choices. Unknown-profit P2 manufacture falls
+back to the selected purchase quote with an explicit notice, never a claim of
+profitability. Additional presets are deferred.
+
+### Factory cycles and time-based estimates
+
+Keep the input label `Factory cycles`, with an explicit `completed cycles/hour`
+unit and help text. It is not a count of parallel factories and must not be
+divided by recipe cycle duration a second time.
+
+For each production comparison:
+
+```text
+Units/hour = output units per recipe cycle * Factory cycles
+Profit/hour = unit profit * units/hour
+Profit/day = profit/hour * 24
+Profit/30 days = profit/day * 30
+```
+
+Apply the same rate scaling to material and tax totals where displayed. For
+example, a one-unit-output P4 recipe at 0.5 cycles/hour produces 0.5 units/hour;
+a five-unit-output P2 recipe at 24 cycles/hour produces 120 units/hour.
+Neither setting changes that route's unit cost.
+
+Label daily and 30-day values as continuous-operation estimates from the entered
+rate, not verified factory capacity, mining supply, market liquidity, or sales
+forecasts. Missing unit profit produces unavailable profit estimates, not zero.
+Percentage return fields require a separately defined denominator.
+
+### Source reference tables
+
+Keep separate Jita buy 5%, Jita sell 5%, and The Forge ten-day history tables,
+covering all materials and output products used by the browser, not just those
+selected for manufacture or export:
+
+- Buy and sell tables: type ID, name, tier, unit price in ISK, primary-station
+  scope, and freshness.
+- History table: type ID, name, tier, average price, regional average daily
+  traded volume, window dates, coverage, and freshness.
+- Calculated sources: mining-derived P1/P2 and purchased-P0 refining values,
+  with tax rate, source labels, and applicable market-price basis.
+
+Use stable ordering and show missing values explicitly. Shared metadata can
+appear above a table; preserve material-specific differences. Displayed prices
+must agree with calculation inputs, subject only to stated display rounding.
+History volume is market context, not an additive production or profit total.
+
+Markdown and exhaustive JSON/CSV outputs are deferred. If Markdown is added
+later, use packaged templates and the existing shared
+[`format_markdown()` helper](../../src/pfmsoft/eve_argus/helpers/markdown.py).
+The selected-price JSON download is a separate confirmed requirement.
+
+Follow established `--to`, `--overwrite`, and `--quiet` conventions. Keep warnings
+and errors visible under quiet mode. Preflight destinations and collisions;
+collect and render before writing. Do not promise atomic multi-file writes.
+Choose deterministic ordering, stable scenario identifiers, and filenames that
+distinguish generation time from source timestamps.
+
+## Standalone explorer and industry price overrides
+
+### Explorer direction
+
+Generate a self-contained directory on demand from collected recipes, source
+prices, and provenance. The implemented layout is `index.html`, `engine.js`,
+`app.js`, `styles.css`, `decimal.js`, and `decimal-LICENCE.txt`, with snapshot
+data embedded safely in the HTML. All browser dependencies are local; no CDN
+or live source refresh is required.
+
+The user must be able to open the generated entry HTML directly from disk without
+a server or network access. Do not require browser `fetch()` calls for sibling
+JSON files or module loading that fails under `file://`. Verify the generated
+directory as actually opened from disk, including all asset paths. Preserve the
+Python catalog, costing, and scenario code; do not replace it with browser-only
+business logic.
+
+The browser evaluator uses the user-approved vendored decimal.js with precision
+28 and half-even rounding, matching the Python Decimal context. Tests compare
+all grouped costs against Python in both intermediate-boundary modes, including
+mixed mined, manufactured, and purchased shared sources. No production export/import
+round-trip calculation check is required. Use packaged HTML templates,
+autoescaping, and safe embedded JSON rather than Markdown escaping or formatting.
+Preflight every generated file before writing, preserve unrelated destination
+files, and apply overwrite protection consistently to HTML and assets. Report the
+entry-page path on successful generation.
+
+### Confirmed interchange contract
+
+The industry-report CLI should accept a JSON file whose top-level value is an
+object containing a `prices` object. That object maps material type IDs to
+per-unit price overrides in ISK. JSON object keys are strings, so type-ID keys
+must be parsed and validated as IDs.
+
+An illustrative export using exact decimal strings is:
+
+```json
+{
+  "prices": {
+    "2398": "40",
+    "2399": "42.125"
+  },
+  "description": "Selected PI input costs",
+  "assumptions": {
+    "customs_tax_rate": "0.1",
+    "boundary": "off-planet"
+  }
+}
+```
+
+Only `prices` affects imported overrides. Ignore every other top-level field,
+including explanatory assumptions, provenance, source selections, or any future
+metadata. Do not require a schema-version field, scenario graph, recipe snapshot,
+or a prescribed metadata structure. Such fields may be exported for human
+understanding without becoming importer requirements.
+
+- An imported price replaces the industry's normal material price for that type
+  ID; types absent from `prices` retain the report's normal pricing behavior.
+- Export PI unit costs at the off-planet boundary, including the selected route's
+  applicable export taxes. The industry importer consumes supplied unit prices;
+  it does not reconstruct PI routes or add PI customs charges.
+- Export only the explicitly included type IDs, using the chosen complete
+  source/route cost rather than its sales valuation. A profitable view must not
+  force all visible rows into the export or exclude manually selected products.
+- Because multiple route rows can share a type ID, let the user choose one
+  exported quote per included type. Do not resolve duplicate choices by silently
+  overwriting one route with another, or emit multiple keys for the same type.
+- Preserve monetary precision without converting through binary floats. The
+  browser exports exact decimal strings; the future importer must support this
+  representation, with any additional accepted forms decided in its own scope.
+- Do not export unavailable or incomplete scenario costs as usable overrides,
+  numeric zero, or partial totals.
+- Validate the JSON structure, type-ID keys, and price values, surfacing invalid
+  input explicitly. Ignoring unrelated top-level fields does not mean silently
+  ignoring malformed entries inside `prices`.
+- Accept supplied prices without recalculating or certifying their underlying
+  production scenarios. Calculation consistency belongs in automated tests,
+  not a mandatory runtime replay or round-trip validation workflow.
+
+The override mechanism should be general industry-report input, not a PI-specific
+scenario importer. Promotion of the industry proof script, its CLI option name,
+and integration with its material-pricing path require a separate implementation
+scope; defining this contract does not implement that consumer.
+
+## Implementation plan
+
+1. **Validate reference data and worked examples.**
+   Reconcile the workbook's mixed-production examples with recipes and customs
+   rules. Resolve name inconsistencies using type IDs and explicit mappings.
+   Record evidence for mining-derived P2 eligibility.
+2. **Build canonical PI data models.**
+   Define typed, slotted, keyword-only dataclasses for materials, recipes, source
+   prices, scenario references, and customs movements. Prefer reviewed structured
+   data over parsing display Markdown on every report run. Validate duplicate
+   IDs, missing references, nonpositive quantities, and dependency cycles.
+3. **Implement simple source prices and stage costing.**
+   Start with mining-derived P1/P2 values and purchased-P0 refining. Implement
+   exact recipe costs, output normalization, explicit customs charges, and
+   missing-value propagation independently of databases and rendering.
+4. **Compose production scenarios.**
+   Support independent per-input choices and reusable upstream scenarios.
+   Enforce one market-price basis across all purchased leaves and retain a
+   separately selected output valuation basis.
+   Preserve all alternatives rather than pruning to cheapest-only routes.
+   Measure exact alternative counts for the full P0-P4 range and prototype
+   compact branching displays on representative P3/P4 chains. Do not silently
+   cap or truncate results. Keep facilities notional while preserving customs
+   boundaries; surface discovered capacity dependencies that change unit costs.
+5. **Connect stored Jita prices and The Forge history.**
+   Resolve Jita's station from the market-hub model and select its latest scoped
+   stored order inputs. Collect buy/sell 5% prices and The Forge's most recent
+   available ten-day history summaries, retaining provenance, coverage, and
+   average daily volume for all catalog materials. Reuse existing helpers and
+   verify their anchor semantics. Keep optional reference-data gaps from
+   invalidating unrelated costs. Do not require other hubs or refresh snapshots.
+   Provide actionable missing-source diagnostics using verified fetch commands.
+6. **Model the grouped browser comparisons.**
+   Define documented dataclasses for collected source references and comparison
+   routes keyed by starting tier, product type, and customs variant. Reuse the
+   Python engine to establish expected grouped costs and shared material quotes.
+   Retain the general graph while presenting shared per-material source choices.
+7. **Implement browser calculations and scenario controls.**
+   Settle browser decimal arithmetic, implement grouped comparisons and the
+   `Make profitable P2` preset, and verify exact costs against Python fixtures.
+   Add shared source controls, explicit cycles/hour inputs, time-based estimates,
+   route details, filtering, and per-type selective price export. Keep calculation
+   logic separate from DOM updates and preserve missing-value explanations.
+8. **Generate the HTML directory through the CLI.**
+   Build a typed collected model, packaged HTML template, and local script/style
+   assets. Register the generator using established destination/overwrite/quiet
+   conventions. Verify direct-from-disk operation without network requests and
+   update CLI help and documentation. Do not add Markdown as a prerequisite.
+9. **Verify each slice using Red/Green tests.**
+   Add focused synthetic fixtures for the acceptance cases below, including real
+   browser interaction and JSON download checks. Mock external dependencies and
+   run the smallest relevant pytest selection, then focused Ruff lint and format
+   checks for Python changes. Do not inspect live databases as an incidental
+   step; the user has authorized read-only validation against `dev/app-dir`, whose
+   databases and other files must remain unchanged. Never refresh its data.
+10. **Connect industry overrides later as separate consumer work.**
+    Promote the industry proof script through its own scoped CLI implementation
+    and add JSON-file overrides using the `prices` contract above. Apply overrides
+    at its material-price selection boundary, retaining normal prices elsewhere.
+    Do not introduce mandatory PI replay or metadata validation. The browser
+    and its downloads can ship before this consumer exists.
+
+## Acceptance criteria
+
+- All supported P0-P4 references resolve to type IDs with valid recipe quantities.
+- At 10% customs tax, freely mined P1 costs 40 ISK/unit and eligible freely mined
+  P2 costs 720 ISK/unit, with no intermediate customs charges.
+- Unsupported mining-derived P2 sources are marked unavailable, not zero-priced.
+- With P0 priced at 1 ISK/unit and 10% tax, the documented P0-to-P1 refining route
+  costs `(3000 + 600) / 20 + 40 = 220` ISK per exported P1.
+- With both P1 inputs priced at 100 ISK/unit and 10% tax, a P2 recipe consuming
+  40 of each and producing 5 costs
+  `(8000 + 1600 + 3600) / 5 = 2640` ISK per exported P2.
+- A downstream consumer of that P2 pays its 2640 ISK source cost plus 360 ISK
+  import tax per unit at 10%; its previous export tax is not charged again.
+- Explicit same-planet consumption omits both intermediate customs movements.
+- A P3 comparison includes buying one P2 and making the other; a P4 example
+  combines mining-derived and market-purchased inputs.
+- Small synthetic graphs have exact expected alternative counts, stable source
+  references, and visible non-cheapest outcomes.
+- The general Python graph preserves its modeled combinations. The browser's
+  shared-choice UI keeps every supported grouped route accessible without
+  enumerating them all or claiming to expose occurrence-specific overrides.
+  Best-cost highlighting must not hide more expensive comparisons.
+- The browser contains P0-to-P1; P1-to-P2/P3/P4; P2-to-P3/P4; and P3-to-P4
+  comparisons. Repeated product types retain separate route identities and costs.
+- Changing one selected P2 quote updates its downstream P2-starting comparisons,
+  while P1-starting routes retain their own production paths. Direct lower-tier
+  ingredients remain present in recipes.
+- `Make profitable P2` produces a mixed downstream example: one P2 uses its
+  complete profitable P1-manufactured quote and another uses its purchase quote.
+  Incomplete or unknown-profit manufacture is not labeled profitable.
+- A scenario using Jita sell 5% values every market-purchased leaf, including
+  upstream P0 purchases, on that basis. A reused buy-5%-based upstream scenario
+  cannot silently enter the same input-cost calculation.
+- Given a synthetic exported output cost of 100 ISK from sell-5%-valued inputs
+  and an output buy-5% valuation of 120 ISK, per-unit profit is 20 ISK. No sales
+  tax or transport fee is deducted, and both bases and exclusions are displayed.
+- History fixtures select the most recent available ten-day calendar window
+  under the documented anchoring policy, preserving gaps rather than stretching
+  the window to collect ten trading days.
+- A ten-day history fixture with 1000 total observed traded units and two missing
+  days displays 100 units/day in the history-summary input table, with coverage
+  of 8/10 days. This also applies when both price bases use Jita order data. Missing
+  history displays unavailable volume, while a known zero-volume summary
+  displays zero; neither implies an executable daily sales target.
+- Separate buy-5%, sell-5%, and history-summary tables cover every material and
+  output product used by the report, including sources not selected by the best
+  scenario. Prices agree with calculation inputs, identities and ordering are
+  stable, and missing references remain visible without invalidating scenarios
+  that do not depend on them.
+- At 0.5 completed cycles/hour, a one-unit-output P4 route produces 0.5 units/hour;
+  at 24 cycles/hour, a five-unit-output P2 route produces 120 units/hour. With
+  unit profit of 10 ISK, the latter shows 1200 ISK/hour, 28800 ISK/day, and
+  864000 ISK/30 days. Changing cycles/hour does not change unit cost or divide by
+  cycle duration again.
+- Time-based estimates explicitly depend on entered rates and continuous
+  operation; no factory feasibility or market-fill guarantee is inferred.
+  The all-P1-to-P4 caveat does not double per-unit material cost.
+- Missing prices and zero-volume history cannot appear as free inputs or valid
+  best-cost results. Stale data remains identifiable without source refresh.
+- Summary values agree with detailed inputs/taxes and all approved output formats.
+- CLI tests cover registration, invalid settings, overwrite protection, quiet-mode
+  warnings, rendering failures, and documented write-failure behavior.
+- CLI output includes working HTML and local JavaScript assets in the requested
+  directory. Opening the entry page directly under `file://` works without a
+  server, CDN, or source refresh. Asset collisions honor overwrite protection,
+  and unrelated destination files are preserved.
+- The browser evaluates grouped production routes without exhaustive expansion
+  and agrees with Python calculation fixtures, including customs boundaries,
+  manufactured-price reuse, and unavailable inputs.
+- Browser tests exercise scenario switching, shared source changes, factory-cycle
+  edits, filters, export inclusion, and the actual downloaded JSON content.
+- Selected-price exports contain a `prices` object with type-ID keys and exact
+  usable unit prices; unavailable or incomplete costs are not exported as prices.
+- A selected subset exports exactly those type IDs, not every product or every
+  profitable row. Where a product has multiple route rows, export its explicitly
+  chosen quote once. Exported values are unit costs, not market sales valuations.
+- Industry override tests prove that matching type IDs use supplied unit prices,
+  absent IDs retain normal pricing, and arbitrary other top-level fields are
+  ignored. Invalid JSON, missing or non-object `prices`, invalid type-ID keys,
+  and invalid price values produce explicit errors.
+- Importing a valid override file does not require scenario metadata or invoke
+  PI calculation replay. Calculation parity is checked in tests instead.
+
+## Implemented policies and remaining decisions
+
+- History uses one shared regional ten-day calendar window. Coverage remains
+  visible without a minimum-coverage cutoff; absent and known-zero volume differ.
+- Approved decimal.js is vendored with its license. Monetary displays round to
+  two decimal places; reference and exported prices preserve exact values.
+- A global boundary selector distinguishes local versus exported/reimported
+  intermediate expansion; selected shared manufactured quotes are exported.
+- Preset changes require confirmation before replacing manual overrides.
+  Unknown-profit P2 falls back to purchase with an explicit notice.
+- Initial rate is 1 completed cycle/hour. Finite, nonnegative decimal rates are
+  accepted, including 0.5. Zero is a valid no-production estimate.
+- Export starts empty. Selecting another quote for an included type explicitly
+  replaces its selection. `Add profitable visible` chooses the cheapest positive-
+  profit visible route for each not-yet-selected type, preserving existing choices.
+- Continuous normalized unit costing is implemented; whole-run rounding,
+  surplus accounting, and factory-layout feasibility are deferred.
+- Cheapest complete route highlighting includes ties and never hides alternatives.
+  Margin/return percentages remain deferred until their denominators are defined.
+- Whether later Markdown or exhaustive JSON/CSV companions are needed; they are
+  not part of the initial browser delivery or the selective `prices` contract.
+- Industry CLI promotion scope and override option name; accepted JSON price
+  value forms, handling of zero/negative values, unknown type IDs, and duplicate
+  or equivalent type-ID keys. The `prices` object and ignoring all other
+  top-level fields are confirmed.
+
+Browser/CLI verification extends the earlier data/domain checks:
+
+- The focused combined selection passes 155 tests, covering all grouped routes
+  against Python in both boundary modes, mixed shared sources, the preset,
+  selective export shape, HTML escaping, CLI registration/defaults, Jita-only
+  read-only selection, common history anchoring, quiet warnings, collisions,
+  symlink protection, collection/render failures, and explicit partial-write
+  failure behavior.
+- Direct-from-disk browser checks exercise controls, a 0.5-cycle/hour rate,
+  filters, shared-source propagation, preset confirmation/cancellation, recovery
+  from an invalid cycle rate, boundary changes, and selecting a single Robotics
+  quote. Reloading requested only local files and produced no page errors. The
+  actual download handler's Blob matched the preview and contained only that
+  selected type ID in `prices`.
+  The integrated browser did not expose a native Playwright download event:
+  a saved native download has not been certified by that harness. The JSON
+  preview provides an explicit copy alternative.
+- User-authorized real-data generation used immutable read-only SQLite access
+  without loading app configuration. Database hashes and app-directory file
+  size/mtime/ctime metadata were unchanged. No refresh or market request occurred.
+- Full workbook reconciliation, native save-dialog automation, whole-run factory
+  scheduling, and the industry importer remain outside this completed slice.

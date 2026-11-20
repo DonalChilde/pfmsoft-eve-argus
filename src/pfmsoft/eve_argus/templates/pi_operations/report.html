@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Planetary Operations | Eve Argus</title>
+  <style>{% include "styles.css" %}</style>
+</head>
+<body>
+  {% from "reference.html" import reference %}
+  <template id="extraction-view">{% include "extraction.html" %}</template>
+  <template id="factory-view">{% include "p1-inputs.html" %}</template>
+  <template id="market-view">{% include "market.html" %}</template>
+  <template id="planner-view">{% include "planner.html" %}</template>
+  <template id="buy-build-view">{% include "buy-build.html" %}</template>
+  {% from "cost-views.html" import cost_view %}
+  <template id="calculated-costs-view">{{ cost_view(false) }}</template>
+  <template id="exported-costs-view">{{ cost_view(true) }}</template>
+  <template id="pi-stats-view">{{ reference("PI Stats", "pi-stats", pi_stats) }}</template>
+  <template id="factory-plans-view">{{ reference("Factory Plans", "factory-plans", factory_plans) }}</template>
+  <noscript>Enable JavaScript to use the offline operations and market views.</noscript>
+  <script>
+    "use strict";
+    const piSnapshot = {{ materials | tojson }};
+    const marketReports = {{ reports | tojson }};
+    {% include "costing.js" %}
+    const params = new URLSearchParams(location.search);
+    const routePage = params.get("page");
+    const pages = ["extraction", "factory", "market", "planner", "buy-build", "pi-stats", "factory-plans", "calculated-costs", "exported-costs"];
+    const viewId = `${pages.includes(routePage) ? routePage : "extraction"}-view`;
+    document.body.append(document.getElementById(viewId).content.cloneNode(true));
+    const scenarioKeys = ["extraction", "p1-inputs", "p2-inputs", "p3-inputs", "buy-build-tax", "p4-buy-overrides"];
+    function carryScenario(keys = scenarioKeys) {
+      for (const link of document.querySelectorAll(".nav a:not([aria-current])")) {
+        const url = new URL(link.href);
+        for (const key of keys) {
+          if (params.has(key)) url.searchParams.set(key, params.get(key));
+        }
+        link.href = url.href;
+      }
+    }
+    {% include "mockup.js" %}
+    {% include "buy-build.js" %}
+    if (viewId === "market-view") {
+      {% include "market.js" %}
+    } else if (viewId === "planner-view") {
+      {% include "planner.js" %}
+    } else if (viewId !== "extraction-view" && viewId !== "factory-view") {
+      document.title = `${document.querySelector("h1").textContent} | Eve Argus`;
+      carryScenario();
+      if (viewId === "buy-build-view") {
+        initializeBuyBuild();
+      } else if (viewId.endsWith("-costs-view")) {
+        {% include "cost-views.js" %}
+      }
+    } else {
+      initializeOperations();
+    }
+  </script>
+</body>
+</html>

@@ -562,6 +562,11 @@ def test_newest_history_date_is_strictly_before_bound(
     )
 
     assert (
-        read.newest_history_date(connection, region_id=region_id, before=before)
+        read.newest_market_history_date(connection, region_id=region_id, before=before)
         == expected
     )
+    with pytest.warns(DeprecationWarning):
+        assert (
+            read.newest_history_date(connection, region_id=region_id, before=before)
+            == expected
+        )
