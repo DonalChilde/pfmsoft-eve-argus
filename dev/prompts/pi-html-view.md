@@ -48,7 +48,7 @@ the production browser's scripts or templates.
 ## First mockup deliverables
 
 The separate CLI report is `eve-argus reports planetary-operations --to
-./reports/planetary-operations.html`. It packages the six active views into
+./reports/planetary-operations.html`. It packages the active views into
 one offline HTML file without changing `reports planetary-interaction`.
 Unlike the fixed mockup archive below, the CLI uses the latest locally stored
 The Forge order response for both scopes and stored per-material Forge
@@ -221,17 +221,21 @@ The intended navigation may eventually include:
   applicable.
 - **P1 Inputs**, **P2 Inputs**, and **P3 Inputs** — operations grouped by
   starting input tier.
-- **Exported Costs** — selected unit costs available for downstream use.
-- **Factory Planner** — possible PI building combinations by Control Center
+- **Calculated Costs** and **Exported Costs** — compare and export calculated
+  route prices for downstream use.
+- **Factory Planner** — compare editable PI colony layouts by Command Center
   level.
 - **Extraction Planner**
 - **Market Prices**
 - **Market History**
-- **PI Stats**
-- **Factory Layouts**
+- **PI Stats** — offline recipe, planet, and facility reference.
+- **Factory Plans** — offline layout and loadout reference, separate from the
+  interactive Factory Planner.
 
 Extraction, P1 Inputs, P2 Inputs, P3 Inputs, Market Prices, and Market History
-are active mockup views. Other entries are planned.
+are active mockup views. The generated report also includes Factory Planner
+and renders the packaged `pi-stats.md` and `factory-plans.md` as HTML reference
+views. Extraction Planner remains planned.
 
 ## Shared page elements
 
@@ -253,7 +257,8 @@ are active mockup views. Other entries are planned.
   Cancel leaves selections unchanged.
 - Keep each material row compact: show only its name, source dropdown, and
   selected unit value. Size the dropdown text to match the material name and
-  use reduced vertical padding. Put supplemental material/source details behind a
+  use 4 px of vertical padding in the generated report. Put supplemental
+  material/source details behind a
   clickable circled-`i` information button that opens a popup. Give the button
   an accessible name and make the popup dismissible.
 - Use the full available screen width for the view. In the source pane, keep
@@ -316,6 +321,9 @@ such as **P0 → P1** above each group. Keep column headings visible at the
 top of the operations table while scrolling, with the current route header
 directly below. The next route header takes over as its group reaches it. Keep route
 labels visible when the table is scrolled sideways.
+
+Use 4 px of vertical cell padding in the generated operations and market
+tables to keep rows compact without shrinking the input controls.
 
 Show material sources, per-stage costs, and tax breakdowns in expandable
 details. Place the disclosure arrow directly before the output name and make
@@ -389,7 +397,9 @@ P3 and P4 operation name. Use S (Simple) and C (Complex) for P3, and L (Low),
 M (Medium), and H (High) for P4. Leave P2 names unchanged.
 
 Sort each group alphabetically by output. Each row has its own editable
-cycles/hour rate, defaulting to `1`; there is no separate factory-rate selector.
+cycles/hour rate; there is no separate factory-rate selector. Defaults are
+`24` for P1 → P2; `5` (Simple) and `3` (Complex) for P1 → P3; and `1` (Low)
+and `0.5` (Medium and High) for P1 → P4.
 Keep the column headings visible at the top of the operations table during
 vertical scrolling, with the current route heading immediately below them.
 Each P1 Inputs operation group has a **Set cycles/hour** button. P1-P2 takes
@@ -412,8 +422,8 @@ customs to local intermediates and charge export tax only on the finished output
 Use the P1 Inputs layout and archived valuation controls. List all 21 P3
 outputs under **P2 → P3** and all 8 P4 outputs under **P2 → P4**, sorted
 alphabetically within each group. Keep category suffixes, sticky column and
-route headings, editable per-row rates defaulting to `1`, and category-specific
-**Set cycles/hour** dialogs.
+route headings, editable per-row rates, and category-specific **Set cycles/hour**
+dialogs. Default to `24` cycles/hour for P2 → P3 and `4` for P2 → P4.
 
 - P3 uses its direct P2 recipe. For P4, expand locally made P3 intermediates
   into P2 requirements scaled by the intermediate output quantities. Sum
@@ -452,7 +462,54 @@ separate Low, Medium, and High rates.
   choices and tax rates carried by mockup navigation, or upstream defaults on
   direct open. The receiving planet charges its own import tax separately.
 
+### Factory Planner
+
+The generated report includes two independent layouts, side by side on wide
+screens, seeded from the first comparison in the workbook's **Factory Layout
+Planner** sheet. Each layout has editable Command Center level, planet radius,
+extra link distance, and whole facility counts. Show circumference, minimum
+link distance and count, per-row CPU, powergrid and ISK, and the total setup
+cost and remaining budgets. Highlight negative CPU or powergrid.
+
+Use the workbook's **PI Buildings** reference values and planner formulas.
+Minimum link count excludes the Command Center and extractor heads. The
+optional extra link incurs a base fee plus distance costs only when its
+distance is positive; unlike the workbook, zero incurs no charge. This is a
+budget estimate, not placement, routing, throughput, or a saved colony plan.
+
+### P4 Buy/Build
+
+Compare all eight P4 outputs using imported P2 and locally built P3. Expand
+the catalog recipe into P2 quantities per finished cycle plus any direct P1.
+For each P2, compare its stored Jita system Sell 5% quote with the unit cost
+to build it from P1 priced at the same market basis. The latter includes P1
+import and P2 export on the producing planet. Both plans pay P2 import and
+finished P4 export on the receiving planet; direct P1 uses Jita Sell 5% and
+is imported there. Both customs rates default to 6% and are independently
+editable.
+
+Show the cheapest priced combination, both uniform sourcing baselines, and
+savings versus buying all P2. Show per-input quantities, unit costs and the
+recommended source. Prefer buying on equal costs. Label a sole priced option,
+and leave totals unavailable when any required input lacks a price. These
+are per-unit estimates, not a factory-capacity or hauling plan.
+
 ## Cost export
+
+The generated report shows all calculated operation costs, including the P4
+Buy/Build scenarios, with operation labels and the settings carried by
+navigation. The market selector changes the displayed sale quote and margin
+only. The Source operation filter defaults to **ALL** or shows only rows with
+the selected operation label, without clearing checked rows. The Select
+column follows Profit margin. Select at most one available
+cost per material. **Clear Selected** unchecks all rows without changing saved
+costs. Export merges the checked values into the browser tab's
+saved list, replacing previous values for those materials without downloading
+a file. The separate Exported
+Costs view displays the saved values, downloads the full list as JSON, and can
+clear the list. The JSON uses the existing PI browser's `prices` map
+(type ID to decimal string in ISK per unit), plus per-entry operation
+metadata. The future industry importer is not part of this change.
 
 The intended feature is to export selected unit costs for use in other
 calculations, with at most one selected value per material. Do not assume that

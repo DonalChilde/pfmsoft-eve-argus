@@ -1,0 +1,75 @@
+{% macro cost_view(exported) %}
+{% set title = "Exported Costs" if exported else "Calculated Costs" %}
+<div class="shell">
+  <header>
+    <div class="topline">
+      <div class="brand">ARGUS / PLANETARY OPERATIONS</div>
+      <span class="mock-badge">Offline report · stored market data</span>
+    </div>
+    <nav class="nav" aria-label="Planetary Interaction views">
+      <a href="?page=extraction">Extraction</a>
+      <a href="?page=factory">P1 Inputs</a>
+      <a href="?page=factory&amp;view=p2">P2 Inputs</a>
+      <a href="?page=factory&amp;view=p3">P3 Inputs</a>
+      <a href="?page=buy-build">P4 Buy/Build</a>
+      <a href="?page=calculated-costs"{% if not exported %} aria-current="page"{% endif %}>Calculated Costs</a>
+      <a href="?page=exported-costs"{% if exported %} aria-current="page"{% endif %}>Exported Costs</a>
+      <a href="?page=planner">Factory Planner</a>
+      <a href="?page=market">Market Prices</a>
+      <a href="?page=market&amp;view=history">Market History</a>
+      <a href="?page=pi-stats">PI Stats</a>
+      <a href="?page=factory-plans">Factory Plans</a>
+    </nav>
+  </header>
+  <main>
+    <div class="page-heading"><h1>{{ title }}</h1></div>
+    {% if exported %}
+    <p class="sample-note">These are the last exported values for each material in this browser tab. They do not change when you edit a calculation. Clearing the list does not delete downloaded files.</p>
+    {% else %}
+    <p class="sample-note">Costs use the route settings carried here by navigation, or their defaults. Choose one operation per material. Filtering keeps your selections, even when rows are hidden. Export Selected saves or replaces the checked costs and keeps the rest. Download the full list as JSON from Exported Costs.</p>
+    {% endif %}
+    <section class="global-controls" aria-label="Cost controls">
+      {% if not exported %}
+      <label>Market source
+        <select id="cost-market-source">
+          <option>Jita Sell 5%</option>
+          <option>Jita Buy 5%</option>
+          <option>The Forge Avg</option>
+        </select>
+      </label>
+      <label>Source operation
+        <select id="cost-operation-filter">
+          <option value="" selected>ALL</option>
+        </select>
+      </label>
+      {% endif %}
+      {% if exported %}
+      <button type="button" id="download-costs" disabled>Download JSON</button>
+      <button type="button" id="clear-costs" disabled>Clear exported costs</button>
+      {% else %}
+      <button type="button" id="export-selected-costs" disabled>Export Selected</button>
+      <button type="button" id="clear-selected-costs" disabled>Clear Selected</button>
+      {% endif %}
+    </section>
+    <p class="footnote" id="cost-status" role="status"></p>
+    <div class="table-wrap panel operations-table-wrap" role="region" aria-label="{{ title }} table" tabindex="0">
+      <table>
+        <caption class="sr-only">{{ title }} in ISK per unit</caption>
+        <thead><tr>
+          <th scope="col">Material</th>
+          <th scope="col">Tier</th>
+          <th scope="col">Source operation</th>
+          <th scope="col">Calculated unit cost</th>
+          {% if exported %}<th scope="col">Exported at (UTC)</th>
+          {% else %}
+          <th scope="col">Market price / unit</th>
+          <th scope="col">Profit margin</th>
+          <th scope="col">Select</th>
+          {% endif %}
+        </tr></thead>
+        <tbody id="cost-rows"></tbody>
+      </table>
+    </div>
+  </main>
+</div>
+{% endmacro %}

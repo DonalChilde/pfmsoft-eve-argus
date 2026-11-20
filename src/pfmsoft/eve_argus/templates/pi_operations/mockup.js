@@ -1,9 +1,5 @@
 "use strict";
 
-const format = value =>
-  new Intl.NumberFormat("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-    .format(value);
-
 const materialsByTier = {
   P0: [
     "Aqueous Liquids", "Autotrophs", "Base Metals", "Carbon Compounds",
@@ -77,7 +73,6 @@ const extractionP2SingleRecipes = [
   [3775, "Viral Agent", [2393, 3779], "Ice, Oceanic"],
   [2328, "Water-Cooled CPU", [2398, 3645], "Barren, Gas, Storm"],
 ];
-const collator = new Intl.Collator("en", { sensitivity: "base" });
 const extractionP2SplitRecipes = [
   ...extractionP2SingleRecipes,
   [2327, "Microfiber Shielding", [2397, 9828]],
@@ -99,8 +94,6 @@ const extractionRoutes = {
 const marketChoices = ["Jita Buy 5%", "Jita Sell 5%", "The Forge Avg"];
 const freshness = stale => stale == null ? "freshness unknown" : stale ? "stale" : "current at generation";
 const orderSource = `Jita system orders received ${marketReports.jita.received_at} (${freshness(marketReports.jita.is_stale)})`;
-document.querySelector("[data-order-source]").textContent = orderSource;
-document.title = `${document.querySelector("h1").textContent} | Eve Argus`;
 const sourceDescriptions = {
   "Jita Buy 5%": `Buy-side 5% depth price. ${orderSource}.`,
   "Jita Sell 5%": `Sell-side 5% depth price. ${orderSource}.`,
@@ -115,6 +108,7 @@ const carriedExtraction = new URLSearchParams(pageParams.get("extraction") ?? ""
 const carriedFactory = {
   1: new URLSearchParams(pageParams.get("p1-inputs") ?? ""),
   2: new URLSearchParams(pageParams.get("p2-inputs") ?? ""),
+  3: new URLSearchParams(pageParams.get("p3-inputs") ?? ""),
 };
 const localAssignments = new Map();
 const operationsTableWrap = document.querySelector(".operations-table-wrap");
@@ -126,28 +120,6 @@ const factorySources = [
   { label: "P1 Inputs · P1 → P3", inputTier: 1, outputTier: 3 },
   { label: "P2 Inputs · P2 → P3", inputTier: 2, outputTier: 3 },
 ];
-
-const quote = (id, source) => {
-  const value = piSnapshot[id].prices[source];
-  return value == null ? null : Number(value);
-};
-const parseTax = value => value !== null && value.trim() !== "" &&
-  Number.isFinite(Number(value)) && Number(value) >= 0 && Number(value) <= 100
-  ? Number(value) / 100 : null;
-const unitValue = value => value === null ? "—" : `${format(value)} ISK`;
-const inputImportTax = (id, quantity, tax) => quantity * Number(piSnapshot[id].taxBase) * tax / 2;
-
-function costStage(product, inputs, tax, exportOutput) {
-  const acquisition = inputs.some(input => input.cost === null)
-    ? null : inputs.reduce((total, input) => total + input.quantity * input.cost, 0);
-  const importTax = tax === null ? null : inputs.reduce((total, input) =>
-    total + (input.imported ? inputImportTax(input.id, input.quantity, tax) : 0), 0);
-  const exportTax = tax === null ? null : exportOutput ? product.output * Number(product.taxBase) * tax : 0;
-  return {
-    acquisition, importTax, exportTax,
-    unit: acquisition === null || tax === null ? null : (acquisition + importTax + exportTax) / product.output,
-  };
-}
 
 function extractionCost(route, id) {
   const product = piSnapshot[id];
@@ -188,36 +160,20 @@ function sourceCost(id, source, receivingTier) {
   const factory = factorySources.find(route =>
     route.label === source && route.outputTier === product.tier && route.outputTier <= receivingTier);
   if (factory) {
-    const state = carriedFactory[factory.inputTier];
-    const tax = parseTax(state.get("tax") ?? taxInput.defaultValue);
-    return factoryCost(id, factoryImports(id, factory.inputTier), tax, input =>
-      sourceCost(input, state.get(`source-${input}`) ?? "Jita Sell 5%", factory.inputTier)).unit;
+    return carriedFactoryCost(id, factory.inputTier);
   }
   return source === "Extracted P0" && product.tier === 0 ? 0 : quote(id, source);
 }
 
-function factoryCost(id, imports, tax, inputCost) {
-  return costStage(piSnapshot[id], imports.map(([input, quantity]) => ({
-    id: input, quantity, imported: true, cost: inputCost(input),
-  })), tax, true);
+function carriedFactoryCost(id, startingTier) {
+  const state = carriedFactory[startingTier];
+  return factoryCost(id, factoryImports(id, startingTier), parseTax(state.get("tax") ?? "6"), input =>
+    sourceCost(input, state.get(`source-${input}`) ?? "Jita Sell 5%", startingTier)).unit;
 }
 
-function factoryImports(id, startingTier) {
-  const imports = new Map();
-  function collect(typeId, quantity) {
-    const material = piSnapshot[typeId];
-    if (material.tier <= startingTier) {
-      imports.set(typeId, (imports.get(typeId) ?? 0) + quantity);
-    } else {
-      for (const [ingredient, amount] of material.inputs) {
-        collect(ingredient, quantity * amount / material.output);
-      }
-    }
-  }
-  collect(id, piSnapshot[id].output);
-  return [...imports].sort(([a], [b]) => collator.compare(piSnapshot[a].name, piSnapshot[b].name));
-}
-
+function initializeOperations() {
+document.querySelector("[data-order-source]").textContent = orderSource;
+document.title = `${document.querySelector("h1").textContent} | Eve Argus`;
 let factoryViewMaterials;
 if (factoryInputTier > 1) {
   const tier = `P${factoryInputTier}`;
@@ -559,16 +515,30 @@ function outputCategory(product) {
 }
 
 if (factoryRecipe) {
+  const defaultRates = {
+    1: { 2: 24, 3: { S: 5, C: 3 }, 4: { L: 1, M: 0.5, H: 0.5 } },
+    2: { 3: 24, 4: 4 },
+  }[factoryInputTier] ?? {};
+  if (factoryInputTier === 1) {
+    document.querySelector(".comparison-head p").textContent =
+      `Rates are editable per operation. Defaults (cycles/hour): P1 → P2: ${defaultRates[2]}; P1 → P3: Simple ${defaultRates[3].S}, Complex ${defaultRates[3].C}; P1 → P4: Low ${defaultRates[4].L}, Medium ${defaultRates[4].M}, High ${defaultRates[4].H}.`;
+  } else if (factoryInputTier === 2) {
+    document.querySelector(".comparison-head p").textContent =
+      `Rates are editable per operation. Defaults: ${defaultRates[3]} cycles/hour for P2 → P3 and ${defaultRates[4]} for P2 → P4.`;
+  }
   const counts = [];
   for (const group of document.querySelectorAll("[data-factory-output-tier]")) {
     const tier = Number(group.dataset.factoryOutputTier);
+    const routeRate = defaultRates[tier];
     const products = Object.entries(piSnapshot)
       .filter(([, product]) => product.tier === tier)
       .sort(([, a], [, b]) => collator.compare(a.name, b.name));
     for (const [typeId, product] of products) {
       const rows = factoryRecipe.content.cloneNode(true);
       rows.querySelector("[data-operation]").dataset.typeId = typeId;
-      rows.querySelector(".cycle-rate").setAttribute("aria-label", `Completed cycles per hour for ${product.name}`);
+      const rate = rows.querySelector(".cycle-rate");
+      rate.defaultValue = String((typeof routeRate === "number" ? routeRate : routeRate?.[outputCategory(product)]) ?? 1);
+      rate.setAttribute("aria-label", `Completed cycles per hour for ${product.name}`);
       rows.querySelector(".operation-id").textContent = `p${factoryInputTier}-p${tier}-${typeId}`;
       rows.querySelector(".recipe-quantities").textContent = product.inputs.map(([input, quantity]) =>
         `${quantity} ${piSnapshot[input].name}`).join(" + ") + ` → ${product.output} ${product.name}`;
@@ -654,6 +624,8 @@ const carryPrices = () => {
     extraction: pageParams.get("extraction"),
     "p1-inputs": pageParams.get("p1-inputs"),
     "p2-inputs": pageParams.get("p2-inputs"),
+    "p3-inputs": pageParams.get("p3-inputs"),
+    "buy-build-tax": pageParams.get("buy-build-tax"),
   };
   if (extractionPage || factoryState) {
     const state = new URLSearchParams({ tax: taxInput.value });
@@ -792,3 +764,4 @@ document.addEventListener("change", event => {
 });
 taxInput.addEventListener("input", updatePrices);
 updatePrices();
+}

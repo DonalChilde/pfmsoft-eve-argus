@@ -166,7 +166,7 @@ body.is-resizing { cursor: col-resize; user-select: none; }
   align-items: center;
   gap: 5px;
   border-bottom: 1px solid #26354a;
-  padding: 8px 0;
+  padding: 4px 0;
 }
 .material:last-child { border-bottom: 0; padding-bottom: 0; }
 .material-name {
@@ -256,7 +256,7 @@ dialog.info-dialog::backdrop { background: rgb(0 0 0 / 65%); }
 table { border-collapse: collapse; width: 100%; }
 th, td {
   border-top: 1px solid var(--line);
-  padding: 10px;
+  padding: 4px 10px;
   text-align: right;
   vertical-align: top;
   white-space: nowrap;
@@ -358,6 +358,18 @@ td { font-size: .84rem; font-variant-numeric: tabular-nums; }
 .detail-card th, .detail-card td { background: transparent; padding: 5px 3px; white-space: normal; }
 .launchpad { color: var(--muted); font-size: .8rem; }
 .footnote { color: var(--muted); font-size: .78rem; margin: 12px 14px 14px; }
+.planner-layouts { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 560px), 1fr)); gap: 14px; }
+.planner-layout { min-width: 0; padding: 14px; }
+.planner-layout .table-wrap { max-height: none; }
+.planner-controls { flex-wrap: wrap; }
+.planner-layout td input { width: 76px; min-height: 24px; padding: 2px 6px; text-align: right; }
+.planner-layout tfoot { font-weight: 700; }
+.planner-summary { color: var(--muted); font-size: .85rem; }
+.pi-reference { overflow-x: auto; padding: 14px; }
+.pi-reference p { max-width: 90ch; }
+.pi-reference table { width: auto; margin-bottom: 16px; }
+.buy-build-detail { padding: 4px 10px 8px; }
+.buy-build-detail table { width: auto; margin-top: 5px; }
 
 @media (max-width: 1100px) {
   .workspace { grid-template-columns: 1fr; }

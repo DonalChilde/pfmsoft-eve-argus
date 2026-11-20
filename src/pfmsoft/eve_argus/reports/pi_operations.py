@@ -3,8 +3,11 @@
 import json
 from dataclasses import dataclass, replace
 from decimal import Decimal
+from importlib.resources import files
 
 from jinja2 import Environment, PackageLoader, StrictUndefined, select_autoescape
+from markdown_it import MarkdownIt
+from markupsafe import Markup
 
 from pfmsoft.eve_argus.pi.models import Material
 from pfmsoft.eve_argus.reports.history_summary import HistorySummaryReport
@@ -55,6 +58,14 @@ def _decimal(value: Decimal | None) -> str | None:
     return None if value is None else format(value, "f")
 
 
+def _render_reference(filename: str) -> Markup:
+    """Render a packaged reference with tables and no raw HTML."""
+    path = files("pfmsoft.eve_argus.pi").joinpath("markdown_docs", filename)
+    _, _, body = path.read_text(encoding="utf-8").partition("\n")
+    parser = MarkdownIt("commonmark", {"html": False, "breaks": True}).enable("table")
+    return Markup(parser.render(body))
+
+
 def render_pi_operations(report: PiOperationsReport) -> str:
     """Render one self-contained, autoescaped HTML document."""
     jita = {row.type_id: row for row in report.jita.records}
@@ -101,5 +112,8 @@ def render_pi_operations(report: PiOperationsReport) -> str:
     )
     environment.policies["json.dumps_kwargs"] = {"sort_keys": False}
     return environment.get_template("report.html").render(
-        materials=materials, reports=reports
+        materials=materials,
+        reports=reports,
+        pi_stats=_render_reference("pi-stats.md"),
+        factory_plans=_render_reference("factory-plans.md"),
     )

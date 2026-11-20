@@ -1,0 +1,54 @@
+<div class="shell">
+  <header>
+    <div class="topline">
+      <div class="brand">ARGUS / PLANETARY OPERATIONS</div>
+      <span class="mock-badge">Offline report · stored market data</span>
+    </div>
+    <nav class="nav" aria-label="Planetary Interaction views">
+      <a href="?page=extraction">Extraction</a>
+      <a href="?page=factory">P1 Inputs</a>
+      <a href="?page=factory&amp;view=p2">P2 Inputs</a>
+      <a href="?page=factory&amp;view=p3">P3 Inputs</a>
+      <a href="?page=buy-build" aria-current="page">P4 Buy/Build</a>
+      <a href="?page=calculated-costs">Calculated Costs</a>
+      <a href="?page=exported-costs">Exported Costs</a>
+      <a href="?page=planner">Factory Planner</a>
+      <a href="?page=market">Market Prices</a>
+      <a href="?page=market&amp;view=history">Market History</a>
+      <a href="?page=pi-stats">PI Stats</a>
+      <a href="?page=factory-plans">Factory Plans</a>
+    </nav>
+  </header>
+  <main>
+    <div class="page-heading">
+      <h1>P4 Buy/Build</h1>
+      <div class="meta" id="buy-build-source"></div>
+    </div>
+    <p class="sample-note">Buy P2 at Jita Sell 5%, or build P2 on another planet from P1 priced at Jita Sell 5%. Build costs include P1 import and P2 export there. Every plan imports P2 and any direct P1 on the P4 planet, builds P3 locally, and exports only the finished P4. Estimates exclude hauling and capacity constraints.</p>
+    <p class="footnote">Expand a breakdown to see the recommended source and quantity for each material. A dash means the plan could not be priced; a sole priced option is not necessarily cheaper.</p>
+    <section class="global-controls" aria-label="Customs assumptions">
+      <label>P2 producing planet customs (%)
+        <input id="p2-producer-tax" type="number" value="6" required min="0" max="100" step="any">
+      </label>
+      <label>P4 receiving planet customs (%)
+        <input id="p4-receiver-tax" type="number" value="6" required min="0" max="100" step="any">
+      </label>
+    </section>
+    <p id="buy-build-status" role="status" class="sample-note" hidden></p>
+    <div class="table-wrap panel" role="region" aria-label="P4 sourcing comparison" tabindex="0">
+      <table>
+        <caption class="sr-only">P4 unit costs by P2 sourcing plan</caption>
+        <thead><tr>
+          <th scope="col">P4 output</th>
+          <th scope="col">Buy P2 types</th>
+          <th scope="col">Build P2 types</th>
+          <th scope="col">Best available / unit</th>
+          <th scope="col">Buy all P2 / unit</th>
+          <th scope="col">Build all P2 / unit</th>
+          <th scope="col">Savings vs. buy all / unit</th>
+        </tr></thead>
+        <tbody id="buy-build-rows"></tbody>
+      </table>
+    </div>
+  </main>
+</div>

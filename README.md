@@ -31,11 +31,26 @@ uv run eve-argus reports planetary-operations --to ./reports/planetary-operation
 ```
 
 Open the single HTML file directly in a browser. It includes Extraction,
-P1/P2/P3 Inputs, Market Prices, and Market History, with no companion files
+P1/P2/P3 Inputs, P4 Buy/Build, Factory Planner, Market Prices, Market History, PI Stats, and
+Factory Plans, with no companion files
 or network requests. It uses the latest locally stored The Forge order
 snapshot (Jita **system** and The Forge region) and per-material ten-day
 Forge history windows where available. `--overwrite` replaces an existing
 report; `--quiet` keeps warnings and errors visible.
+
+Factory Planner compares two colony layouts using the workbook's building and
+link budgets. Change the Command Center, planet radius, optional extra link
+distance, and building counts to see CPU, powergrid, and setup cost update.
+
+**Calculated Costs** compares route costs against a selected market basis.
+The **Source operation** filter defaults to **ALL** and keeps any checked
+rows when you change the filter.
+Use **Export Selected** to save one calculated cost per material and
+**Clear Selected** to uncheck all rows without changing saved costs. The
+**Exported Costs** view retains those values for the browser tab session
+and downloads the full list as `pi-unit-costs.json`:
+later exports update selected materials without removing the others. Clear
+resets the saved list but does not delete downloaded files.
 
 The original browser command below is unchanged.
 

@@ -1,0 +1,77 @@
+{% macro layout(id, title, radius, distance, counts) %}
+<section class="panel planner-layout" aria-labelledby="{{ id }}-title" data-layout>
+  <h2 id="{{ id }}-title">{{ title }}</h2>
+  <div class="global-controls planner-controls">
+    <label>Command Center
+      <select name="center">
+        <option value="0">Basic (0)</option>
+        <option value="1">Limited (I)</option>
+        <option value="2">Standard (II)</option>
+        <option value="3">Improved (III)</option>
+        <option value="4">Advanced (IV)</option>
+        <option value="5" selected>Elite (V)</option>
+      </select>
+    </label>
+    <label>Planet radius (km)
+      <input name="radius" type="number" min="0" step="any" value="{{ radius }}" required>
+    </label>
+    <label>Extra link distance (km)
+      <input name="distance" type="number" min="0" step="any" value="{{ distance }}" required>
+    </label>
+  </div>
+  <p class="planner-summary">Circumference: <output data-value="circumference"></output> km · Minimum link distance: <output data-value="minimum"></output> km</p>
+  <div class="table-wrap">
+    <table>
+      <caption class="sr-only">{{ title }} facilities and budget</caption>
+      <thead><tr><th scope="col">Facility / link</th><th scope="col">Count</th><th scope="col">CPU</th><th scope="col">Powergrid</th><th scope="col">Setup cost (ISK)</th></tr></thead>
+      <tbody>
+        {% for building in ["Extractor heads", "Extractor Control Unit", "Storage Facility", "Basic Industry", "Advanced Industry", "Launchpad", "High-Tech Production"] %}
+        <tr data-building>
+          <th scope="row">{{ building }}</th>
+          <td><input aria-label="{{ building }} count" type="number" min="0" step="1" value="{{ counts[loop.index0] }}" required></td>
+          <td data-cpu></td><td data-grid></td><td data-cost></td>
+        </tr>
+        {% endfor %}
+        <tr data-link="minimum"><th scope="row">Minimum links</th><td data-count></td><td data-cpu></td><td data-grid></td><td>—</td></tr>
+        <tr data-link="extra"><th scope="row">Optional extra link</th><td data-count></td><td data-cpu></td><td data-grid></td><td>—</td></tr>
+      </tbody>
+      <tfoot>
+        <tr><th scope="row">Used</th><td>—</td><td data-value="cpuUsed"></td><td data-value="gridUsed"></td><td>—</td></tr>
+        <tr><th scope="row">Command Center</th><td>1</td><td data-value="cpuCapacity"></td><td data-value="gridCapacity"></td><td data-value="centerCost"></td></tr>
+        <tr><th scope="row">Remaining / total cost</th><td>—</td><td data-value="cpuRemaining"></td><td data-value="gridRemaining"></td><td data-value="totalCost"></td></tr>
+      </tfoot>
+    </table>
+  </div>
+  <p class="planner-summary" role="status"></p>
+</section>
+{% endmacro %}
+<div class="shell">
+  <header>
+    <div class="topline">
+      <div class="brand">ARGUS / PLANETARY OPERATIONS</div>
+      <span class="mock-badge">Offline report · layout estimates</span>
+    </div>
+    <nav class="nav" aria-label="Planetary Interaction views">
+      <a href="?page=extraction">Extraction</a>
+      <a href="?page=factory">P1 Inputs</a>
+      <a href="?page=factory&amp;view=p2">P2 Inputs</a>
+      <a href="?page=factory&amp;view=p3">P3 Inputs</a>
+      <a href="?page=buy-build">P4 Buy/Build</a>
+      <a href="?page=calculated-costs">Calculated Costs</a>
+      <a href="?page=exported-costs">Exported Costs</a>
+      <a href="?page=planner" aria-current="page">Factory Planner</a>
+      <a href="?page=market">Market Prices</a>
+      <a href="?page=market&amp;view=history">Market History</a>
+      <a href="?page=pi-stats">PI Stats</a>
+      <a href="?page=factory-plans">Factory Plans</a>
+    </nav>
+  </header>
+  <main>
+    <div class="page-heading"><h1>Factory Planner</h1></div>
+    <p class="sample-note">Compare two independent layouts using the Factory Layout Planner workbook’s building budgets and link estimates. Minimum links equal the number of facilities other than the Command Center, excluding extractor heads. Extra distance adds one optional link only when it is greater than zero. This estimates CPU, powergrid, and setup cost; it does not verify placement, routes, or throughput.</p>
+    <div class="planner-layouts">
+      {{ layout("layout-a", "Layout A", 5000, 16000, [10, 1, 2, 6, 2, 1, 0]) }}
+      {{ layout("layout-b", "Layout B", 9500, 30000, [10, 1, 1, 6, 0, 1, 0]) }}
+    </div>
+  </main>
+</div>

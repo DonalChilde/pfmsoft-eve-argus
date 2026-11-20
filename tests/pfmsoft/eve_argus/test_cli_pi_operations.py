@@ -105,6 +105,49 @@ def test_standalone_report_uses_latest_orders_and_keeps_scope_separate(
     assert not settings.market_history_database.exists()
     html = output.read_text(encoding="utf-8")
     assert not re.search(r"<(?:script|link)\b[^>]*(?:src|href)=", html)
+    assert 'href="?page=planner"' in html
+    buy_build = html.split('<template id="buy-build-view">', 1)[1].split(
+        "</template>", 1
+    )[0]
+    assert "<h1>P4 Buy/Build</h1>" in buy_build
+    assert "Savings vs. buy all / unit" in buy_build
+    calculated = html.split('<template id="calculated-costs-view">', 1)[1].split(
+        "</template>", 1
+    )[0]
+    exported = html.split('<template id="exported-costs-view">', 1)[1].split(
+        "</template>", 1
+    )[0]
+    assert 'id="cost-market-source"' in calculated
+    assert re.search(
+        r'<select id="cost-operation-filter">\s*<option value="" selected>ALL</option>',
+        calculated,
+    )
+    assert re.findall(r'<th scope="col">(.*?)</th>', calculated)[-2:] == [
+        "Profit margin",
+        "Select",
+    ]
+    assert ">Export Selected</button>" in calculated
+    assert 'id="clear-selected-costs" disabled>Clear Selected</button>' in calculated
+    assert 'id="download-costs"' not in calculated
+    assert ">Download JSON</button>" in exported
+    assert "Export Selected" not in exported
+    assert "Clear Selected" not in exported
+    assert 'id="clear-costs"' in exported
+    assert 'id="cost-market-source"' not in exported
+    assert 'id="cost-operation-filter"' not in exported
+    stats = html.split('<template id="pi-stats-view">', 1)[1].split("</template>", 1)[0]
+    plans = html.split('<template id="factory-plans-view">', 1)[1].split(
+        "</template>", 1
+    )[0]
+    assert "<h1>PI Stats</h1>" in stats
+    assert "<h2>PI Buildings</h2>" in stats and "<table>" in stats
+    assert "<h1>Factory Plans</h1>" in plans
+    assert "<h2>Generic Loadouts</h2>" in plans
+    assert "<h2>Split build loadouts</h2>" in plans
+    assert re.findall(r'aria-labelledby="(layout-[ab]-title)" data-layout', html) == [
+        "layout-a-title",
+        "layout-b-title",
+    ]
     materials = json.loads(html.split("const piSnapshot = ", 1)[1].split(";\n", 1)[0])
     assert len(materials) == 83
     assert materials["2393"]["prices"] == {

@@ -19,14 +19,7 @@ if (historyView) {
   scope.value = selection;
 }
 
-for (const key of ["extraction", "p1-inputs", "p2-inputs"]) {
-  if (!params.has(key)) continue;
-  for (const link of document.querySelectorAll(".nav a")) {
-    const url = new URL(link.href);
-    url.searchParams.set(key, params.get(key));
-    link.href = url.href;
-  }
-}
+carryScenario();
 
 scope.addEventListener("change", () => {
   const url = new URL(location.href);
