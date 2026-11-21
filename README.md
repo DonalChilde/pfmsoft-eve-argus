@@ -718,6 +718,57 @@ existing filename helper; generation time does not affect filenames. Use
 not errors or stale-data warnings. All formats render before writes begin;
 filesystem errors may still leave partial output and return a nonzero exit status.
 
+## Industry production report
+
+```bash
+uv run eve-argus reports industry \
+  --system-id 30000142 --corporation-id 98196252 --owned --to ./reports
+```
+
+Estimate BPC-based production and sale outcomes using stored snapshots, without
+fetching or network name lookups. `--system-id` is required and may identify any
+known solar system. The report assumes an NPC station, Omega and relevant skills
+at level 5; **the user must verify that the station services are available**.
+The corporation ID can be omitted when configured.
+
+Choose one selection: `--owned` for supported owned BPO products and their
+invention results; `--not-owned` for eligible missing BPOs and their invention
+results with hypothetical access; `--sample` for up to four representative owned
+routes (the default); or repeat `--type-id` for exact product IDs. For hypothetical
+BPOs only, `--me` and `--te` default to 10 and 20. The unowned eligibility
+heuristic is not proof that a BPO can be purchased; its purchase and research costs
+are excluded.
+
+Import static data with `eve-argus static import-db --from <eve-sd.sqlite>` and
+populate snapshots separately using `fetch corporation-blueprints`, `fetch
+markets-prices`, `fetch industry-systems`, `fetch market-orders --hubs`, and
+`fetch market-history --hubs --industry-types`. A missing required snapshot fails;
+missing individual prices, blueprints or histories remain explicitly unavailable.
+Sources are selected independently, stale data warns without refreshing, and the
+report records their provenance. History uses ten calendar days ending at each
+region/type's latest completed stored date; missing days are shown and volume is
+divided by ten. History is stale when its receipt is older than `--history-stale`
+days (default 7), irrespective of expiry. Regional history is not hub-local.
+
+The two strategies buy all direct inputs or manufacture supported subassemblies;
+the latter is omitted when redundant. Inputs are valued at Jita primary-station
+sell 5%; reaction products are purchased. Copying, invention and manufacturing
+fees are included, using the selected system's indices. Estimates exclude existing
+inventory, hauling, BPO acquisition/research, decryptors and scheduling. Invention
+costs use rounded-up expected attempts, not a success guarantee. `--sales-tax`
+defaults to 3.6% and `--broker-fee` to 1%; sales tax applies to all sale bases,
+and broker fees to sell and history scenarios. Return is profit divided by
+production cost. Prices and depth are indicative, not execution guarantees.
+
+Each run creates an `industry-<corporation>-<system>-<generated timestamp>`
+directory under `--to`, with `industry-report.csv` and linked `markdown/` and
+`html/` page sets. Open either index; the Profit Opportunities pages show
+history-price scenarios with at least 20% unrounded return. CSV retains full
+calculation precision; detail displays two decimals. `--quiet` hides progress, not
+warnings or errors. `--overwrite` permits replacing colliding files, but does not
+remove obsolete files. All files render before writing; filesystem failures may
+leave partial output.
+
 ## Corporation industry jobs report
 
 Generate JSON, CSV, and Markdown from a corporation's latest stored jobs snapshot:
